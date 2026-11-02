@@ -537,13 +537,49 @@ def test_left_step_empty_blocks_is_invalid_artifact() -> None:
     assert caught.value.code == "invalid_artifact"
 
 
-def test_isolated_context_traps_float_operation() -> None:
+def test_isolated_context_traps_only_impossible_signals() -> None:
     import fel_workers.extraction.isotonic as module
 
     ctx = module._isolated()
-    from decimal import FloatOperation
+    from decimal import FloatOperation, Inexact, Rounded
 
-    assert ctx.traps[FloatOperation] is True
+    for signal in (FloatOperation, InvalidOperation, DivisionByZero, Overflow):
+        assert ctx.traps[signal] is True
+    # 12-place rounding is intended, so these must stay quiet.
+    assert ctx.traps[Inexact] is False
+    assert ctx.traps[Rounded] is False
+    with pytest.raises(DivisionByZero):
+        module._ratio12(1, 0)
+
+
+def test_code_and_status_sets_match_their_literals() -> None:
+    from typing import get_args
+
+    import fel_workers.extraction.isotonic as module
+
+    assert module._CODES == set(get_args(module.ErrorCode))
+    assert set(module._MESSAGES) == module._CODES
+    assert module._FIT_STATUSES == set(get_args(module.FitStatus))
+
+
+@pytest.mark.parametrize("where", ["root", "blocks"])
+def test_oversized_container_is_limit_exceeded(where: str) -> None:
+    # Without the cap these fail later, as invalid_artifact.
+    oversized: list[object] = [0] * 100001
+    if where == "root":
+        artifact: object = oversized
+    else:
+        artifact = dict(_fitted_constant("0.5"))
+        artifact["blocks"] = oversized
+    with pytest.raises(CalibrationError) as caught:
+        predict(artifact, "0.5")  # type: ignore[arg-type]
+    assert caught.value.code == "limit_exceeded"
+
+
+def test_container_at_the_length_bound_is_not_limit_exceeded() -> None:
+    with pytest.raises(CalibrationError) as caught:
+        predict([0] * 100000, "0.5")  # type: ignore[arg-type]
+    assert caught.value.code == "invalid_artifact"
 
 
 def test_left_step_boundaries_across_multi_score_blocks() -> None:

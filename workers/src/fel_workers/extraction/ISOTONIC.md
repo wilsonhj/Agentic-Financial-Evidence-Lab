@@ -23,8 +23,14 @@ with a nonzero last digit (for example `0.1` is accepted but `0.10`,
 
 Failures raise `CalibrationError` with a fixed `code`: `invalid_sample`,
 `limit_exceeded`, or `invalid_artifact`. `limit_exceeded` covers the resource
-bounds: more than 100000 samples or counts, and artifacts nested deeper than
-16 dict/list containers (the root counts as 1; scalar leaves do not count).
+bounds: more than 100000 samples or counts, any artifact dict/list holding more
+than 100000 entries (checked before its entries are scanned), and artifacts
+nested deeper than 16 dict/list containers (the root counts as 1; scalar
+leaves do not count).
+
+The isolated Decimal context traps `InvalidOperation`, `DivisionByZero`,
+`Overflow`, and `FloatOperation`. No valid input reaches them; they turn a
+future bug into an exception instead of a `NaN` or `Infinity` probability.
 
 ## Insufficient support
 
