@@ -36,9 +36,10 @@ EXCLUDE = {
 # Untracked trees (node_modules, .venv) need no entry: only git ls-files counts.
 
 # Line-based approximation of CommonMark link rendering, stdlib only. It skips
-# fenced code (at any indent), indented code (4+ columns past the margin or the
-# open list item's content), HTML comments, code spans, escaped brackets, and
-# reference definitions that are unused or interrupt a paragraph; it strips
+# fenced code, indented code (4+ columns past the margin or the open list
+# item's content; such a line is code even if it looks like a fence), HTML
+# comments, code spans, escaped brackets, and reference definitions that are
+# unused or interrupt a paragraph; it strips
 # blockquote markers and accepts <angle> and balanced-parenthesis targets.
 # Exotic constructs (HTML blocks, lazy continuations, nested containers) may be
 # misjudged: the job exists to catch unlinked new docs, not to validate Markdown.
@@ -74,6 +75,26 @@ def mask_inline_code(text):
     return "".join(result) + text[i:]
 
 
+def indented_code(line, blank, in_code, content):
+    """Return (is_code, content) for a non-blank line outside fences.
+
+    Indented code: 4+ columns past the open list item's content (or the
+    margin) after a blank line or more code, list marker or not. content is
+    the open list item's content column, or None.
+    """
+    indent = len(line) - len(line.lstrip(" "))
+    if indent >= (content or 0) + 4 and (blank or in_code):
+        return True, content
+    item = LIST_ITEM.match(line)
+    if item:
+        gap = len(item.group(3))
+        content = (len(item.group(1)) + len(item.group(2))
+                   + (gap if 1 <= gap <= 4 else 1))
+    elif blank and indent < (content or 0):
+        content = None
+    return False, content
+
+
 def mask_code_spans(text):
     """Mask inline code across a prose block, preserving line structure.
 
@@ -83,7 +104,7 @@ def mask_code_spans(text):
     NUL placeholders keep code-only continuation lines inside their paragraph.
     """
     pending, result, fence = [], [], None
-    depth = 0
+    depth, blank, in_code, item = 0, True, False, None
 
     def flush():
         if not pending:
@@ -97,18 +118,28 @@ def mask_code_spans(text):
         while QUOTE.match(content):
             content, quotes = content[QUOTE.match(content).end():], quotes + 1
         marker = FENCE.match(content)
+        if quotes != depth:
+            blank = True
         if fence:
             result.append(line)
             if marker and marker.group(1)[0] == fence[0] \
                     and len(marker.group(1)) >= len(fence) \
                     and not content.strip().strip(fence[0]):
-                fence = None
+                fence, blank = None, True
             continue
-        if marker:
-            flush()
-            fence = marker.group(1)
-            result.append(line)
-            continue
+        if content.strip():
+            # Same rule as prose_lines: an indented ``` line is code, not a fence.
+            in_code, item = indented_code(content, blank, in_code, item)
+            if in_code or marker:
+                flush()
+                if not in_code:
+                    fence = marker.group(1)
+                result.append(line)
+                blank = False
+                continue
+            blank = bool(ATX.match(content) or SETEXT.match(content))
+        else:
+            blank = True
         if not content.strip() or quotes != depth or ATX.match(content) \
                 or SETEXT.match(content) or THEMATIC.match(content) or LIST_ITEM.match(content):
             flush()
@@ -153,20 +184,10 @@ def prose_lines(text):
             blank = True
             continue
         else:
-            indent = len(line) - len(line.lstrip(" "))
-            # Indented code: 4+ columns past the open list item's content (or
-            # the margin) after a blank line or more code, list marker or not.
-            if indent >= (content or 0) + 4 and (blank or in_code):
-                in_code, blank = True, False
+            in_code, content = indented_code(line, blank, in_code, content)
+            if in_code:
+                blank = False
                 continue
-            in_code = False
-            item = LIST_ITEM.match(line)
-            if item:
-                gap = len(item.group(3))
-                content = (len(item.group(1)) + len(item.group(2))
-                           + (gap if 1 <= gap <= 4 else 1))
-            elif blank and indent < (content or 0):
-                content = None
             if FENCE.match(line):
                 fence, blank = FENCE.match(line).group(1), False
                 continue
