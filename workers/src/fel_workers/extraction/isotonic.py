@@ -81,9 +81,10 @@ def _isolated() -> Context:
     # Pin every field so a mutated decimal.DefaultContext cannot leak in.
     ctx = Context(prec=50, rounding=ROUND_HALF_EVEN, Emax=999999, Emin=-999999, clamp=0)
     for signal in _SIGNALS:
-        # Tripwires: current code never converts float, divides by zero, or
-        # leaves [0, 1], so these change no behavior but fail loudly instead
-        # of emitting "NaN" or "Infinity" if a future edit does.
+        # Tripwires for float mixing, invalid operations (NaN), division by
+        # zero, and exponent overflow. Current code triggers none, so these
+        # change no behavior but fail loudly instead of emitting "NaN" or
+        # "Infinity" if a future edit does. They are not range checks.
         ctx.traps[signal] = signal in _TRAPPED
     return ctx
 
