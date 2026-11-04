@@ -93,6 +93,9 @@ expect_unindexed "deep list marker as code" $'Para.\n\n        - [x](orphan.md)'
 expect_unindexed "multiline code span" $'`example\n[x](orphan.md)\ncode`'
 expect_unindexed "multiline code span containing comment opener" $'`example\n<!-- [x](orphan.md)\ncode`'
 expect_unindexed "multiline double-backtick span" $'``example `\n[x](orphan.md)\ncode``'
+expect_unindexed "inline link missing closer" '[Orphan](orphan.md'
+expect_unindexed "reference inside inline title" $'[External](https://example.com "[u]")\n\n[u]: orphan.md'
+expect_unindexed "reference definition with trailing text" $'See [u].\n\n[u]: orphan.md "title" extra'
 expect_indexed "multiline inline destination" $'[x](\n  orphan.md\n)'
 expect_indexed "multiline label with code-only line" $'[the\n`orphan`\n page](orphan.md)'
 expect_indexed "multiline inline label" $'[the\n orphan](orphan.md)'
@@ -101,6 +104,11 @@ expect_indexed "longer backtick run is not a closer" $'`example\n``\n[x](orphan.
 expect_indexed "unmatched backtick" $'`example\n[x](orphan.md)'
 expect_indexed "code spans cannot cross paragraphs" $'`example\n\n[x](orphan.md)\ncode`'
 expect_indexed "code spans cannot cross fences" $'`example\n```\ncode\n```\n[x](orphan.md)\ncode`'
+expect_indexed "code spans cannot cross star thematic breaks" $'`example\n***\n[Orphan](orphan.md)\ncode`'
+expect_indexed "code spans cannot cross underscore thematic breaks" $'`example\n___\n[Orphan](orphan.md)\ncode`'
+expect_indexed "escaped backticks" 'Use \` then [Orphan](orphan.md) then \`.'
+expect_indexed "nested inline label" '[Orphan [v2]](orphan.md)'
+expect_indexed "reference destination on next line" $'See [Orphan].\n\n[Orphan]:\n  orphan.md'
 expect_indexed "comment opener in code span" 'Write `<!--` then [x](orphan.md).'
 expect_indexed "comment opener in fence" $'```html\n<!--\n```\n\n[x](orphan.md)'
 expect_indexed "escaped backslash" '\\[x](orphan.md)'
@@ -113,6 +121,7 @@ git -C "$repo" add -A docs
 expect_indexed "angle link with spaces" '[x](<o (1).md>)'
 git -C "$repo" mv "docs/o (1).md" "docs/o(1).md"
 expect_indexed "balanced parentheses" '[x](o(1).md)'
+expect_indexed "escaped destination parentheses" '[Orphan](o\(1\).md)'
 
 # Exclusions cover exactly the intended depth.
 printf '%s\n' "$index" > "$repo/docs/README.md"

@@ -46,11 +46,32 @@ QUOTE = re.compile(r"^ {0,3}> ?")
 FENCE = re.compile(r"^ *(`{3,}|~{3,})")
 ATX = re.compile(r"^ {0,3}#{1,6}(\s|$)")
 SETEXT = re.compile(r"^ {0,3}(=+|-+) *$")
+THEMATIC = re.compile(r"^ {0,3}(?:(?:\* *){3,}|(?:_ *){3,}|(?:- *){3,})$")
 LIST_ITEM = re.compile(r"^( *)([-*+]|\d{1,9}[.)])( +|$)")
-CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.DOTALL)
+BACKTICKS = re.compile(r"\\[\\`]|`+")
 BRACKETS = re.compile(r"(?<!\\)\[((?:[^\[\]\\]|\\.)*)\]")
-REFDEF = re.compile(r"^ *\[((?:[^\[\]\\]|\\.)+)\]:\s*(<[^>]*>|\S+)")
+REFDEF = re.compile(r"^ *\[((?:[^\[\]\\]|\\.)+)\]:[ \t]*(.*)$")
+ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
 SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+
+
+def mask_inline_code(text):
+    """Escapes affect opening backticks, but not delimiters inside code."""
+    result, i = [], 0
+    while match := BACKTICKS.search(text, i):
+        result.append(text[i:match.start()])
+        run = match.group()
+        close = None if run.startswith("\\") else re.search(
+            r"(?<!`)" + run + r"(?!`)", text[match.end():],
+        )
+        if close:
+            end = match.end() + close.end()
+            result.append(re.sub(r"[^\n]", "\0", text[match.start():end]))
+            i = end
+        else:
+            result.append(run)
+            i = match.end()
+    return "".join(result) + text[i:]
 
 
 def mask_code_spans(text):
@@ -68,9 +89,7 @@ def mask_code_spans(text):
         if not pending:
             return
         block = "\n".join(pending)
-        result.append(CODE_SPAN.sub(
-            lambda m: re.sub(r"[^\n]", lambda _: "\0", m.group()), block,
-        ))
+        result.append(mask_inline_code(block))
         pending.clear()
 
     for line in text.expandtabs(4).splitlines():
@@ -91,12 +110,13 @@ def mask_code_spans(text):
             result.append(line)
             continue
         if not content.strip() or quotes != depth or ATX.match(content) \
-                or SETEXT.match(content) or LIST_ITEM.match(content):
+                or SETEXT.match(content) or THEMATIC.match(content) or LIST_ITEM.match(content):
             flush()
         depth = quotes
-        if not content.strip() or ATX.match(content) or SETEXT.match(content):
+        if not content.strip() or ATX.match(content) or SETEXT.match(content) \
+                or THEMATIC.match(content):
             # Headings are blocks themselves, including their inline code.
-            result.append(CODE_SPAN.sub(lambda m: "\0" * len(m.group()), line))
+            result.append(mask_inline_code(line))
         else:
             pending.append(line)
     flush()
@@ -165,27 +185,54 @@ def prose_lines(text):
         yield prose, starts_block
 
 
-def destination(rest):
-    """Return the link destination at the start of rest (after "](")."""
-    rest = rest.lstrip()
-    if rest.startswith("<"):
-        end = rest.find(">")
-        return rest[1:end] if end > 0 else None
-    depth, i = 0, 0
+def destination(rest, inline=False):
+    """Return (decoded target, consumed length) only for a complete suffix."""
+    i = len(rest) - len(rest.lstrip())
+    start, depth = i, 0
+    angle = rest[i:i + 1] == "<"
+    if angle:
+        i += 1
+        start = i
     while i < len(rest):
         c = rest[i]
-        if c == "\\":
+        if ESCAPE.match(rest, i):
             i += 1
+        elif angle:
+            if c == ">":
+                break
+            if c in "<\n\r":
+                return None
         elif c == "(":
             depth += 1
         elif c == ")":
             if depth == 0:
                 break
             depth -= 1
-        elif c.isspace():
+        elif c.isspace() or ord(c) < 32:
             break
         i += 1
-    return rest[:i] or None
+    if depth or (angle and rest[i:i + 1] != ">"):
+        return None
+    target = ESCAPE.sub(r"\1", rest[start:i])
+    i += int(angle)
+    end = i
+    i += len(rest[i:]) - len(rest[i:].lstrip())
+    if i > end and rest[i:i + 1] in ('"', "'", "("):
+        closer = ")" if rest[i] == "(" else rest[i]
+        i += 1
+        while i < len(rest) and rest[i] != closer:
+            if ESCAPE.match(rest, i):
+                i += 1
+            elif closer == ")" and rest[i] == "(":
+                return None
+            i += 1
+        if i == len(rest):
+            return None
+        i += 1
+        i += len(rest[i:]) - len(rest[i:].lstrip())
+    if inline:
+        return (target, i + 1) if rest[i:i + 1] == ")" else None
+    return (target, i) if i == len(rest) and (target or angle) else None
 
 
 def label(text):
@@ -194,34 +241,59 @@ def label(text):
 
 def links(text):
     """Yield raw targets of inline links and of reference links in use."""
-    defs, used, after_def = {}, set(), False
+    defs, after_def = {}, False
     blocks, pending = [], []
-    for line, starts_block in prose_lines(text):
+    lines = list(prose_lines(text))
+    i = 0
+    while i < len(lines):
+        line, starts_block = lines[i]
+        i += 1
         if starts_block and pending:
             blocks.append("\n".join(pending))
             pending.clear()
         d = REFDEF.match(line)
         if d and (starts_block or after_def):
-            defs.setdefault(label(d.group(1)), d.group(2).strip("<>"))
-            after_def = True
-            continue
+            rest, end = d.group(2), i
+            if not rest and i < len(lines) and not lines[i][1]:
+                rest, end = lines[i][0], i + 1
+            parsed = destination(rest)
+            if parsed:
+                defs.setdefault(label(d.group(1)), parsed[0])
+                i, after_def = end, True
+                continue
         after_def = False
         pending.append(line)
     if pending:
         blocks.append("\n".join(pending))
     for block in blocks:
-        block = block.replace("\\\\", "\0\0")  # \\ is a literal backslash
-        for m in BRACKETS.finditer(block):
-            rest = block[m.end():]
-            if rest.startswith("("):
-                target = destination(rest[1:])
-                if target:
+        openers, i = [], 0
+        while i < len(block):
+            if ESCAPE.match(block, i):
+                i += 2
+                continue
+            if block[i] == "[":
+                openers.append(i)
+            elif block[i] == "]" and openers:
+                start, end = openers.pop(), i + 1
+                name = block[start + 1:i]
+                parsed = destination(block[end + 1:], inline=True) \
+                    if block[end:end + 1] == "(" else None
+                if parsed:
+                    target, length = parsed
+                    end += 1 + length
+                else:
+                    ref = BRACKETS.match(block, end)
+                    if ref:
+                        name = ref.group(1) or name  # full or collapsed reference
+                        end = ref.end()
+                    target = defs.get(label(name))
+                if target is not None:
                     yield target
-            elif rest.startswith("[") and not rest.startswith("[]"):
-                continue  # [text][label]: the next match is the label
-            else:
-                used.add(label(m.group(1)))  # [label][] or shortcut [label]
-    yield from (t for k, t in defs.items() if k in used)
+                    # Do not scan the URI/title as prose or form an enclosing link.
+                    i = end
+                    openers.clear()
+                    continue
+            i += 1
 
 
 def resolve(source, target, root, tracked):
