@@ -5,9 +5,10 @@
 Snapshot base: `main` @ `c3d6f2f` (#365, merged 2026-10-31). The table below
 was first written against `1e414ff` (#364) and omitted #366, which had already
 merged at `e91610c`. Items 3, 7 and 8 were corrected on 2026-11-01 against
-`main` @ `2bdea3f`. Re-query GitHub before dispatch; issue and PR states
-below were read on 2026-10-31. Sections
-dated September 16 and earlier are in the
+`main` @ `2bdea3f`. Items 5 and 7, the #195 graph node, and the ADR-0012
+blocker row were corrected on 2026-11-03 against `main` @ `d065656`.
+Re-query GitHub before dispatch; issue and PR states below were read on
+2026-10-31. Sections dated September 16 and earlier are in the
 [archived status history](../archive/handoff/STATUS-history-2026-09.md); they
 are evidence history, not current state. The October 27 remaining-work snapshot
 is [archived](../archive/handoff/2026-10/remaining-work-2026-10-27.md); every
