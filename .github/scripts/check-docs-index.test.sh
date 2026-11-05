@@ -111,6 +111,15 @@ expect_indexed "escaped backticks" 'Use \` then [Orphan](orphan.md) then \`.'
 expect_indexed "nested inline label" '[Orphan [v2]](orphan.md)'
 expect_indexed "reference destination on next line" $'See [Orphan].\n\n[Orphan]:\n  orphan.md'
 expect_indexed "comment opener in code span" 'Write `<!--` then [x](orphan.md).'
+expect_unindexed "label across a star thematic break" $'see [a\n***\nb](orphan.md)'
+expect_unindexed "label across list items" $'- [a\n- b](orphan.md)'
+expect_unindexed "label across table rows" $'| [a | b |\n|---|---|\n| c | d](orphan.md) |'
+expect_unindexed "link inside an HTML block" $'<div>\n[x](orphan.md)\n</div>'
+expect_unindexed "image of a page" '![x](orphan.md)'
+expect_indexed "escaped image marker" '\![x](orphan.md)'
+expect_indexed "link in a table cell" $'| [x](orphan.md) | b |\n|---|---|'
+expect_indexed "Markdown after an HTML block line and blank" $'<details>\n<summary>S</summary>\n\n[x](orphan.md)'
+expect_indexed "inline HTML does not start a block mid-paragraph" $'text\n<b>x</b>\n[x](orphan.md)'
 expect_indexed "comment opener in fence" $'```html\n<!--\n```\n\n[x](orphan.md)'
 expect_indexed "escaped backslash" '\\[x](orphan.md)'
 expect_indexed "consecutive definitions" $'See [u].\n\n[a]: sub/README.md\n[u]: orphan.md'
@@ -148,4 +157,5 @@ echo "not links: comments, indented code (after blanks, headings, fences, in quo
 echo "links: list continuations, used and consecutive references, escaped backslashes, comment openers in code, angle and parenthesised paths"
 echo "multiline inlines: links accepted; code ignored with exact backtick runs and block boundaries"
 echo "exclusions: deeper files under excluded directories are reported"
+echo "block boundaries: thematic breaks, list items, table rows and HTML blocks; images are not links"
 echo "workflow: docs.yml runs check-docs-index.py"
