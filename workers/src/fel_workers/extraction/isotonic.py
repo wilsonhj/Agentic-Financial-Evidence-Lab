@@ -20,7 +20,7 @@ from decimal import (
     Underflow,
 )
 from fractions import Fraction
-from typing import Literal, NoReturn, assert_never, cast
+from typing import Final, Literal, NoReturn, assert_never, cast, get_args
 
 _MAX_SAMPLES = 100000
 _MAX_DEPTH = 16
@@ -32,9 +32,14 @@ _EVAL_SCHEMA = "isotonic-evaluation/v1"
 _SCORE = re.compile(r"(?:0|1|0\.[0-9]{0,11}[1-9])")
 _ARTIFACT_KEYS = frozenset({"schema_version", "status", "n", "positive", "negative", "blocks"})
 _BLOCK_KEYS = frozenset({"lower_score", "upper_score", "count", "positive"})
-_FIT_STATUSES = frozenset({"fitted", "insufficient_data"})
-_CODES = frozenset({"invalid_sample", "limit_exceeded", "invalid_artifact"})
-_MESSAGES = {
+FitStatus = Literal["fitted", "insufficient_data"]
+EvalStatus = Literal["evaluated", "insufficient_calibration", "insufficient_evaluation"]
+ErrorCode = Literal["invalid_sample", "limit_exceeded", "invalid_artifact"]
+
+# Derived from the Literals so a new status or code cannot be added in one place only.
+_FIT_STATUSES: Final = frozenset(get_args(FitStatus))
+_CODES: Final = frozenset(get_args(ErrorCode))
+_MESSAGES: Final[dict[ErrorCode, str]] = {
     "invalid_sample": "Calibration sample input is invalid",
     "limit_exceeded": "Calibration resource bound is exceeded",
     "invalid_artifact": "Calibration artifact is invalid",
@@ -50,13 +55,8 @@ _SIGNALS = (
     Underflow,
     FloatOperation,
 )
+_TRAPPED = frozenset({FloatOperation, InvalidOperation, DivisionByZero, Overflow})
 _SEQUENCE_TYPES = (list, tuple)
-
-FitStatus = Literal["fitted", "insufficient_data"]
-EvalStatus = Literal["evaluated", "insufficient_calibration", "insufficient_evaluation"]
-ErrorCode = Literal["invalid_sample", "limit_exceeded", "invalid_artifact"]
-# Runtime accepts only a list or tuple of two-element list/tuple rows.
-Samples = Sequence[tuple[str, int] | list[str | int]]
 
 
 class CalibrationError(Exception):
@@ -64,7 +64,7 @@ class CalibrationError(Exception):
 
     def __init__(self, message: str, *, code: ErrorCode) -> None:
         super().__init__(message)
-        self.code: ErrorCode = code
+        self.code: Final[ErrorCode] = code
 
 
 def _fail(code: ErrorCode) -> NoReturn:
@@ -81,13 +81,11 @@ def _isolated() -> Context:
     # Pin every field so a mutated decimal.DefaultContext cannot leak in.
     ctx = Context(prec=50, rounding=ROUND_HALF_EVEN, Emax=999999, Emin=-999999, clamp=0)
     for signal in _SIGNALS:
-        # Keep FloatOperation trapped as a tripwire: current code never
-        # converts float, so this changes no behavior but fails loudly
-        # if a future edit introduces float->Decimal leakage.
-        if signal is FloatOperation:
-            ctx.traps[signal] = True
-        else:
-            ctx.traps[signal] = False
+        # Tripwires for float mixing, invalid operations (NaN), division by
+        # zero, and exponent overflow. Current code triggers none, so these
+        # change no behavior but fail loudly instead of emitting "NaN" or
+        # "Infinity" if a future edit does. They are not range checks.
+        ctx.traps[signal] = signal in _TRAPPED
     return ctx
 
 
@@ -106,10 +104,15 @@ def _emit12(value: Decimal) -> str:
 
 
 def _check_depth(value: object, depth: int) -> None:
+    # Only dict/list containers count toward the 16 (root = 1); a leaf may sit at depth 17.
     kind = type(value)
     if kind is not dict and kind is not list:
         return
     if depth > _MAX_DEPTH:
+        _fail("limit_exceeded")
+    # No valid container holds more than _MAX_SAMPLES entries (blocks <= n),
+    # so reject oversized ones before scanning their elements.
+    if len(cast(dict[str, object] | list[object], value)) > _MAX_SAMPLES:
         _fail("limit_exceeded")
     if kind is dict:
         for inner in cast(dict[str, object], value).values():
@@ -229,7 +232,9 @@ def _validate_artifact(artifact: object) -> tuple[FitStatus, list[tuple[str, str
     if type(artifact) is not dict or set(artifact) != _ARTIFACT_KEYS:
         _fail("invalid_artifact")
     typed = cast(dict[str, object], artifact)
-    if typed["schema_version"] != _SCHEMA:
+    schema_version = typed["schema_version"]
+    # Type first: an arbitrary object's __ne__ could accept the artifact or raise raw.
+    if type(schema_version) is not str or schema_version != _SCHEMA:
         _fail("invalid_artifact")
     status_value = typed["status"]
     if type(status_value) is not str or status_value not in _FIT_STATUSES:
@@ -277,8 +282,13 @@ def _left_step(blocks: list[tuple[str, str, int, int]], score: str) -> Decimal:
     return _mean(blocks[max(index - 1, 0)])
 
 
-def fit(samples: Samples) -> dict[str, object]:
-    """Fit a weighted PAV artifact for one stratum of score/outcome tuples."""
+def fit(samples: Sequence[tuple[str, int]]) -> dict[str, object]:
+    """Fit a weighted PAV artifact for one stratum of score/outcome tuples.
+
+    At runtime ``samples`` must be exactly a list or tuple whose rows are
+    two-element lists or tuples; other sequence types, subclasses and bool
+    outcomes raise ``invalid_sample``.
+    """
     parsed = _parse_samples(samples)
     n = len(parsed)
     positive = sum(outcome for _score, outcome in parsed)
@@ -395,8 +405,11 @@ def _evaluation(
     }
 
 
-def evaluate(artifact: dict[str, object], samples: Samples) -> dict[str, object]:
-    """Evaluate a frozen artifact on held-out tuples without refitting."""
+def evaluate(artifact: dict[str, object], samples: Sequence[tuple[str, int]]) -> dict[str, object]:
+    """Evaluate a frozen artifact on held-out tuples without refitting.
+
+    ``samples`` has the same runtime shape rules as :func:`fit`.
+    """
     status, blocks = _validate_artifact(artifact)
     parsed = _parse_samples(samples)
     return _evaluation(status, blocks, parsed)

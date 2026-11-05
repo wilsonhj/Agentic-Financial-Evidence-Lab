@@ -6,6 +6,7 @@ import hashlib
 import json
 import uuid
 from copy import deepcopy
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -37,6 +38,8 @@ TIMES = {
     "calibration": ("2020-09-01T00:00:00Z", "2020-09-02T00:00:00Z", "2020-09-03T00:00:00Z"),
     "evaluation": ("2021-03-01T00:00:00Z", "2021-03-02T00:00:00Z", "2021-03-03T00:00:00Z"),
 }
+# (earlier split, later split) for each max(earlier.as_of) < min(later.published_at) cutoff.
+CUTOFFS = [("train", "calibration"), ("calibration", "evaluation"), ("train", "evaluation")]
 
 
 def _uuid(tag: str) -> str:
@@ -45,6 +48,12 @@ def _uuid(tag: str) -> str:
 
 def _sha(tag: str) -> str:
     return hashlib.sha256(f"synthetic-cal:{tag}".encode()).hexdigest()
+
+
+def _shift(stamp: str, *, seconds: int) -> str:
+    """Return the canonical UTC stamp ``seconds`` after ``stamp`` (negative is before)."""
+    instant = datetime.fromisoformat(stamp.removesuffix("Z")) + timedelta(seconds=seconds)
+    return f"{instant.isoformat()}Z"
 
 
 def _pins() -> dict[str, str]:
@@ -135,6 +144,50 @@ def _ready_records(*, field: str = "arr") -> list[dict[str, object]]:
     return [
         *_rows("calibration", 100, 20, field=field),
         *_rows("evaluation", 100, 20, field=field),
+    ]
+
+
+def _cutoff_records(
+    tag: str, earlier: str, later: str, as_of: tuple[str, str]
+) -> list[dict[str, object]]:
+    """Two rows in each split of one cutoff; the third split stays empty.
+
+    The earlier rows take the given ``as_of`` values. The later rows publish at
+    ``TIMES[later][0]`` and ``TIMES[later][1]``.
+    """
+    earlier_rows = [
+        _record(
+            sample=_uuid(f"{tag}:{earlier}:{later}:earlier-{index}"),
+            split=earlier,
+            as_of=value,
+            adjudicated_at=value,
+        )
+        for index, value in enumerate(as_of)
+    ]
+    later_rows = [
+        _record(
+            sample=_uuid(f"{tag}:{earlier}:{later}:later-{index}"),
+            split=later,
+            published_at=TIMES[later][index],
+            as_of=TIMES[later][1],
+        )
+        for index in range(2)
+    ]
+    return [*earlier_rows, *later_rows]
+
+
+def _calibration_cutoff_records(as_of: str) -> list[dict[str, object]]:
+    # Train keeps its default as_of, months before both later publications, so
+    # only the calibration-to-evaluation cutoff can reject these rows.
+    return [
+        _record(sample=_uuid("cal-cutoff-train"), split="train"),
+        _record(
+            sample=_uuid("cal-cutoff-calibration"),
+            split="calibration",
+            as_of=as_of,
+            adjudicated_at=as_of,
+        ),
+        _record(sample=_uuid("cal-cutoff-evaluation"), split="evaluation"),
     ]
 
 
@@ -635,16 +688,17 @@ def test_train_as_of_crossing_evaluation_with_empty_calibration_is_rejected() ->
     _code(_dumps(_dataset([train, evaluation])), "invalid_time")
 
 
-@pytest.mark.parametrize("published_at", ["2020-01-01T00:00:00Z", "2020-06-30T23:59:59Z"])
+@pytest.mark.parametrize("published_at", [WINDOWS["train"][0], WINDOWS["train"][1]])
 def test_empty_calibration_train_row_inside_window_is_accepted(published_at: str) -> None:
     # Only publication is window-bound; as_of may run to one second before the
-    # earliest evaluation publication (2021-03-01T00:00:00Z).
+    # earliest evaluation publication.
+    as_of = _shift(TIMES["evaluation"][0], seconds=-1)
     train = _record(
         sample=_uuid(f"in-window:{published_at}"),
         split="train",
         published_at=published_at,
-        as_of="2021-02-28T23:59:59Z",
-        adjudicated_at="2021-02-28T23:59:59Z",
+        as_of=as_of,
+        adjudicated_at=as_of,
     )
     evaluation = _record(sample=_uuid("in-window-eval"), split="evaluation")
     loaded = load_dataset(_dumps(_dataset([train, evaluation])))
@@ -653,7 +707,10 @@ def test_empty_calibration_train_row_inside_window_is_accepted(published_at: str
     assert sorted(row["split"] for row in rows) == ["evaluation", "train"]
 
 
-@pytest.mark.parametrize("published_at", ["2019-12-31T23:59:59Z", "2020-07-01T00:00:00Z"])
+@pytest.mark.parametrize(
+    "published_at",
+    [_shift(WINDOWS["train"][0], seconds=-1), _shift(WINDOWS["train"][1], seconds=1)],
+)
 def test_empty_calibration_train_row_outside_window_is_rejected(published_at: str) -> None:
     # as_of stays well before evaluation publication, so only the train
     # publication window rejects this row.
@@ -672,11 +729,45 @@ def test_train_as_of_equal_to_evaluation_publication_with_empty_calibration_is_r
     train = _record(
         sample=_uuid("equal-cutoff-train"),
         split="train",
-        as_of="2021-03-01T00:00:00Z",
-        adjudicated_at="2021-03-01T00:00:00Z",
+        as_of=TIMES["evaluation"][0],
+        adjudicated_at=TIMES["evaluation"][0],
     )
     evaluation = _record(sample=_uuid("equal-cutoff-eval"), split="evaluation")
     _code(_dumps(_dataset([train, evaluation])), "invalid_time")
+
+
+def test_calibration_as_of_one_second_before_evaluation_publication_is_accepted() -> None:
+    as_of = _shift(TIMES["evaluation"][0], seconds=-1)
+    loaded = load_dataset(_dumps(_dataset(_calibration_cutoff_records(as_of))))
+    rows = loaded["records"]
+    assert isinstance(rows, list)
+    calibration = next(row for row in rows if row["split"] == "calibration")
+    assert calibration["as_of"] == as_of
+
+
+@pytest.mark.parametrize("seconds", [0, 1])
+def test_calibration_as_of_at_or_after_evaluation_publication_is_rejected(seconds: int) -> None:
+    as_of = _shift(TIMES["evaluation"][0], seconds=seconds)
+    _code(_dumps(_dataset(_calibration_cutoff_records(as_of))), "invalid_time")
+
+
+@pytest.mark.parametrize(("earlier", "later"), CUTOFFS)
+def test_cutoff_compares_latest_earlier_as_of(earlier: str, later: str) -> None:
+    # Only the second earlier row crosses, and it crosses both later
+    # publications: min() for max() over as_of would accept this, while max()
+    # for min() over published_at would not.
+    records = _cutoff_records("latest-as-of", earlier, later, (TIMES[earlier][1], TIMES[later][2]))
+    _code(_dumps(_dataset(records)), "invalid_time")
+
+
+@pytest.mark.parametrize(("earlier", "later"), CUTOFFS)
+def test_cutoff_compares_earliest_later_publication(earlier: str, later: str) -> None:
+    # Both earlier rows cross only the first later publication: max() for min()
+    # over published_at would accept this, while min() for max() over as_of
+    # would not.
+    crossing = _shift(TIMES[later][0], seconds=1)
+    records = _cutoff_records("earliest-published", earlier, later, (crossing, crossing))
+    _code(_dumps(_dataset(records)), "invalid_time")
 
 
 def test_dict_float_values_are_invalid_json() -> None:
@@ -721,3 +812,225 @@ def test_early_utc_year_formats_without_platform_strftime() -> None:
     )
     loaded = load_dataset(_dumps(_dataset([record], split_manifest=manifest)))
     assert loaded["records"][0]["published_at"] == "0001-03-01T00:00:00Z"
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"source": _sha("source:train-other")},
+        {"as_of": _shift(TIMES["train"][1], seconds=1)},
+        {"adjudicated_at": _shift(TIMES["train"][2], seconds=1)},
+    ],
+    ids=["source", "as_of", "adjudicated_at"],
+)
+def test_one_proposal_must_agree_on_each_metadata_field(override: dict[str, str]) -> None:
+    # Both rows stay in train with a valid issuer, window and chronology, so the
+    # single differing metadata field is the only rule that can reject them.
+    proposal = _sha("meta-agreement")
+    first = _record(sample=_uuid("meta-a"), split="train", proposal=proposal, field="arr")
+    second = _record(
+        sample=_uuid("meta-b"),
+        split="train",
+        proposal=proposal,
+        field="bookings",
+        **override,  # type: ignore[arg-type]
+    )
+    _code(_dumps(_dataset([first, second])), "invalid_identity")
+
+
+def test_cells_sort_by_family_before_field_and_never_pool_families() -> None:
+    # Field order (aaa < mmm < zzz) disagrees with family order, and "arr"
+    # appears under two families with different counts.
+    records = [
+        _record(sample=_uuid("fam:kpi:aaa"), split="calibration", field="aaa"),
+        _record(
+            sample=_uuid("fam:guidance:zzz"), split="calibration", family="guidance", field="zzz"
+        ),
+        _record(
+            sample=_uuid("fam:revenue_driver:mmm"),
+            split="calibration",
+            family="revenue_driver",
+            field="mmm",
+        ),
+        *[
+            _record(sample=_uuid(f"fam:kpi:arr:{i}"), split="calibration", field="arr", outcome=0)
+            for i in range(3)
+        ],
+        *[
+            _record(
+                sample=_uuid(f"fam:guidance:arr:{i}"),
+                split="calibration",
+                family="guidance",
+                field="arr",
+            )
+            for i in range(2)
+        ],
+    ]
+    report = support_report(load_dataset(_dumps(_dataset(records))))
+    cells = report["cells"]
+    assert isinstance(cells, list)
+    strata = [(cell["family"], cell["field"]) for cell in cells if cell["split"] == "calibration"]
+    assert strata == [
+        ("guidance", "arr"),
+        ("guidance", "zzz"),
+        ("kpi", "aaa"),
+        ("kpi", "arr"),
+        ("revenue_driver", "mmm"),
+    ]
+    counts = {
+        (cell["family"], cell["field"]): (cell["n"], cell["positive"])
+        for cell in cells
+        if cell["split"] == "calibration"
+    }
+    assert counts[("guidance", "arr")] == (2, 2)
+    assert counts[("kpi", "arr")] == (3, 0)
+
+
+def test_as_of_after_adjudication_is_rejected() -> None:
+    record = _record(
+        sample=_uuid("as-of-after-adjudication"),
+        split="train",
+        as_of=TIMES["train"][2],
+        adjudicated_at=TIMES["train"][1],
+    )
+    _code(_dumps(_dataset([record])), "invalid_time")
+
+
+def test_as_of_equal_to_adjudication_is_accepted() -> None:
+    record = _record(
+        sample=_uuid("as-of-equals-adjudication"),
+        split="train",
+        as_of=TIMES["train"][1],
+        adjudicated_at=TIMES["train"][1],
+    )
+    rows: Any = load_dataset(_dumps(_dataset([record])))["records"]
+    assert rows[0]["as_of"] == rows[0]["adjudicated_at"]
+
+
+def test_calibration_window_must_end_before_evaluation_starts() -> None:
+    # train.end < calibration.start still holds; only the second link breaks.
+    manifest: dict[str, Any] = _split_manifest()
+    manifest["calibration"]["end_at"] = WINDOWS["evaluation"][0]
+    _code(_dumps(_dataset(split_manifest=manifest)), "invalid_time")
+
+
+def test_window_start_after_end_is_rejected() -> None:
+    # The inverted window still ends before calibration starts, so only the
+    # per-window start <= end rule can reject it.
+    manifest: dict[str, Any] = _split_manifest()
+    manifest["train"]["start_at"] = "2020-06-30T23:59:59Z"
+    manifest["train"]["end_at"] = "2020-06-30T23:59:58Z"
+    _code(_dumps(_dataset(split_manifest=manifest)), "invalid_time")
+
+
+def test_single_instant_window_is_accepted() -> None:
+    manifest: dict[str, Any] = _split_manifest()
+    manifest["train"]["start_at"] = WINDOWS["train"][1]
+    loaded = load_dataset(_dumps(_dataset(split_manifest=manifest)))
+    window = loaded["split_manifest"]["train"]  # type: ignore[index]
+    assert window["start_at"] == window["end_at"]
+
+
+def test_unknown_family_is_invalid_shape() -> None:
+    record = _record(sample=_uuid("bad-family"), split="train", family="segment")
+    _code(_dumps(_dataset([record])), "invalid_shape")
+
+
+def test_unknown_evidence_kind_is_invalid_shape() -> None:
+    _code(_dumps(_dataset(evidence_kind="human")), "invalid_shape")
+
+
+def test_empty_issuer_list_is_invalid_shape() -> None:
+    manifest: dict[str, Any] = _split_manifest()
+    manifest["train"]["issuer_ids"] = []
+    _code(_dumps(_dataset(split_manifest=manifest)), "invalid_shape")
+
+
+def test_duplicate_issuer_ids_are_invalid_identity() -> None:
+    manifest: dict[str, Any] = _split_manifest()
+    manifest["train"]["issuer_ids"] = [_uuid("issuer-train"), _uuid("issuer-train")]
+    _code(_dumps(_dataset(split_manifest=manifest)), "invalid_identity")
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["", "Arr", "1arr", "_arr", "arr-x", "arr ", "a" + "b" * 64],
+)
+def test_field_outside_pattern_is_invalid_identity(field: str) -> None:
+    record = _record(sample=_uuid(f"field:{field}"), split="train", field=field)
+    _code(_dumps(_dataset([record])), "invalid_identity")
+
+
+@pytest.mark.parametrize("field", ["a", "a_1", "a" + "b" * 63])
+def test_field_inside_pattern_is_accepted(field: str) -> None:
+    record = _record(sample=_uuid(f"field-ok:{field}"), split="train", field=field)
+    rows: Any = load_dataset(_dumps(_dataset([record])))["records"]
+    assert rows[0]["field"] == field
+
+
+def test_uppercase_pin_hex_is_invalid_identity() -> None:
+    pins = _pins()
+    pins["model_sha256"] = pins["model_sha256"].upper()
+    _code(_dumps(_dataset(pins=pins)), "invalid_identity")
+
+
+def test_uppercase_record_hash_is_invalid_identity() -> None:
+    record = _record(sample=_uuid("upper-proposal"), split="train")
+    record["proposal_sha256"] = str(record["proposal_sha256"]).upper()
+    _code(_dumps(_dataset([record])), "invalid_identity")
+
+
+def _assert_code(call: Any, payload: dict[str, object], code: str) -> None:
+    with pytest.raises(CalibrationDatasetError) as caught:
+        call(payload)
+    assert caught.value.code == code
+
+
+@pytest.mark.parametrize("call", [support_report, dataset_digest, canonical_dataset_bytes])
+def test_dict_entry_points_enforce_nesting_bound(call: Any) -> None:
+    # Without the depth bound this row would fail later as invalid_shape.
+    nested: Any = None
+    for _ in range(16):
+        nested = [nested]
+    _assert_code(call, _dataset([nested]), "limit_exceeded")
+
+
+@pytest.mark.parametrize("call", [support_report, dataset_digest, canonical_dataset_bytes])
+def test_dict_entry_points_reject_float_scores(call: Any) -> None:
+    # Without float rejection this row would fail later as invalid_score.
+    record = _record(sample=_uuid("entry-float"), split="train")
+    record["score"] = 0.5
+    _assert_code(call, _dataset([record]), "invalid_json")
+
+
+def test_unsorted_set_like_lists_are_normalized_not_rejected() -> None:
+    # The contract calls issuer and reviewer lists "sorted"; the validator
+    # accepts any order and emits sorted lists. Pin that behaviour.
+    issuers = sorted([_uuid("issuer-train"), _uuid("issuer-train-2"), _uuid("issuer-train-3")])
+    reviewers = sorted([_uuid("r1"), _uuid("r2")])
+    manifest: dict[str, Any] = _split_manifest()
+    manifest["train"]["issuer_ids"] = list(reversed(issuers))
+    record = _record(
+        sample=_uuid("unsorted"),
+        split="train",
+        reviewers=list(reversed(reviewers)),
+    )
+    payload = _dataset([record], split_manifest=manifest, evidence_kind="adjudicated")
+    loaded = load_dataset(_dumps(payload))
+    assert loaded["split_manifest"]["train"]["issuer_ids"] == issuers  # type: ignore[index]
+    assert loaded["records"][0]["reviewer_ids"] == reviewers  # type: ignore[index]
+
+
+@pytest.mark.parametrize("n_positive", [20, 80])
+def test_calibration_support_boundary_is_inclusive_of_20_each_class(n_positive: int) -> None:
+    records = [
+        *_rows("calibration", 100, n_positive),
+        *_rows("evaluation", 100, 20),
+    ]
+    report = support_report(load_dataset(_dumps(_dataset(records))))
+    assert report["ready"] is True
+    cells = report["cells"]
+    assert isinstance(cells, list)
+    calibration = next(cell for cell in cells if cell["split"] == "calibration")
+    assert (calibration["positive"], calibration["negative"]) == (n_positive, 100 - n_positive)
+    assert calibration["sufficient"] is True
