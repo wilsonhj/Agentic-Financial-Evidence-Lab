@@ -12,13 +12,13 @@ import { deriveLocalSpanAnchor } from "./spans";
  * pass against the section it anchors to:
  *
  *  1. the section's own canonical range is consistent — integer bounds,
- *     0 <= start_char <= end_char, and `content.length` equals
+ *     0 <= start_char <= end_char, and the content's code-point length equals
  *     `end_char - start_char`;
  *  2. the span's global offsets are integers, non-empty, and fully contained
  *     in the section's global range
  *     (section.start_char <= start < end <= section.end_char);
  *  3. sha256 of the exact section-content slice at the DERIVED local anchor
- *     (`span.start_char - section.start_char`) matches the span's
+ *     (converted from canonical code points to UTF-16) matches the span's
  *     `text_hash`.
  *
  * A failing span is EXCLUDED from highlighting and quoting and surfaced as an

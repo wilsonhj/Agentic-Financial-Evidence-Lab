@@ -23,12 +23,14 @@ export interface SectionSegment {
  * anchor any span (fail-closed).
  */
 export function sectionRangeConsistent(section: SectionRecord): boolean {
+  let length = 0;
+  for (const character of section.content) length += character.length === 2 ? 1 : character.length;
   return (
     Number.isInteger(section.start_char) &&
     Number.isInteger(section.end_char) &&
     section.start_char >= 0 &&
     section.end_char >= section.start_char &&
-    section.content.length === section.end_char - section.start_char
+    length === section.end_char - section.start_char
   );
 }
 
@@ -43,8 +45,7 @@ export type LocalAnchorResult =
   | { ok: false; reason: "section_range_mismatch" | "offsets_out_of_range" };
 
 /**
- * Derives the section-local render anchor for a span:
- * `local = span.start_char - section.start_char`.
+ * Derives UTF-16 render anchors from section-local canonical code-point offsets.
  *
  * Fail-closed, never clamped:
  * - the section's own canonical range must be consistent
@@ -71,7 +72,22 @@ export function deriveLocalSpanAnchor(
     end > start &&
     end <= section.end_char;
   if (!contained) return { ok: false, reason: "offsets_out_of_range" };
-  return { ok: true, start: start - section.start_char, end: end - section.start_char };
+  const localStart = start - section.start_char;
+  const localEnd = end - section.start_char;
+  let codePoints = 0;
+  let utf16 = 0;
+  let renderStart = 0;
+  for (const character of section.content) {
+    if (codePoints === localStart) renderStart = utf16;
+    if (codePoints === localEnd) break;
+    codePoints += 1;
+    utf16 += character.length;
+  }
+  return {
+    ok: true,
+    start: renderStart,
+    end: utf16,
+  };
 }
 
 /**
