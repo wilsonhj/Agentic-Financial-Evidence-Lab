@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { SectionRecord, SourceSpanRecord } from "./contracts";
-import { deriveLocalSpanAnchor } from "./spans";
+import { createLocalSpanAnchorResolver } from "./spans";
 
 /**
  * Fail-closed citation verification (server side, data-load time).
@@ -52,6 +52,7 @@ export function verifySpanIntegrity(
   spans: readonly SourceSpanRecord[],
 ): SpanVerificationResult {
   const sectionsById = new Map(sections.map((section) => [section.id, section]));
+  const anchorsBySection = new Map<string, ReturnType<typeof createLocalSpanAnchorResolver>>();
   const verified: SourceSpanRecord[] = [];
   const failures: CitationIntegrityFailure[] = [];
 
@@ -62,7 +63,12 @@ export function verifySpanIntegrity(
       failures.push({ spanId: record.id, sectionId, reason: "unknown_section" });
       continue;
     }
-    const anchor = deriveLocalSpanAnchor(section, record);
+    let anchorFor = anchorsBySection.get(sectionId);
+    if (!anchorFor) {
+      anchorFor = createLocalSpanAnchorResolver(section);
+      anchorsBySection.set(sectionId, anchorFor);
+    }
+    const anchor = anchorFor(record);
     if (!anchor.ok) {
       failures.push({ spanId: record.id, sectionId, reason: anchor.reason });
       continue;

@@ -22,16 +22,36 @@ export interface SectionSegment {
  * slice length `end_char - start_char`. A section failing this check cannot
  * anchor any span (fail-closed).
  */
-export function sectionRangeConsistent(section: SectionRecord): boolean {
-  let length = 0;
-  for (const character of section.content) length += character.length === 2 ? 1 : character.length;
-  return (
+function sectionOffsets(section: SectionRecord) {
+  // Only supplementary characters add an extra UTF-16 code unit. Keep their
+  // code-point positions, leaving the common BMP-only case allocation-free.
+  let supplementary: number[] | undefined;
+  for (const match of section.content.matchAll(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)) {
+    supplementary ??= [];
+    supplementary.push(match.index - supplementary.length);
+  }
+  const consistent =
     Number.isInteger(section.start_char) &&
     Number.isInteger(section.end_char) &&
     section.start_char >= 0 &&
     section.end_char >= section.start_char &&
-    length === section.end_char - section.start_char
-  );
+    section.content.length - (supplementary?.length ?? 0) === section.end_char - section.start_char;
+  function renderOffset(offset: number): number {
+    if (!supplementary) return offset;
+    let low = 0;
+    let high = supplementary.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (supplementary[middle]! < offset) low = middle + 1;
+      else high = middle;
+    }
+    return offset + low;
+  }
+  return { consistent, renderOffset };
+}
+
+export function sectionRangeConsistent(section: SectionRecord): boolean {
+  return sectionOffsets(section).consistent;
 }
 
 /**
@@ -61,32 +81,33 @@ export function deriveLocalSpanAnchor(
   section: SectionRecord,
   record: SourceSpanRecord,
 ): LocalAnchorResult {
-  if (!sectionRangeConsistent(section)) {
-    return { ok: false, reason: "section_range_mismatch" };
-  }
-  const { start_char: start, end_char: end } = record.span;
-  const contained =
-    Number.isInteger(start) &&
-    Number.isInteger(end) &&
-    start >= section.start_char &&
-    end > start &&
-    end <= section.end_char;
-  if (!contained) return { ok: false, reason: "offsets_out_of_range" };
-  const localStart = start - section.start_char;
-  const localEnd = end - section.start_char;
-  let codePoints = 0;
-  let utf16 = 0;
-  let renderStart = 0;
-  for (const character of section.content) {
-    if (codePoints === localStart) renderStart = utf16;
-    if (codePoints === localEnd) break;
-    codePoints += 1;
-    utf16 += character.length;
-  }
-  return {
-    ok: true,
-    start: renderStart,
-    end: utf16,
+  return createLocalSpanAnchorResolver(section)(record);
+}
+
+/** Prepare one section's immutable offset mapping for a single reader operation. */
+export function createLocalSpanAnchorResolver(section: SectionRecord) {
+  const { consistent, renderOffset } = sectionOffsets(section);
+  const sectionStart = section.start_char;
+  const sectionEnd = section.end_char;
+  return (record: SourceSpanRecord): LocalAnchorResult => {
+    if (!consistent) {
+      return { ok: false, reason: "section_range_mismatch" };
+    }
+    const { start_char: start, end_char: end } = record.span;
+    const contained =
+      Number.isInteger(start) &&
+      Number.isInteger(end) &&
+      start >= sectionStart &&
+      end > start &&
+      end <= sectionEnd;
+    if (!contained) return { ok: false, reason: "offsets_out_of_range" };
+    const localStart = start - sectionStart;
+    const localEnd = end - sectionStart;
+    return {
+      ok: true,
+      start: renderOffset(localStart),
+      end: renderOffset(localEnd),
+    };
   };
 }
 
@@ -108,10 +129,11 @@ export function segmentSection(
   spans: readonly SourceSpanRecord[],
 ): SectionSegment[] {
   const content = section.content;
+  const anchorFor = createLocalSpanAnchorResolver(section);
   const relevant: { id: string; start: number; end: number }[] = [];
   for (const record of spans) {
     if (record.span.section_id !== section.id) continue;
-    const anchor = deriveLocalSpanAnchor(section, record);
+    const anchor = anchorFor(record);
     if (!anchor.ok) continue;
     relevant.push({ id: record.id, start: anchor.start, end: anchor.end });
   }

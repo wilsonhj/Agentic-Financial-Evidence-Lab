@@ -100,6 +100,30 @@ describe("canonical Unicode offsets", () => {
     ]);
   });
 
+  it("maps boundaries around multiple supplementary characters", () => {
+    const multiple: SectionRecord = { ...section, content: "A😀B🚀C", end_char: 405 };
+    const rocket: SourceSpanRecord = {
+      ...span,
+      span: {
+        ...span.span,
+        start_char: 403,
+        end_char: 404,
+        text_hash: `sha256:${sha256Hex("🚀")}`,
+      },
+    };
+    const tail: SourceSpanRecord = {
+      ...span,
+      id: "tail",
+      span: { ...span.span, start_char: 404, end_char: 405, text_hash: `sha256:${sha256Hex("C")}` },
+    };
+    expect(verifySpanIntegrity([multiple], [rocket, tail]).verified).toEqual([rocket, tail]);
+    expect(segmentSection(multiple, [rocket, tail]).map((segment) => segment.text)).toEqual([
+      "A😀B",
+      "🚀",
+      "C",
+    ]);
+  });
+
   it("still rejects malformed ranges and preserves the full unhighlighted text", () => {
     const outside: SourceSpanRecord = {
       ...span,
