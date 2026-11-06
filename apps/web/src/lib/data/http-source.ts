@@ -215,7 +215,10 @@ function assertBlock(value: unknown, path: string, target: boolean): asserts val
       const start = integer(section.start_char, `${sectionPath}.start_char`);
       const end = integer(section.end_char, `${sectionPath}.end_char`);
       const content = string(section.content, `${sectionPath}.content`);
-      if (start < 0 || end < start || content.length !== end - start) {
+      // Canonical offsets count Unicode code points (Python str), not UTF-16 units.
+      const codePoints =
+        content.length - (content.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)?.length ?? 0);
+      if (start < 0 || end < start || codePoints !== end - start) {
         throw new EvidenceContractError(`${sectionPath} has an inconsistent canonical range`);
       }
     }

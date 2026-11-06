@@ -215,6 +215,24 @@ describe("HttpEvidenceSource composite reader", () => {
     }
   });
 
+  it("measures section canonical ranges in code points, not UTF-16 units (#385)", async () => {
+    const accepted = structuredClone(readerFixture);
+    const section = accepted.document.sections[0]!;
+    section.content = `😀${[...section.content].slice(1).join("")}`;
+    const reader = await makeSource(
+      vi.fn(async () => jsonResponse(accepted)) as unknown as typeof fetch,
+    ).getReader(DOCUMENT_ID);
+    expect(reader?.document.sections[0]?.content).toBe(section.content);
+
+    const rejected = structuredClone(readerFixture);
+    rejected.document.sections[0]!.content += "😀";
+    await expect(
+      makeSource(vi.fn(async () => jsonResponse(rejected)) as unknown as typeof fetch).getReader(
+        DOCUMENT_ID,
+      ),
+    ).rejects.toThrow("inconsistent canonical range");
+  });
+
   it("rejects siblings outside the effective cutoff", async () => {
     const body = structuredClone(readerFixture);
     body.siblings[0]!.meta.published_at = "2026-07-02T00:00:00Z";
