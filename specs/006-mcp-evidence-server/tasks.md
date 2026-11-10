@@ -15,9 +15,10 @@ Requirement IDs refer to [`spec.md`](spec.md) §3. Section references such as
 
 ## MCP-CONTRACT (#392)
 
-- `MCP-101` Write migration `0012`: `documents.accepted_at`,
-  `documents.timestamp_precision`, a supporting index, and
-  `fel_guard_candidate` on `COALESCE(accepted_at, published_at)`.
+- `MCP-101` Write migration `0012`: `documents.accepted_at`, `public_at`,
+  `public_at_basis` and `timestamp_precision`, a supporting index, and
+  `fel_guard_candidate` on
+  `GREATEST(COALESCE(public_at, published_at), published_at)`.
 - `MCP-102` Create the `fel_public_read` role with SELECT on untenanted
   corpus and retrieval-index tables only, plus harness tests for each denial
   (`FR-MCP-013`).
@@ -25,8 +26,8 @@ Requirement IDs refer to [`spec.md`](spec.md) §3. Section references such as
   verification report and error (`FR-MCP-005`, `006`, `007`, `011`).
 - `MCP-104` Add input and output schemas and fixtures for the eight tools
   (`FR-MCP-001`).
-- `MCP-105` Bump OpenAPI to 0.10.0 with optional acceptance fields on
-  document metadata, and regenerate the client.
+- `MCP-105` Bump OpenAPI to 0.10.0 with optional acceptance and publication
+  fields on document metadata, and regenerate the client.
 - `MCP-106` Add and pin the `mcp` SDK; report its fit with the pinned HTTP
   stack.
 - `MCP-107` Publish the evidence interface that the adapter calls.
@@ -35,11 +36,12 @@ Requirement IDs refer to [`spec.md`](spec.md) §3. Section references such as
 
 - `MCP-201` Read `acceptanceDateTime` at discovery and store it at fetch
   with second precision.
-- `MCP-202` Isolate timezone interpretation in one function, pinned by a
-  fixture pair.
+- `MCP-202` Isolate timezone interpretation and the publication-time rule
+  in one function, pinned by fixtures for same-day, after-hours, weekend,
+  after-hours Form 4 and daylight-saving cases.
 - `MCP-203` Add an idempotent backfill job that leaves unresolved records
   NULL.
-- `MCP-204` Order restatement targets by acceptance time, and test a
+- `MCP-204` Order restatement targets by publication time, and test a
   same-day original and amendment.
 
 ## MCP-CUTOFF-PREDICATES (#394)
@@ -47,8 +49,8 @@ Requirement IDs refer to [`spec.md`](spec.md) §3. Section references such as
 - `MCP-301` Switch the corpus listing and version-resolve predicates.
 - `MCP-302` Switch the reader target and sibling predicates.
 - `MCP-303` Switch the retrieval lane predicate.
-- `MCP-304` Test same-day hidden, same-day visible and no-acceptance-time
-  cases, and justify every golden change.
+- `MCP-304` Test same-day hidden, same-day visible, after-hours and
+  no-publication-time cases, and justify every golden change.
 
 ## MCP-EVIDENCE-READ (#395)
 

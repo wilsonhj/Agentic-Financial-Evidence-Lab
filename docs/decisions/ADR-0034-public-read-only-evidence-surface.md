@@ -3,7 +3,8 @@
 Status: Accepted for bounded implementation under the owner's 2026-11-10
 acceptance of this ADR as drafted, including anonymous read-only access. The
 last section records which owner inputs that acceptance settled and which
-remain open.
+remain open. Decision 4 was corrected the same day with the owner's approval
+(Amendment 1, below).
 
 Date: 2026-11-10
 
@@ -59,15 +60,25 @@ day.
    weakened by it. No deployment mode is added, and the web reader's
    `PUBLIC_AUTH_NOT_READY` guard is unchanged.
 
-4. **Store SEC acceptance time and make cutoffs strict.** Migration `0012`
-   adds `documents.accepted_at` and `documents.timestamp_precision`.
+4. **Store the instant a filing became public and make cutoffs strict.**
+   Acceptance is not publication. EDGAR accepts most submissions that begin
+   after 17:30 ET the same evening, gives them the next business day's
+   filing date, and does not disseminate them until that day. Migration
+   `0012` therefore adds three columns to `documents`: `accepted_at`,
+   `public_at` and `public_at_basis`, plus `timestamp_precision`.
+   - **One rule, in one tested ingestion function.** If the filing date is
+     later than the US Eastern calendar date of acceptance, the filing became
+     public when EDGAR opened on the filing date: `public_at` is 06:00
+     America/New_York on that date, with basis `next_session_open`.
+     Otherwise `public_at` equals `accepted_at`, with basis `acceptance`.
+     The rule needs no list of form types, because the forms EDGAR
+     disseminates after hours keep their transmission date as the filing
+     date.
    - On the MCP surface a document is visible only when it has a verified
-     `accepted_at` at or before the cutoff. Records without one are
-     invisible.
+     `public_at` at or before the cutoff. Records without one are invisible.
    - Existing authenticated reads and retrieval lanes compare against
-     `COALESCE(accepted_at, published_at)`. That is never weaker than
-     today's behaviour and removes the same-day leak wherever the
-     acceptance time is known.
+     `GREATEST(COALESCE(public_at, published_at), published_at)`. That is
+     never weaker than today's behaviour by construction.
    - The filing-date approximation is available only as a labeled,
      self-hosted, ungated mode. The hosted server never uses it.
 
@@ -101,12 +112,40 @@ day.
    changes no ledger entry. Registry entries carry `tasks: []`, as #324's
    does. The lead may add canonical tasks later by a separate change.
 
+## Amendment 1 (2026-11-10): publication time, not acceptance time
+
+The decision first accepted used `accepted_at` as the visibility instant and
+claimed `COALESCE(accepted_at, published_at)` was never weaker than today.
+Both were wrong for after-hours filings. The SEC states that most
+submissions begun after 17:30 ET receive the next business day's filing date
+and "will not be disseminated by EDGAR until the next business day"
+([SEC](https://www.sec.gov/page/edgar-how-do-i-determine-status-my-filing),
+read 2026-11-10). A filing accepted on a Friday evening would have been
+visible to cutoffs all weekend. The same page lists the submission types
+that are disseminated until 22:00 ET the same day (Forms 3, 4, 5 and 144,
+their amendments, the `MEF` forms and `POS 462B`); those keep their
+transmission date as the filing date, so the rule above handles them.
+
+The contract package (#392) found the arithmetic error while implementing
+the candidate guard. The owner approved this correction on 2026-11-10.
+
+Residual uncertainty, stated in responses and not hidden:
+
+- 06:00 ET is when EDGAR opens. The SEC gives it as the filing time and
+  does not state the exact dissemination second, so `next_session_open` is
+  the earliest the filing could have been public.
+- The SEC does not state the delay between acceptance and dissemination
+  during the day. `acceptance` treats it as zero.
+- The rule compares an Eastern calendar date, so owner input 4 (the
+  timezone of `acceptanceDateTime`) must be confirmed before any hosted
+  run.
+
 ## Consequences
 
 - One reviewed contract package (#392) freezes the migration, schemas and
   interface. Six lanes (#393–#398) and the acceptance suites (#399) can then
   run in parallel on mocks and fixtures.
-- Acceptance timestamps tighten existing cutoffs. Some retrieval goldens and
+- Publication timestamps tighten existing cutoffs. Some retrieval goldens and
   the benchmark seed's provisional cutoffs will change. #394 must explain
   each change.
 - A public endpoint creates an operating cost and an abuse surface that the
@@ -128,6 +167,8 @@ day.
   remains a fallback if mounting proves awkward.
 - **Keep filing-date cutoffs.** They leak same-day filings, and SEC filing
   date adjustments mean no date-only bound is strict.
+- **Use acceptance time as the public instant.** It leaks after-hours
+  filings until the next business day (Amendment 1).
 
 ## Owner inputs
 

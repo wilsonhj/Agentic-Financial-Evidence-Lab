@@ -33,7 +33,7 @@ remain integration-lead actions. §7 lists what is owed.
 
 | Claim | Source |
 |---|---|
-| Filings are dated at midnight UTC on the filing date; acceptance time is not stored | `workers/src/fel_workers/consumer.py`; `workers/src/fel_workers/ingestion/discovery.py` |
+| Filings are dated at midnight UTC on the filing date; neither acceptance nor publication time is stored | `workers/src/fel_workers/consumer.py`; `workers/src/fel_workers/ingestion/discovery.py` |
 | Two reads take no cutoff | `apps/api/app/corpus.py` (`get_source_span`, document metadata) |
 | The verifier is deterministic but named as a mock | `packages/retrieval/fel_retrieval/verification.py`; `apps/api/app/retrieval_pipeline.py` |
 | Search always resolves an embedding provider | `apps/api/app/retrieval_pipeline.py`; `apps/api/app/retrieval.py` |
@@ -51,9 +51,9 @@ contract's wording governs.
 |---|---|---|
 | `FR-MCP-001` | Eight read-only tools, each with a title, read-only annotations, input and output schemas, structured content and a text copy | §7 |
 | `FR-MCP-002` | Every evidence tool accepts `as_of`, echoes `effective_as_of`, and applies the cutoff to aggregates as well as rows | §6.1, §6.2 |
-| `FR-MCP-003` | Strict visibility: a document is visible only with a verified acceptance time at or before the cutoff | §6.2 |
+| `FR-MCP-003` | Strict visibility: a document is visible only with a verified public-availability time at or before the cutoff. That time is derived from acceptance and the filing date by one rule, because acceptance is not publication for after-hours filings | §6.2 |
 | `FR-MCP-004` | No existence oracle: hidden and missing references are indistinguishable in every tool | §6.2, §7.2 |
-| `FR-MCP-005` | Citations carry code-point offsets, a recomputable hash, accession, source URL and acceptance time | §7.1 |
+| `FR-MCP-005` | Citations carry code-point offsets, a recomputable hash, accession, source URL, and the acceptance and public-availability times with their basis | §7.1 |
 | `FR-MCP-006` | An `evidence_context` with request-side pins gives byte-identical replay; an unavailable pin is an explicit error | §6.3 |
 | `FR-MCP-007` | Deterministic verification with closed states; a numeric match alone never yields `supported` | §7.2 |
 | `FR-MCP-008` | Company-facts snapshots and their facts are never served | §4 (P10) |
@@ -81,8 +81,8 @@ All nine are registered in `docs/handoff/workstreams.yaml`, which holds their st
 | Package | Issue | Delivers | Depends on |
 |---|---|---|---|
 | `MCP-CONTRACT` | #392 | Migration `0012`, read-only role, schemas and fixtures, OpenAPI 0.10.0, the `mcp` dependency, the evidence interface | ADR-0034 (accepted) |
-| `MCP-INGEST-ACCEPTED-AT` | #393 | Acceptance timestamps at ingest, backfill, same-day amendment repair | `MCP-CONTRACT` |
-| `MCP-CUTOFF-PREDICATES` | #394 | Existing reads and lanes compare against acceptance time | `MCP-CONTRACT` |
+| `MCP-INGEST-ACCEPTED-AT` | #393 | Acceptance and publication timestamps at ingest, backfill, same-day amendment repair | `MCP-CONTRACT` |
+| `MCP-CUTOFF-PREDICATES` | #394 | Existing reads and lanes compare against publication time | `MCP-CONTRACT` |
 | `MCP-EVIDENCE-READ` | #395 | The shared evidence-read service and keyword-only search | `MCP-CONTRACT` |
 | `MCP-VERIFIER` | #396 | The promoted deterministic verifier and the verification report | `MCP-CONTRACT` |
 | `MCP-SERVER` | #397 | The MCP package, its tools, limits, errors and the mount | `MCP-CONTRACT`; integration needs #395 and #396 |
@@ -93,8 +93,8 @@ All nine are registered in `docs/handoff/workstreams.yaml`, which holds their st
 ## 5. Acceptance gates
 
 1. **Strict temporal validity is 1.0.** The property-based leakage suite
-   passes for every tool, including aggregates, same-day cases and late
-   amendments.
+   passes for every tool, including aggregates, same-day cases, after-hours
+   filings held until the next business day, and late amendments.
 2. **No oracle.** `verify_claim` reports for a hidden span and a nonexistent
    span are byte-identical.
 3. **Citation integrity.** Every returned citation re-verifies, including
@@ -116,7 +116,7 @@ Directory acceptance does not establish usefulness.
 ## 6. Risks
 
 - **Acceptance-time timezone is unverified.** A wrong assumption shifts every
-  cutoff by hours. #393 isolates it; the lead confirms it before any hosted
+  cutoff by hours and can misclassify after-hours filings. #393 isolates it; the lead confirms it before any hosted
   run.
 - **Tighter cutoffs change existing goldens.** #394 must justify each change.
 - **`mcp` 2.x dependency fit is unverified** against the pinned HTTP stack.
