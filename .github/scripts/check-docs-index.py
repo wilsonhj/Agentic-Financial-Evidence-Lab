@@ -116,6 +116,22 @@ def closes_raw_html(content, tag):
     return bool(re.search(r"</" + tag + r">", content, re.I))
 
 
+def table_cells(line):
+    """Split only unescaped pipes; optional border pipes are not cells."""
+    line = line.strip()
+    cells, start = [], 0
+    for marker in re.finditer(r"\\.|\|", line):
+        if marker.group() == "|":
+            cells.append(line[start:marker.start()])
+            start = marker.end()
+    cells.append(line[start:])
+    if cells and not cells[0]:
+        cells.pop(0)
+    if cells and not cells[-1]:
+        cells.pop()
+    return cells
+
+
 def table_rows(lines):
     """Identify pipe-led GFM rows only after a header and delimiter row."""
     rows, active = set(), False
@@ -126,8 +142,8 @@ def table_rows(lines):
             continue
         if index + 1 < len(lines):
             following, next_depth = split_quotes(lines[index + 1])
-            header = content.strip().strip("|").split("|")
-            delimiter = following.strip().strip("|").split("|")
+            header = table_cells(content)
+            delimiter = table_cells(following)
             if depth == next_depth and TABLE_DELIMITER.fullmatch(following) \
                     and len(header) == len(delimiter):
                 active = True
@@ -177,7 +193,7 @@ def mask_code_spans(text):
     NUL placeholders keep code-only continuation lines inside their paragraph.
     """
     pending, result, fence = [], [], None
-    depth, blank, in_code, item, raw_html = 0, True, False, None, None
+    depth, blank, in_code, item, raw_html, html = 0, True, False, None, None, False
 
     def flush():
         if not pending:
@@ -194,7 +210,12 @@ def mask_code_spans(text):
         marker = FENCE.match(content)
         if quotes != depth:
             blank = True
-            raw_html = None
+            raw_html, html = None, False
+        if html:
+            if content.strip():
+                result.append(line)
+                continue
+            html, blank = False, True
         if raw_html:
             result.append(line)
             if closes_raw_html(content, raw_html):
@@ -222,6 +243,11 @@ def mask_code_spans(text):
                     raw_html = None
                 result.append(line)
                 depth, blank = quotes, True
+                continue
+            if HTML_BLOCK.match(content) or (blank and HTML_TAG_LINE.match(content)):
+                flush()
+                result.append(line)
+                depth, html, blank = quotes, True, False
                 continue
             blank = bool(ATX.match(content) or SETEXT.match(content))
         else:
