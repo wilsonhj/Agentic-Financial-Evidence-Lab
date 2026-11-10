@@ -246,9 +246,10 @@ JSON in a text block.
 | `get_corpus_status` | `as_of?` | Active and retained corpus and index versions, verifier version, known limitations, and issuer coverage, date range and timestamp-precision mix computed under the visibility predicate, plus `effective_as_of` |
 
 Every resource-bearing output also returns `resource_link` items with URIs of
-the form `fel://filings/{accession}` and
-`fel://spans/{span_id}?as_of={instant}`, and a web reader deep link. Matching
-resource templates resolve them, under the same cutoff guard.
+the form `fel://filings/{accession}?as_of={instant}&corpus_version_id={id}`
+and `fel://spans/{span_id}?as_of={instant}&corpus_version_id={id}`, plus a
+scoped web reader deep link (§7.1). Matching resource templates resolve them
+under the same cutoff guard and pins.
 
 ### 7.1 Citation object (`mcp-citation/v1`)
 
@@ -272,7 +273,7 @@ resource templates resolve them, under the same cutoff guard.
   "filing_date": "2024-03-06",
   "accepted_at": "2024-03-06T21:14:09Z",
   "timestamp_precision": "second",
-  "reader_url": "https://…/documents/{document_id}?span={span_id}",
+  "reader_url": "https://…/reader/{document_id}?span={span_id}&document_version_id={document_version_id}&as_of={effective_as_of}&corpus_version_id={corpus_version_id}",
   "untrusted_source_text": true
 }
 ```
@@ -285,6 +286,15 @@ resource templates resolve them, under the same cutoff guard.
   `source_url`, hash it, and confirm the document. Offsets refer to FEL's
   canonical text for `parser_version`, which `read_filing` and the resources
   serve.
+- `reader_url` always carries the citation's evidence scope:
+  `document_version_id`, `as_of` set to the response's `effective_as_of`, and
+  `corpus_version_id`. The reader treats an omitted cutoff as request time and
+  an omitted version as the latest parsed version (`apps/api/app/reader.py`).
+  An unscoped link could therefore show post-cutoff sibling filings, or a
+  different canonical version than the cited offsets. This matches the scoped
+  links `readerHref` already builds
+  (`apps/web/src/lib/observatory/trace-view.ts`). The `fel://` resource links
+  carry the same `as_of` and `corpus_version_id` query parameters.
 - The schema belongs in `packages/contracts/schemas/` (a shared path, so it
   needs ADR-0034).
 
@@ -481,6 +491,10 @@ plugins/financial-evidence-lab/
      amendment and its `restates` links are not.
 2. **Citation round-trip.**
    - Every Citation returned by any tool re-verifies through `get_citation`.
+   - Every `reader_url` and `fel://` link carries `as_of`,
+     `corpus_version_id` and, for the reader, `document_version_id`.
+     Following one from a historical search shows the cited version and no
+     post-cutoff siblings.
    - Hashes recompute from canonical text.
    - Non-BMP characters (emoji, CJK extension B) slice correctly by code
      point. Reuse the #386 fixtures.
