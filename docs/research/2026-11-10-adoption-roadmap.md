@@ -26,7 +26,7 @@ or hosted infrastructure:
 
 ```text
 #324 public session/BYOK ─► #292 production identity ─► #195 provider runtime
-#177 live cutover (credentials, embeddings choice) ─► T0112, #132, #362
+#177 live cutover (credentials, embeddings choice) ─► #56, #132, #362
 #61 load gate (dedicated database) ─► #62 confidence gate (human labels)
 #62 ─► #64 model persistence ─► #65 model UI, #66 ─► #67 forecast ─► #68 release
 ```
@@ -87,13 +87,15 @@ is not the constraint.
 
 ### 2.4 Ledger lag
 
-73 of 86 registered packages are merged. The canonical ledger shows 34
-unchecked tasks, but seven of them are built:
+73 of 86 registered packages are merged. Task state lives only in the
+[canonical ledger](../../specs/001-financial-evidence-lab/tasks.md), which
+this document does not restate. Agents may not check tasks off, so the
+ledger trails merged code for two components:
 
-| Tasks | State | What is left |
+| Component | Evidence on `main` | What acceptance still needs |
 |---|---|---|
-| T0401, T0402, T0403, T0409, T0410 (calculation engine) | Code complete, #63 closed | Integration-lead sign-off only |
-| T0308, T0309 (extraction review and versioned approvals) | Code complete | The #61 load gate on a dedicated database, then sign-off |
+| Calculation engine (`packages/calculation-engine`) | Merged in #212; issue #63 closed; property tests and benchmark in `ACCEPTANCE-219.md` | An integration-lead reconciliation of its ledger entries |
+| Extraction review and versioned approvals | Review, correction and history routes under `apps/api/app/extraction/`; migration `0011`; web review screens | The #61 load gate on a dedicated database, then reconciliation |
 
 ## 3. Remaining work
 
@@ -119,7 +121,7 @@ No agent can do these. They gate everything else.
 6. **Ratify or withdraw
    [ADR-0012](../decisions/ADR-0012-llm-provider-substitution.md)** and
    record the status of ADR-0029, ADR-0030 and ADR-0031.
-7. **Check off the built tasks** in §2.4 that need only sign-off.
+7. **Reconcile the ledger** for the merged components in §2.4.
 8. **Decide the #62 to #64 policy gate** (§5.4).
 9. **Add a second code owner** (#203) and staff the human adjudicators.
 10. **Budgets:** an embeddings key for dense search, and the Alpha Vantage
@@ -138,7 +140,7 @@ The prerequisites are detailed in the MCP specification (PR #389, §4).
 | Promote the deterministic verifier from its mock name | `packages/retrieval/fel_retrieval/verification.py` | Rules unchanged. |
 | MCP server and Claude plugin | `packages/mcp-server/`, `plugins/` | New `mcp` dependency needs authorization. |
 | Public read-only web mode: landing page, company picker, reader as-of control, search page | `apps/web/` | Remove fixture Desk from first position. |
-| Live 20-issuer ingest (T0112) | `evals/`, hosted worker | Needs §3.1 item 2. |
+| Live 20-issuer ingest (#56, #177) | `evals/`, hosted worker | Needs §3.1 item 2. |
 | Evals: retrieval gate in CI (#201), numeric-tolerance grader, span citation precision and recall, wider temporal-leakage suite | `evals/` | No external benchmark covers cutoffs or span citations. |
 
 ### 3.3 Release 2 code: accounts and bring-your-own-key
@@ -149,24 +151,25 @@ The prerequisites are detailed in the MCP specification (PR #389, §4).
   structured-generation adapter (#195), and live usage accounting (#191).
 - An answer-first "ask" page with cited claims that open the reader.
 - Persistent notes and saved research, and a settings page for keys.
-- Hosted extraction worker (#362) and the confidence gate (#62: T0306,
-  T0307, T0310).
+- Hosted extraction worker (#362) and the confidence gate (#62).
 
 ### 3.4 Release 3 code: model, forecast and export
 
-| Issue | Tasks | State |
+Each issue lists its own tasks, and the canonical ledger holds their state.
+
+| Issue | Component | What exists on `main` |
 |---|---|---|
-| #64 | T0404, T0405 | Not started. Needs a contract and one migration under ADR-0023. |
-| #65 | T0406, T0407, T0408 | Not started. Fixture schematic only. |
-| #66 | T0501, T0502, T0503, T0507 | Not started. |
-| #67 | T0504, T0505, T0508 | Not started. |
-| #68 | T0509 to T0513, T0214b | Not started. |
+| #64 | Source-backed model nodes and scenario layers | The engine supports both in memory. No persistence, API or tables. Needs a contract and one migration under ADR-0023. |
+| #65 | Interactive model UI and analytics charts | A fixture schematic at `/desk` only. |
+| #66 | Forecast interface, baselines and Forecast Lab views | A placeholder module. |
+| #67 | Backtests, intervals and the seasonal-naive gate | Nothing. |
+| #68 | Audit traversal, exports, benchmark and release artifact | Nothing. `packages/export` and `docs/release` are absent. |
 
 ### 3.5 Human-only gates
 
-- T0214b: a frozen benchmark of at least 300 questions, adjudicated by two
+- #68: a frozen benchmark of at least 300 questions, adjudicated by two
   reviewers.
-- T0310: adjudicated extraction labels. Synthetic fixtures do not count.
+- #62: adjudicated extraction labels. Synthetic fixtures do not count.
 - #61: three load-profile runs within budget on a dedicated database. The
   threshold must not be lowered.
 
@@ -289,7 +292,8 @@ Pilot measures, with consenting participants and no query-text analytics:
   between two services is inferred, not confirmed.
 - **Vercel project modes are unknown.** They live in the dashboard, not the
   repository.
-- **Human labelling has no staffing plan.** It gates T0214b and T0310.
+- **Human labelling has no staffing plan.** It gates the benchmark (#68)
+  and the extraction release gates (#62).
 - **Corpus breadth** may limit adoption regardless of quality.
 - **Competitor claims are unverified.** Closed vendors may already offer
   point-in-time retrieval.
