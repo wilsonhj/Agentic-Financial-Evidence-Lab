@@ -764,6 +764,16 @@ export interface components {
       content_hash: string;
       /** Format: date-time */
       published_at: string;
+      /**
+       * Format: date-time
+       * @description Verified SEC acceptance instant (v0.10.0, ADR-0034). Omitted when unknown; published_at is then the filing date at midnight UTC.
+       */
+      accepted_at?: string;
+      /**
+       * @description second when accepted_at is a verified acceptance instant; date when only the filing date is known (v0.10.0, ADR-0034).
+       * @enum {string}
+       */
+      timestamp_precision?: "date" | "second";
       /** Format: date-time */
       filed_at?: string;
       /** Format: date */

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.fel.dev/schemas/reader-response/v1",
-  "x-fel-version": "1.1.0",
+  "x-fel-version": "1.2.0",
   "title": "ReaderResponse",
   "description": "Composite version-pinned reader evidence (ADR-0005): effective cutoff, corpus pin, target document with exactly one selected parsed version and its sections (canonical document-global offsets) / spans / facts, plus same-entity sibling fact evidence visible at the cutoff. Spans and facts $ref the frozen source-span/v1 and financial-fact/v1 schemas.",
   "type": "object",
@@ -103,6 +103,16 @@
         "published_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "accepted_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Verified SEC acceptance instant (ADR-0034). Omitted when unknown."
+        },
+        "timestamp_precision": {
+          "type": "string",
+          "enum": ["date", "second"],
+          "description": "second when accepted_at is a verified acceptance instant; date when only the filing date is known."
         },
         "filed_at": {
           "type": "string",

@@ -525,3 +525,24 @@ describe("financial values stay decimal strings", () => {
     );
   });
 });
+
+describe("document metadata acceptance fields (OpenAPI 0.10.0)", () => {
+  it("reader-response documentMeta takes optional accepted_at and timestamp_precision", () => {
+    const valid = validator(SCHEMA_IDS.readerResponse);
+    const body = fixture("reader-response");
+    expect(valid(body), "unchanged fixture").toBe(true);
+    const withMeta = (patch: object) => ({
+      ...body,
+      document: { ...body.document, meta: { ...body.document.meta, ...patch } },
+    });
+    expect(
+      valid(withMeta({ accepted_at: "2024-03-06T21:14:09Z", timestamp_precision: "second" })),
+    ).toBe(true);
+    expect(valid(withMeta({ timestamp_precision: "date" }))).toBe(true);
+    expect(valid(withMeta({ timestamp_precision: "approximate" }))).toBe(false);
+    const yaml = readFileSync(join(here, "openapi/openapi.yaml"), "utf8");
+    expect(yaml).toMatch(
+      /DocumentMeta:[\s\S]*?timestamp_precision:\n\s+type: string\n\s+enum: \[date, second\]/,
+    );
+  });
+});

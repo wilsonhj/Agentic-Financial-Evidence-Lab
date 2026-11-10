@@ -74,7 +74,7 @@ export const MCP_TOOL_SCHEMAS = {
   },
 } as const;
 
-export const CONTRACT_VERSION = "0.9.0" as const;
+export const CONTRACT_VERSION = "0.10.0" as const;
 
 /** Relative file references resolved against canonical $id values (ADR-0024).
  * Register these aliases alongside SCHEMA_IDS for offline JSON Schema validation.
