@@ -1523,6 +1523,7 @@ packages:
       - pyproject.toml # dependency tables only
       - packages/retrieval/fel_retrieval/evidence/interfaces.py
       - packages/retrieval/fel_retrieval/evidence/__init__.py # empty package marker
+      - packages/retrieval/tests/evidence/test_interfaces.py # interface contract test only; the rest of tests/evidence/** is MCP-EVIDENCE-READ's
       - apps/api/app/serializers.py # document-metadata passthrough only
       - apps/api/tests/test_serializers.py # the passthrough's test
       - apps/api/tests/test_list_contract.py # pinned contract version line only (0.10.0)

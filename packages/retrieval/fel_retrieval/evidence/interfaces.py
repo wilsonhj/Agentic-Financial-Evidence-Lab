@@ -1,44 +1,56 @@
 """Typed interface of the shared evidence-read service (ADR-0034, #392, MCP-107).
 
-The MCP adapter (``packages/mcp-server``, #397) calls these Protocols; the
+The MCP adapter (``packages/mcp-server``, #397) calls these Protocols. The
 evidence-read service (#395) and the verification-report builder (#396)
-implement them. This module holds types only: no implementation, no database
-access, no I/O. It mirrors the JSON Schemas in ``packages/contracts/schemas/``:
+implement them. This module holds types and their invariants only: no
+implementation, no database access, no I/O. Field names equal the
+``properties`` of the JSON Schemas in ``packages/contracts/schemas/``, which
+``packages/retrieval/tests/evidence/test_interfaces.py`` enforces. The one
+spelling difference is ``DateRange.from_``, because ``from`` is a Python
+keyword:
 
-* ``mcp-evidence-context/v1`` -> ``EvidenceContext``
-* ``mcp-citation/v1`` -> ``Citation``
-* ``mcp-verification-report/v1`` -> ``VerificationReport``
-* ``mcp-error/v1`` -> ``EvidenceReadError``
-* ``mcp-<tool>-input/v1`` and ``-output/v1`` -> the request and result types.
+* ``mcp-evidence-context/v1`` maps to ``EvidenceContext``.
+* ``mcp-citation/v1`` maps to ``Citation``.
+* ``mcp-verification-report/v1`` maps to ``VerificationReport``.
+* ``mcp-error/v1`` maps to ``EvidenceReadError``.
+* ``mcp-<tool>-input/v1`` and ``-output/v1`` map to the request and result
+  types.
 
 Conventions the implementations must keep (design contract §6-§7):
 
-* Every method takes a resolved ``EvidenceContext``, and every result returns
-  it unchanged with a ``CoverageNote``. Only ``resolve_context`` turns request
-  inputs into a context, and it never falls back from an unavailable pin.
-* Visibility is decided inside the service. A hidden reference and a missing
-  one take the same code path and raise the same ``not_found`` error.
-* Offsets are Unicode code points, and hashes are recomputed from canonical
-  text. Financial values are exact: decimal strings on output, and ``Decimal``
-  for a client-asserted numeric value.
-* Results are immutable and deterministic for a given context and request.
-  ``LiveStatus`` is the one exception and is labeled ``replayable=False``.
+* **Context.** Every method takes a resolved ``EvidenceContext``. Every result
+  returns that context unchanged as ``evidence_context``, with a
+  ``CoverageNote``. Only ``resolve_context`` turns request inputs into a
+  context, and it never falls back from an unavailable pin.
+* **Visibility.** Strict mode shows a document only when its verified
+  ``public_at`` is at or before ``effective_as_of``. ``public_at`` is the
+  instant the filing became public, not its acceptance time (ADR-0034
+  decision 4, Amendment 1). A hidden reference and a missing one take the same
+  code path and raise the same ``not_found`` error.
+* **Exactness.** Offsets are Unicode code points, and hashes are recomputed
+  from canonical text. Financial values are decimal strings on output; a
+  client-asserted numeric value is a ``Decimal``.
+* **Determinism.** Results are immutable and deterministic for a given
+  context and request. ``LiveStatus`` is the one exception and is labeled
+  ``replayable=False``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Final, Literal, Protocol
+from typing import Final, Literal, Protocol, runtime_checkable
 
 TimestampMode = Literal["strict", "approximate"]
 TemporalGuarantee = Literal["strict", "none"]
 # Stored documents.timestamp_precision is 'date' | 'second'; a served result
-# is 'second' (verified acceptance) or 'approximate' (approximate mode).
+# is 'second' (verified instants) or 'approximate' (approximate mode).
 ServedTimestampPrecision = Literal["second", "approximate"]
 StoredTimestampPrecision = Literal["date", "second"]
+PublicAtBasis = Literal["acceptance", "next_session_open"]
 ItemKind = Literal["passage", "table_row", "fact"]
 SearchLane = Literal["lexical", "facts", "tables"]
 ClaimStatus = Literal["supported", "partially_supported", "contradicted", "unsupported"]
@@ -58,6 +70,7 @@ ErrorCode = Literal[
 
 # mcp-verify-claim-input: numeric.scale is one of NUMERIC_SCALE_EXPONENTS.
 NumericScale = Literal[0, 3, 6, 9]
+NUMERIC_SCALES: Final = frozenset({0, 3, 6, 9})
 OFFSET_UNIT: Final = "unicode_code_point"
 SEMANTIC_ENTAILMENT: Final = "not_evaluated"
 ENTAILMENT_METHOD: Final = "lexical-coverage-v1"
@@ -65,6 +78,57 @@ ENTAILMENT_METHOD: Final = "lexical-coverage-v1"
 # are indistinguishable.
 NOT_FOUND_MESSAGE: Final = "No visible evidence matches this reference."
 NOT_FOUND_RECOVERY: Final = "Check the identifier, or search within the current context."
+# get_corpus_status.live_status must always state these (ADR-0034 Amendment 1).
+REQUIRED_LIMITATION_CODES: Final = frozenset(
+    {"public_at_next_session_open_is_earliest", "intraday_dissemination_delay_assumed_zero"}
+)
+
+# mcp-error/v1: (retryable, retry_after_seconds required, field required).
+ERROR_RULES: Final[Mapping[ErrorCode, tuple[bool, bool, bool]]] = {
+    "not_found": (False, False, False),
+    "invalid_input": (False, False, True),
+    "cursor_expired": (False, False, False),
+    "pin_unavailable": (False, False, True),
+    "rate_limited": (True, True, False),
+    "overloaded": (True, True, False),
+    "deadline_exceeded": (True, False, False),
+    "unavailable": (True, True, False),
+    "integrity_error": (False, False, False),
+}
+
+
+_DECIMAL_STRING: Final = re.compile(r"-?[0-9]+(\.[0-9]+)?")
+
+
+def _require_aware(name: str, value: datetime | None) -> None:
+    if value is not None and value.utcoffset() is None:
+        raise ValueError(f"{name} must be timezone-aware")
+
+
+def _check_publication(
+    accepted_at: datetime | None,
+    public_at: datetime | None,
+    public_at_basis: PublicAtBasis | None,
+    timestamp_precision: ServedTimestampPrecision,
+) -> None:
+    """Mirror of the 0012 CHECKs for a served row.
+
+    Under ``second`` the three values are all set, ``public_at`` is not before
+    ``accepted_at``, and the basis is ``acceptance`` exactly when they are
+    equal. ``approximate`` admits NULLs (design contract §6.2).
+    """
+    values = (accepted_at, public_at, public_at_basis)
+    if timestamp_precision == "second" and any(v is None for v in values):
+        raise ValueError("second precision requires accepted_at, public_at and public_at_basis")
+    for name, instant in (("accepted_at", accepted_at), ("public_at", public_at)):
+        _require_aware(name, instant)
+    if accepted_at is not None and public_at is not None:
+        if public_at < accepted_at:
+            raise ValueError("public_at precedes accepted_at")
+        if public_at_basis is not None and (public_at_basis == "acceptance") != (
+            public_at == accepted_at
+        ):
+            raise ValueError("public_at_basis 'acceptance' iff public_at equals accepted_at")
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +141,8 @@ class EvidenceReadError(Exception):
 
     ``field`` names the offending input (``invalid_input``) or pin
     (``pin_unavailable``). ``retry_after_seconds`` is set for the retryable
-    load-shedding codes. ``not_found`` carries no field and no detail.
+    load-shedding codes. ``not_found`` carries the fixed message and recovery
+    text and no other detail; use ``EvidenceReadError.not_found()``.
     """
 
     def __init__(
@@ -90,6 +155,19 @@ class EvidenceReadError(Exception):
         field: str | None = None,
         retry_after_seconds: int | None = None,
     ) -> None:
+        expected_retryable, needs_retry_after, needs_field = ERROR_RULES[code]
+        if retryable != expected_retryable:
+            raise ValueError(f"{code} must have retryable={expected_retryable}")
+        if needs_retry_after and retry_after_seconds is None:
+            raise ValueError(f"{code} requires retry_after_seconds")
+        if not retryable and retry_after_seconds is not None:
+            raise ValueError(f"{code} must not carry retry_after_seconds")
+        if needs_field and field is None:
+            raise ValueError(f"{code} requires field")
+        if code == "not_found" and (
+            field is not None or message != NOT_FOUND_MESSAGE or recovery != NOT_FOUND_RECOVERY
+        ):
+            raise ValueError("not_found carries only the fixed message and recovery")
         super().__init__(message)
         self.code: ErrorCode = code
         self.message = message
@@ -97,6 +175,10 @@ class EvidenceReadError(Exception):
         self.recovery = recovery
         self.field = field
         self.retry_after_seconds = retry_after_seconds
+
+    @classmethod
+    def not_found(cls) -> EvidenceReadError:
+        return cls("not_found", NOT_FOUND_MESSAGE, retryable=False, recovery=NOT_FOUND_RECOVERY)
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +217,11 @@ class ContextRequest:
     verifier_version: str | None = None
     filters: ContextFilters = field(default_factory=ContextFilters)
 
+    def __post_init__(self) -> None:
+        _require_aware("request_time", self.request_time)
+        if isinstance(self.as_of, datetime):
+            _require_aware("as_of", self.as_of)
+
 
 @dataclass(frozen=True)
 class EvidenceContext:
@@ -150,16 +237,24 @@ class EvidenceContext:
     document_version_id: str | None
     filters: ContextFilters
 
+    def __post_init__(self) -> None:
+        _require_aware("effective_as_of", self.effective_as_of)
+        expected = "strict" if self.timestamp_mode == "strict" else "none"
+        if self.temporal_guarantee != expected:
+            raise ValueError(f"timestamp_mode {self.timestamp_mode} requires guarantee {expected}")
+
 
 @dataclass(frozen=True)
 class DateRange:
-    start: datetime | None
-    end: datetime | None
+    """Publication-time range; ``from_`` is the schema's ``from``."""
+
+    from_: datetime | None
+    to: datetime | None
 
 
 @dataclass(frozen=True)
 class CoverageNote:
-    """Issuers (CIKs), forms and acceptance-time range searched (§7)."""
+    """Issuers (CIKs), forms and public_at range searched (§7)."""
 
     text: str
     issuers: tuple[str, ...]
@@ -186,6 +281,8 @@ class FilingRef:
     form: str | None
     filing_date: date
     accepted_at: datetime | None
+    public_at: datetime | None
+    public_at_basis: PublicAtBasis | None
 
 
 @dataclass(frozen=True)
@@ -208,8 +305,19 @@ class Citation:
     source_url: str
     filing_date: date
     accepted_at: datetime | None
+    public_at: datetime | None
+    public_at_basis: PublicAtBasis | None
     timestamp_precision: ServedTimestampPrecision
     reader_url: str | None = None
+    offset_unit: Literal["unicode_code_point"] = OFFSET_UNIT
+    untrusted_source_text: Literal[True] = True
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.start_char <= self.end_char:
+            raise ValueError("citation offsets must satisfy 0 <= start_char <= end_char")
+        _check_publication(
+            self.accepted_at, self.public_at, self.public_at_basis, self.timestamp_precision
+        )
 
 
 @dataclass(frozen=True)
@@ -223,6 +331,10 @@ class SpanRangeRef:
     start_char: int
     end_char: int
 
+    def __post_init__(self) -> None:
+        if not 0 <= self.start_char <= self.end_char:
+            raise ValueError("span range must satisfy 0 <= start_char <= end_char")
+
 
 SpanRef = SpanIdRef | SpanRangeRef
 
@@ -230,6 +342,11 @@ SpanRef = SpanIdRef | SpanRangeRef
 # ---------------------------------------------------------------------------
 # Tool requests and results
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResolveCompanyRequest:
+    query: str
 
 
 @dataclass(frozen=True)
@@ -248,7 +365,7 @@ class CompanyMatch:
 
 @dataclass(frozen=True)
 class ResolveCompanyResult:
-    context: EvidenceContext
+    evidence_context: EvidenceContext
     coverage_note: CoverageNote
     matches: tuple[CompanyMatch, ...]
 
@@ -268,6 +385,8 @@ class FilingMeta:
     form: str | None
     filing_date: date
     accepted_at: datetime | None
+    public_at: datetime | None
+    public_at_basis: PublicAtBasis | None
     timestamp_precision: ServedTimestampPrecision
     period_end: date | None
     document_id: str
@@ -276,10 +395,15 @@ class FilingMeta:
     content_hash: str
     amends: str | None
 
+    def __post_init__(self) -> None:
+        _check_publication(
+            self.accepted_at, self.public_at, self.public_at_basis, self.timestamp_precision
+        )
+
 
 @dataclass(frozen=True)
 class ListFilingsResult:
-    context: EvidenceContext
+    evidence_context: EvidenceContext
     coverage_note: CoverageNote
     filings: tuple[FilingMeta, ...]
     next_cursor: str | None
@@ -312,7 +436,7 @@ class SearchHit:
 
 @dataclass(frozen=True)
 class SearchResult:
-    context: EvidenceContext
+    evidence_context: EvidenceContext
     coverage_note: CoverageNote
     results: tuple[SearchHit, ...]
 
@@ -329,6 +453,10 @@ class ReadFilingRequest:
     section: str | tuple[str, ...] | None = None
     cursor: str | None = None
 
+    def __post_init__(self) -> None:
+        if (self.document_id is None) == (self.accession is None):
+            raise ValueError("exactly one of document_id or accession is required")
+
 
 @dataclass(frozen=True)
 class DocumentHeader:
@@ -340,9 +468,16 @@ class DocumentHeader:
     form: str | None
     filing_date: date
     accepted_at: datetime | None
+    public_at: datetime | None
+    public_at_basis: PublicAtBasis | None
     timestamp_precision: ServedTimestampPrecision
     source_url: str
     document_content_hash: str
+
+    def __post_init__(self) -> None:
+        _check_publication(
+            self.accepted_at, self.public_at, self.public_at_basis, self.timestamp_precision
+        )
 
 
 @dataclass(frozen=True)
@@ -367,11 +502,13 @@ class TextChunk:
     start_char: int
     end_char: int
     text: str
+    offset_unit: Literal["unicode_code_point"] = OFFSET_UNIT
+    untrusted_source_text: Literal[True] = True
 
 
 @dataclass(frozen=True)
 class ReadFilingResult:
-    context: EvidenceContext
+    evidence_context: EvidenceContext
     coverage_note: CoverageNote
     document: DocumentHeader
     section: SectionRef
@@ -385,9 +522,10 @@ class ReadFilingResult:
 class CitationResult:
     """``get_citation``: returned only after the hash re-check passed."""
 
-    context: EvidenceContext
+    evidence_context: EvidenceContext
     coverage_note: CoverageNote
     citation: Citation
+    hash_verified: Literal[True] = True
 
 
 @dataclass(frozen=True)
@@ -424,10 +562,14 @@ class Fact:
     restated_by: tuple[str, ...]
     duplicate_of: str | None
 
+    def __post_init__(self) -> None:
+        if not _DECIMAL_STRING.fullmatch(self.value):
+            raise ValueError("fact value must be a plain decimal string")
+
 
 @dataclass(frozen=True)
 class FactsResult:
-    context: EvidenceContext
+    evidence_context: EvidenceContext
     coverage_note: CoverageNote
     facts: tuple[Fact, ...]
     next_cursor: str | None
@@ -445,19 +587,42 @@ class IssuerCoverage:
 class CorpusCoverage:
     """``get_corpus_status.coverage``: bound to the context, replayable."""
 
-    context: EvidenceContext
-    coverage_note: CoverageNote
+    effective_as_of: datetime
     issuers: tuple[IssuerCoverage, ...]
     date_range: DateRange
     timestamp_precision_mix: Mapping[StoredTimestampPrecision, int]
 
 
 @dataclass(frozen=True)
-class VersionRow:
+class CorpusCoverageResult:
+    evidence_context: EvidenceContext
+    coverage_note: CoverageNote
+    coverage: CorpusCoverage
+
+    def __post_init__(self) -> None:
+        if self.coverage.effective_as_of != self.evidence_context.effective_as_of:
+            raise ValueError("coverage.effective_as_of must equal evidence_context's")
+
+
+@dataclass(frozen=True)
+class CorpusVersionRow:
     id: str
     status: str
     published_at: datetime | None
-    corpus_version_id: str | None = None
+
+
+@dataclass(frozen=True)
+class IndexVersionRow:
+    id: str
+    corpus_version_id: str
+    status: str
+    published_at: datetime | None
+
+
+@dataclass(frozen=True)
+class Limitation:
+    code: str
+    text: str
 
 
 @dataclass(frozen=True)
@@ -466,12 +631,17 @@ class LiveStatus:
 
     observed_at: datetime
     active_corpus_version_id: str | None
-    retained_corpus_versions: tuple[VersionRow, ...]
+    retained_corpus_versions: tuple[CorpusVersionRow, ...]
     active_index_version_id: str | None
-    retained_index_versions: tuple[VersionRow, ...]
+    retained_index_versions: tuple[IndexVersionRow, ...]
     verifier_versions: tuple[str, ...]
-    known_limitations: tuple[str, ...]
+    known_limitations: tuple[Limitation, ...]
     replayable: Literal[False] = False
+
+    def __post_init__(self) -> None:
+        missing = REQUIRED_LIMITATION_CODES - {lim.code for lim in self.known_limitations}
+        if missing:
+            raise ValueError(f"known_limitations must state {sorted(missing)}")
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +659,12 @@ class ClaimNumeric:
     period: str
     concept: str | None = None
 
+    def __post_init__(self) -> None:
+        if self.scale not in NUMERIC_SCALES:
+            raise ValueError(f"numeric scale must be one of {sorted(NUMERIC_SCALES)}")
+        if not self.value.is_finite():
+            raise ValueError("numeric value must be finite")
+
 
 @dataclass(frozen=True)
 class CitedSpan:
@@ -496,6 +672,17 @@ class CitedSpan:
 
     ref: SpanRef
     quote: str | None = None
+
+
+@dataclass(frozen=True)
+class VerifyClaimRequest:
+    claim: str
+    citations: tuple[CitedSpan, ...]
+    numeric: ClaimNumeric | None = None
+
+    def __post_init__(self) -> None:
+        if not 1 <= len(self.citations) <= 10:
+            raise ValueError("verify_claim takes 1 to 10 citations")
 
 
 @dataclass(frozen=True)
@@ -520,7 +707,7 @@ class CitationVerdict:
 
     An unresolvable reference is exactly ``IntegrityChecks(False, None, None)``
     with ``reason='not_found'``, ``edge_status='irrelevant'`` and
-    ``numeric_checks=None``.
+    ``numeric_checks=None``; ``CitationVerdict.not_visible`` builds it.
     """
 
     index: int
@@ -528,6 +715,24 @@ class CitationVerdict:
     reason: IntegrityReason | Literal["not_found"] | None
     edge_status: EdgeStatus
     numeric_checks: NumericChecks | None
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.index <= 9:
+            raise ValueError("citation index must be 0..9")
+        if not self.checks.visible and (
+            self.checks != IntegrityChecks(False, None, None)
+            or self.reason != "not_found"
+            or self.edge_status != "irrelevant"
+            or self.numeric_checks is not None
+        ):
+            raise ValueError("a not-visible citation has exactly one uninformative shape")
+        passed = self.checks.hash_valid is True and self.checks.quote_found is not False
+        if self.checks.visible and (self.reason == "not_found" or (self.reason is None) != passed):
+            raise ValueError("reason must name the first failed integrity check, or be None")
+
+    @classmethod
+    def not_visible(cls, index: int) -> CitationVerdict:
+        return cls(index, IntegrityChecks(False, None, None), "not_found", "irrelevant", None)
 
 
 @dataclass(frozen=True)
@@ -542,7 +747,7 @@ class VerificationReport:
 
 @dataclass(frozen=True)
 class VerifyClaimResult:
-    context: EvidenceContext
+    evidence_context: EvidenceContext
     coverage_note: CoverageNote
     report: VerificationReport
 
@@ -552,19 +757,26 @@ class VerifyClaimResult:
 # ---------------------------------------------------------------------------
 
 
+@runtime_checkable
 class EvidenceReadService(Protocol):
     """Cutoff-guarded public-corpus reads on the read-only role (#395).
 
     Every method except ``resolve_context`` and ``live_status`` reads only
-    evidence visible under ``context``. A hidden or missing reference raises
-    ``EvidenceReadError('not_found', ...)`` through one code path.
+    evidence visible under ``context``: in strict mode, documents whose
+    verified ``public_at`` is at or before ``effective_as_of``. A hidden or
+    missing reference raises ``EvidenceReadError.not_found()`` through one
+    code path.
     """
 
     def resolve_context(self, request: ContextRequest) -> EvidenceContext:
         """Resolve the cutoff and pins. Raises ``pin_unavailable`` naming the pin."""
         ...
 
-    def resolve_company(self, query: str, context: EvidenceContext) -> ResolveCompanyResult: ...
+    def resolve_company(
+        self, request: ResolveCompanyRequest, context: EvidenceContext
+    ) -> ResolveCompanyResult:
+        """Coverage counts only filings whose ``public_at`` is visible."""
+        ...
 
     def list_filings(
         self, request: ListFilingsRequest, context: EvidenceContext
@@ -586,23 +798,18 @@ class EvidenceReadService(Protocol):
         """Filing-native XBRL facts only; company-facts snapshots are never served."""
         ...
 
-    def corpus_coverage(self, context: EvidenceContext) -> CorpusCoverage: ...
+    def corpus_coverage(self, context: EvidenceContext) -> CorpusCoverageResult: ...
 
     def live_status(self, observed_at: datetime) -> LiveStatus: ...
 
 
+@runtime_checkable
 class VerificationReportBuilder(Protocol):
     """Builds a ``mcp-verification-report/v1`` report (#396).
 
     Integrity checks (visible, hash_valid, quote_found) run in front of the
     unchanged deterministic rules. ``claim_status`` is never ``supported``
-    without whole-evidence text identity.
+    without whole-evidence text identity. ``visible`` uses ``public_at``.
     """
 
-    def build(
-        self,
-        claim: str,
-        citations: Sequence[CitedSpan],
-        numeric: ClaimNumeric | None,
-        context: EvidenceContext,
-    ) -> VerifyClaimResult: ...
+    def build(self, request: VerifyClaimRequest, context: EvidenceContext) -> VerifyClaimResult: ...
