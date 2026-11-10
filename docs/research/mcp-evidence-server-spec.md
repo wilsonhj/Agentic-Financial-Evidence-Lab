@@ -199,12 +199,30 @@ A document is visible when its public-availability instant is at or before
 - Fact restatement and duplicate links are returned only when the target
   document is also visible.
 
+Every tool that returns filing-derived data accepts `as_of` and echoes
+`effective_as_of`. This includes aggregates such as coverage date ranges,
+form lists and filing counts.
+
 ### 6.3 Pins
 
-Search and verification responses carry `corpus_version_id`,
-`index_version_id`, `parser_version` and `verifier_version`. The same request
-with the same pins returns byte-identical structured content, and a test
-enforces this.
+An explicit `as_of` does not freeze corpus membership, parsing or the
+retrieval index. These change when a corpus version is published or an index
+is rebuilt. Pins are therefore request inputs as well as response fields:
+
+- `search_filings`, `read_filing`, `get_financial_facts`, `list_filings` and
+  `verify_claim` accept optional `corpus_version_id` and `index_version_id`
+  (where retrieval applies) and `verifier_version` (for `verify_claim`). These
+  map onto the existing `LaneQuery` corpus and index pins.
+- Omitted pins resolve to the active versions. Every response echoes the
+  resolved `corpus_version_id`, `index_version_id`, `parser_version` and
+  `verifier_version`, so a client can replay a result by passing them back.
+- A pinned version that is unknown, unpublished or retired returns an
+  explicit `PIN_UNAVAILABLE` error naming the pin. The server never silently
+  falls back to the active version.
+- The same input with the same pins returns byte-identical structured
+  content. §12 exercises this through the public tools, across an index
+  rebuild.
+- How long retired versions remain replayable is open question 8.
 
 ## 7. Tools
 
@@ -218,14 +236,14 @@ JSON in a text block.
 
 | Tool | Input | Output (structured) |
 |---|---|---|
-| `resolve_company` | `query` (ticker, CIK, or name) | Matches with `entity_id`, `cik`, `ticker`, `name`, coverage (first and last visible filing, forms) |
-| `list_filings` | `company`, `as_of?`, `forms?`, `limit` (≤50), `cursor?` | Filing metadata: `accession`, `form`, `filing_date`, `accepted_at`, `timestamp_precision`, `period_end`, `document_id`, `document_version_id`, `source_url`, `content_hash`, `amends?`, plus `effective_as_of` |
-| `search_filings` | `query`, `as_of?`, `companies?`, `forms?`, `periods?`, `top_k` (≤20) | Ranked passages, each with a **Citation** (§7.1) and `lanes` contributions, plus pins and `effective_as_of` |
-| `read_filing` | `document_id` or `accession`, `as_of?`, `section?` (heading path or id), `cursor?` | One bounded section chunk: text, its spans as Citations, `next_cursor`, and a section outline on the first page |
+| `resolve_company` | `query` (ticker, CIK, or name), `as_of?` | Matches with `entity_id`, `cik`, `ticker`, `name`, and coverage computed under the visibility predicate (first and last visible filing, visible forms), plus `effective_as_of` |
+| `list_filings` | `company`, `as_of?`, `forms?`, `limit` (≤50), `cursor?`, `corpus_version_id?` | Filing metadata: `accession`, `form`, `filing_date`, `accepted_at`, `timestamp_precision`, `period_end`, `document_id`, `document_version_id`, `source_url`, `content_hash`, `amends?`, plus `effective_as_of` |
+| `search_filings` | `query`, `as_of?`, `companies?`, `forms?`, `periods?`, `top_k` (≤20), `corpus_version_id?`, `index_version_id?` | Ranked passages, each with a **Citation** (§7.1) and `lanes` contributions, plus resolved pins and `effective_as_of` |
+| `read_filing` | `document_id` or `accession`, `as_of?`, `section?` (heading path or id), `cursor?`, `corpus_version_id?` | One bounded section chunk: text, its spans as Citations, `next_cursor`, and a section outline on the first page |
 | `get_citation` | `span_id` or (`document_version_id`, `start_char`, `end_char`), `as_of?` | One Citation with text, after a hash re-check. A stale or hidden reference returns not-found. |
-| `get_financial_facts` | `company`, `concept?`, `period?`, `as_of?`, `limit`, `cursor?` | XBRL facts: `concept`, `value` (decimal string), `unit`, `scale`, `period`, `dimensions`, `reported_or_derived`, a Citation of the source span, and `restated_by`/`duplicate_of` filtered by visibility |
-| `verify_claim` | `claim`, `citations[]` (Citation refs with optional `quote`), `numeric?` (`concept?`, `value`, `unit`, `scale`, `period`), `as_of?` | Verification report (§7.2) |
-| `get_corpus_status` | none | Corpus and index versions, issuer coverage, date range, timestamp precision mix, verifier version, and known limitations |
+| `get_financial_facts` | `company`, `concept?`, `period?`, `as_of?`, `limit`, `cursor?`, `corpus_version_id?` | XBRL facts: `concept`, `value` (decimal string), `unit`, `scale`, `period`, `dimensions`, `reported_or_derived`, a Citation of the source span, and `restated_by`/`duplicate_of` filtered by visibility |
+| `verify_claim` | `claim`, `citations[]` (Citation refs with optional `quote`), `numeric?` (`concept?`, `value`, `unit`, `scale`, `period`, `sign`), `as_of?`, `corpus_version_id?`, `verifier_version?` | Verification report (§7.2) |
+| `get_corpus_status` | `as_of?` | Active and retained corpus and index versions, verifier version, known limitations, and issuer coverage, date range and timestamp-precision mix computed under the visibility predicate, plus `effective_as_of` |
 
 Every resource-bearing output also returns `resource_link` items with URIs of
 the form `fel://filings/{accession}` and
@@ -272,7 +290,13 @@ resource templates resolve them, under the same cutoff guard.
 
 ### 7.2 Verification report (`verifier: deterministic-v1`)
 
-Per citation, `verify_claim` checks:
+`deterministic-v1` is the existing `MockCitationVerifier.verify` and
+`classify_claim` logic in `packages/retrieval/fel_retrieval/verification.py`,
+promoted under P4 with its rules unchanged. The MCP layer adds only integrity
+checks in front of it.
+
+**Integrity checks, per citation.** Any failure makes the claim
+`unsupported`, and the report names the failed check and citation.
 
 | Check | Rule |
 |---|---|
@@ -280,17 +304,36 @@ Per citation, `verify_claim` checks:
 | `within_cutoff` | The span's document is visible at `effective_as_of`. |
 | `hash_valid` | The recomputed hash equals the stored `text_hash`. |
 | `quote_found` | If a quote is given, it occurs verbatim in the span text. Whitespace normalization is versioned and listed. |
-| `numeric_match` | If `numeric` is given, a visible fact matches the exact Decimal tuple (value, unit, scale, period, sign), reusing the existing numeric check. |
 
-Claim status uses the repository's closed vocabulary. `derived` is excluded
-from v1, because no calculation lineage is involved.
+**Edge status, per citation.** The rules are applied in order, as the
+existing verifier does. The evidence numeric tuple is the fact whose
+`source_span_id` is the cited span, never an arbitrary visible fact.
 
-| Status | Rule |
+| Edge | Rule |
 |---|---|
-| `unsupported` | No citations; or any citation fails `resolved`, `within_cutoff` or `hash_valid`; or there is no lexical overlap. |
-| `contradicted` | A visible fact with the same concept, period, unit and dimensions has a different value. |
-| `supported` | All checks pass and either `numeric_match` holds or the claim text is identical to the cited evidence (existing text-identity rule). |
-| `partially_supported` | Citations are valid and quotes found, but the claim's meaning was only checked by lexical coverage. |
+| `irrelevant` | The claim contains a digit, the evidence has a numeric tuple, and the client supplied no `numeric`. Lexical overlap must not certify a number. |
+| `irrelevant` | `numeric` is supplied but the cited evidence has no numeric tuple. |
+| `contradictory` | `numeric` is supplied and any of value, unit, period, sign or scale differs from the evidence tuple (exact Decimal comparison). |
+| `entailed` | The whitespace-normalized claim text is identical to the whole cited evidence text. When `numeric` is supplied, its match is a precondition. |
+| `partial` | Lexical coverage of the claim by the evidence is at least 0.5. |
+| `irrelevant` | Anything else. |
+
+**Claim status.** Edges fold into the repository's closed vocabulary through
+`classify_claim`:
+
+- any `contradictory` edge gives `contradicted`;
+- all edges `entailed` gives `supported`;
+- a supporting edge alongside non-entailed edges gives `partially_supported`;
+- otherwise `unsupported`.
+
+`derived` is excluded from v1, because no calculation lineage is involved.
+
+A numeric match is necessary but never sufficient for `supported`. Text
+identity is still required. For example, evidence "Revenue was 100" with a
+claim "Revenue was not 100" and a matching tuple is at most
+`partially_supported`. A client-supplied tuple must not certify a claim
+whose wording changed. Transformed or paraphrased claims stay at most
+`partially_supported` until independent entailment exists.
 
 Every report states `semantic_entailment: "not_evaluated"` and
 `entailment_method: "lexical-coverage-v1"`. The server never upgrades a
@@ -429,7 +472,8 @@ plugins/financial-evidence-lab/
 
 1. **Temporal leakage (property-based).**
    - For every tool and random cutoffs, nothing published after the cutoff
-     appears: no ids, counts, facts, restatement links or pagination hints.
+     appears: no ids, counts, facts, restatement links, pagination hints, or
+     coverage aggregates from `resolve_company` and `get_corpus_status`.
    - Hidden and missing documents return identical errors.
    - Same-day cases: accepted before the cutoff is visible; accepted after is
      not; date-only precision obeys the conservative rule.
@@ -440,12 +484,23 @@ plugins/financial-evidence-lab/
    - Hashes recompute from canonical text.
    - Non-BMP characters (emoji, CJK extension B) slice correctly by code
      point. Reuse the #386 fixtures.
-3. **Verifier contract.** A table-driven test covers every row of §7.2. A
-   numeric mismatch gives `contradicted`. A stale hash gives `unsupported`. A
-   valid quote with only lexical overlap gives `partially_supported`. No path
-   returns `supported` without a numeric or identity match.
-4. **Determinism.** The same pins and input give byte-identical
-   `structuredContent`.
+3. **Verifier contract.**
+   - A table-driven test covers every row of §7.2 and matches the existing
+     `verification.py` tests.
+   - A numeric mismatch gives `contradicted`. A stale hash gives
+     `unsupported`. A valid quote with only lexical overlap gives
+     `partially_supported`.
+   - A matching numeric tuple on a claim whose wording differs from the
+     evidence is never `supported`. No path returns `supported` without
+     whole-evidence text identity.
+4. **Determinism and replay.**
+   - The same pins and input give byte-identical `structuredContent`.
+   - Through the public tools: run a search, publish a new corpus version and
+     rebuild the index, then replay with the original pins. The result is
+     unchanged.
+   - Omitting pins resolves to the new versions.
+   - A retired or unknown pin returns `PIN_UNAVAILABLE`, never a silent
+     fallback.
 5. **Protocol conformance.** In-memory client tests for each tool, covering
    schemas, `structuredContent` and annotations. The legacy 2025-11-25
    session flow and the 2026-07-28 stateless flow both pass. The tool
@@ -490,6 +545,9 @@ plugins/financial-evidence-lab/
    sec.gov information but does not address third-party content inside
    exhibits. Get a legal read before serving them.
 7. **Product name and domain.** It must avoid SEC and EDGAR marks.
+8. **Pin retention.** How long do retired corpus and index versions stay
+   replayable on the hosted server? Retention trades storage cost against
+   reproducibility. The answer sets when `PIN_UNAVAILABLE` begins.
 
 ## Sources
 
