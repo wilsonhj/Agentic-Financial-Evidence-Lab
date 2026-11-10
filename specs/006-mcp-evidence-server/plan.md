@@ -47,7 +47,7 @@ a paid provider.
 *GATE: Must pass before dispatch. Re-check after the contract package.*
 
 - [x] **Evidence and temporal-cutoff behavior is explicit and testable.**
-  Strict acceptance-time visibility, the no-oracle rule and replay are
+  Strict publication-time visibility, the no-oracle rule and replay are
   requirements `FR-MCP-002` to `FR-MCP-006`, each with an acceptance gate.
   This package also removes an existing same-day leak.
 - [x] **Financial calculations are deterministic, decimal, typed, and

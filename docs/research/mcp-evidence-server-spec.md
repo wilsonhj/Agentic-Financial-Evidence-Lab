@@ -105,7 +105,7 @@ paths.
 
 | # | Gap | Evidence | Required change |
 |---|---|---|---|
-| P1 | **The SEC acceptance time is not stored.** `published_at` and `filed_at` are both set to the EDGAR filing date at midnight UTC. A filing accepted at 15:00 ET is therefore visible to a 09:00 ET cutoff the same day. That is look-ahead leakage. | `workers/src/fel_workers/consumer.py` sets `published_at=filed_at` from the filing date with a "midnight UTC" comment. Discovery reads only `accessionNumber`, `form`, `filingDate` and `primaryDocument` (`ingestion/discovery.py`). `evals/datasets/benchmark-seed/README.md` already calls such cutoffs provisional. | Read `acceptanceDateTime` from the submissions JSON. Add `accepted_at` and `timestamp_precision` to `documents` (a migration). Backfill. Switch **every** reused visibility predicate to `accepted_at`, not only the new MCP reads. That covers corpus listing and resolve, the reader, retrieval lanes, `fel_guard_candidate`, and the restatement-target query. The backfill must also repair same-day amendment links: `pipeline.py` selects restatement targets with `d.published_at < %s`, which drops originals filed on the same date as their amendment while timestamps are date-only. Strict historical mode (§6.2) has no visible documents until this lands. Confirm the timezone of `acceptanceDateTime` empirically against a filing index page's "Accepted" time **(unverified: UTC vs Eastern)**. |
+| P1 | **The SEC acceptance time is not stored.** `published_at` and `filed_at` are both set to the EDGAR filing date at midnight UTC. A filing accepted at 15:00 ET is therefore visible to a 09:00 ET cutoff the same day. That is look-ahead leakage. | `workers/src/fel_workers/consumer.py` sets `published_at=filed_at` from the filing date with a "midnight UTC" comment. Discovery reads only `accessionNumber`, `form`, `filingDate` and `primaryDocument` (`ingestion/discovery.py`). `evals/datasets/benchmark-seed/README.md` already calls such cutoffs provisional. | Read `acceptanceDateTime` from the submissions JSON. Add `accepted_at`, `public_at`, `public_at_basis` and `timestamp_precision` to `documents` (a migration). Derive `public_at` with the rule in §6.2, because acceptance is not publication for after-hours filings. Backfill. Switch **every** reused visibility predicate to `public_at`, not only the new MCP reads. That covers corpus listing and resolve, the reader, retrieval lanes, `fel_guard_candidate`, and the restatement-target query. The backfill must also repair same-day amendment links: `pipeline.py` selects restatement targets with `d.published_at < %s`, which drops originals filed on the same date as their amendment while timestamps are date-only. Strict historical mode (§6.2) has no visible documents until this lands. Confirm the timezone of `acceptanceDateTime` empirically against a filing index page's "Accepted" time **(unverified: UTC vs Eastern)**. |
 | P2 | **Two reads have no cutoff.** `GET /v1/documents/{id}` and `GET /v1/source-spans/{id}` take no `as_of`. They are existence and content oracles for post-cutoff filings. | `apps/api/app/corpus.py` (`get_source_span` selects by id only) | The MCP layer must not call them. Add a cutoff-guarded span read that joins `documents` and applies the visibility predicate. |
 | P3 | **There is no company resolver.** `/v1/entities` is `x-fel-status: planned`. | `packages/contracts/openapi/openapi.yaml` | Add a ticker/CIK/name to `entity_id` lookup over the cohort and corpus. |
 | P4 | **The verifier is labelled mock.** The pipeline calls `verify_claims(..., MockCitationVerifier())`. Its logic is deterministic (exact Decimal numeric tuples, text identity, lexical coverage), but it is named and owned as a test double. | `apps/api/app/retrieval_pipeline.py:268`, `packages/retrieval/fel_retrieval/verification.py` | Promote it to a named, versioned production verifier (`deterministic-v1`) with tests. Do not ship "verified" on a class called mock. |
@@ -209,17 +209,38 @@ dependencies.
 
 ### 6.2 Visibility predicate
 
-A document is visible when its public-availability instant is at or before
-`effective_as_of`.
+A document is visible when its public-availability instant, `public_at`, is
+at or before `effective_as_of`.
+
+**Acceptance is not publication.** The SEC states that most submissions
+begun after 17:30 ET receive the next business day's filing date and "will
+not be disseminated by EDGAR until the next business day"
+([SEC](https://www.sec.gov/page/edgar-how-do-i-determine-status-my-filing)).
+One ingestion function derives `public_at` from the acceptance time and the
+filing date:
+
+| Case | `public_at` | `public_at_basis` |
+|---|---|---|
+| The filing date is later than the US Eastern calendar date of acceptance | 06:00 America/New_York on the filing date, when EDGAR opens | `next_session_open` |
+| Otherwise (same-day filings, the forms EDGAR disseminates until 22:00 ET, and adjusted filing dates) | `accepted_at` | `acceptance` |
+
+The rule needs no list of form types. The forms disseminated after hours
+(Forms 3, 4, 5 and 144, their amendments, the `MEF` forms and `POS 462B`)
+keep their transmission date as the filing date, so they fall in the second
+row. Two limits are stated in `get_corpus_status` and not hidden: 06:00 ET is
+the earliest an after-hours filing could have been public, and the delay
+between acceptance and dissemination during the day is treated as zero.
 
 - **Strict mode (the default and the only hosted mode).** A document is
-  visible only if it has a verified `accepted_at` (P1) and
-  `accepted_at <= effective_as_of`. Records without a verified acceptance
-  timestamp are invisible. Strict mode is the only mode covered by the
-  temporal acceptance gate (§12).
+  visible only if it has a verified `public_at` (P1) and
+  `public_at <= effective_as_of`. Records without one are invisible. Strict
+  mode is the only mode covered by the temporal acceptance gate (§12).
+- **Existing authenticated reads** compare against
+  `GREATEST(COALESCE(public_at, published_at), published_at)`, which is never
+  weaker than the current filing-date predicate.
 - **Approximate mode (opt-in, self-hosted only, never gated).** Requests may
   pass `timestamp_mode: "approximate"` to use the bound
-  `filing_date at 22:00 America/New_York` for records without `accepted_at`.
+  `filing_date at 22:00 America/New_York` for records without `public_at`.
   This bound is **not a strict guarantee**. Submissions after 17:30 ET usually
   receive the next business day's filing date, but the SEC can adjust filing
   dates under
@@ -292,7 +313,7 @@ JSON in a text block.
 | Tool | Input | Output (structured) |
 |---|---|---|
 | `resolve_company` | `query` (ticker, CIK, or name), `as_of?` | Matches with `entity_id`, `cik`, `ticker`, `name`, and coverage computed under the visibility predicate (first and last visible filing, visible forms), plus `effective_as_of` |
-| `list_filings` | `company`, `as_of?`, `forms?`, `limit` (≤50), `cursor?`, `corpus_version_id?` | Filing metadata: `accession`, `form`, `filing_date`, `accepted_at`, `timestamp_precision`, `period_end`, `document_id`, `document_version_id`, `source_url`, `content_hash`, `amends?`, plus `effective_as_of` |
+| `list_filings` | `company`, `as_of?`, `forms?`, `limit` (≤50), `cursor?`, `corpus_version_id?` | Filing metadata: `accession`, `form`, `filing_date`, `accepted_at`, `public_at`, `public_at_basis`, `timestamp_precision`, `period_end`, `document_id`, `document_version_id`, `source_url`, `content_hash`, `amends?`, plus `effective_as_of` |
 | `search_filings` | `query`, `as_of?`, `companies?`, `forms?`, `periods?`, `top_k` (≤20), `corpus_version_id?`, `index_version_id?` | Ranked passages, each with a **Citation** (§7.1) and `lanes` contributions, plus resolved pins and `effective_as_of` |
 | `read_filing` | `document_id` or `accession`, `as_of?`, `section?` (heading path or id), `cursor?`, `corpus_version_id?` | One bounded section chunk: text, its spans as Citations, `next_cursor`, and a section outline on the first page |
 | `get_citation` | `span_id` or (`document_version_id`, `start_char`, `end_char`), `as_of?` | One Citation with text, after a hash re-check. A stale, hidden or nonexistent reference returns the same `not_found`. |
@@ -335,6 +356,8 @@ under the same cutoff guard and pins.
   "source_url": "https://www.sec.gov/Archives/edgar/data/…",
   "filing_date": "2024-03-06",
   "accepted_at": "2024-03-06T21:14:09Z",
+  "public_at": "2024-03-06T21:14:09Z",
+  "public_at_basis": "acceptance",
   "timestamp_precision": "second",
   "reader_url": "https://…/reader/{document_id}?span={span_id}&document_version_id={document_version_id}&as_of={effective_as_of}&corpus_version_id={corpus_version_id}  (optional; see below)",
   "untrusted_source_text": true
@@ -660,16 +683,22 @@ integration.
    - `verify_claim` on a hidden span and on a nonexistent span gives
      byte-identical reports: the same `visible: false`, the same reason and no
      extra fields.
-   - Same-day cases in strict mode: accepted before the cutoff is visible;
-     accepted after is not; a record without a verified `accepted_at` is
+   - Same-day cases in strict mode: public before the cutoff is visible;
+     public after is not; a record without a verified `public_at` is
      invisible.
+   - After-hours cases: a filing accepted at 18:00 ET with the next business
+     day's filing date is hidden until 06:00 ET on that date, including
+     across a weekend. A Form 4 accepted at 18:00 ET with the same day's
+     filing date is visible from its acceptance time.
+   - The derivation function is tested at 17:30 ET, across both daylight
+     saving transitions, and for a filing date earlier than acceptance.
    - Approximate-mode results are labeled `temporal_guarantee: "none"` and are
      excluded from this suite's evidence.
    - Amendment accepted after the cutoff: the original is visible and the
      amendment and its `restates` links are not.
    - A same-day original and amendment, accepted at different times, link
      correctly after the P1 repair. The amendment is hidden before its own
-     acceptance.
+     publication.
    - No `COMPANYFACTS` snapshot document, or fact citing one, appears through
      any tool (P10).
 2. **Citation round-trip.**
@@ -729,7 +758,7 @@ integration.
 |---|---|---|
 | ADR-0034 (MCP surface, anonymous public-corpus read, citation schema) | `docs/decisions/` | ADR, lead review |
 | Subordinate spec | `specs/006-mcp-evidence-server/` | ADR, lead review |
-| `accepted_at` migration and backfill | `db/migrations/0012_*` | ADR, lead review |
+| Acceptance and publication-time migration and backfill | `db/migrations/0012_*` | ADR, lead review |
 | `mcp-citation/v1` and verification-report schemas; OpenAPI entities | `packages/contracts/` | ADR, lead review |
 | `mcp` dependency | lockfiles, `pyproject.toml` | `contract-change` plus an authorization record |
 | `fel_mcp` package | `packages/mcp-server/` (new) | Lane work after assignment |
@@ -741,7 +770,8 @@ integration.
 
 1. **Is `acceptanceDateTime` UTC or Eastern?** Confirm with one declared
    User-Agent fetch compared against the filing index "Accepted" time. P1
-   depends on it.
+   depends on it, and so does the publication rule in §6.2, which compares
+   an Eastern calendar date.
 2. **Should hosted v1 be authless?** The alternative is lazy OAuth from day
    one, which trades friction for abuse resistance and an amended ADR-0004.
 3. **Mount authorization.** The API's public-mode guard runs through the
