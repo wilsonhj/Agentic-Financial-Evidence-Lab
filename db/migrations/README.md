@@ -199,21 +199,29 @@ Rollback stops producers and preserves migrated history; do not downgrade data.
 The 0011 SQL harness and worker occurrence tests cover local acceptance. No
 hosted rollout is certified by merging this migration.
 
-### 0012: acceptance time and the public read role (ADR-0034)
+### 0012: acceptance and publication time, and the public read role (ADR-0034)
 
-Adds `documents.accepted_at` (nullable) and `documents.timestamp_precision`
-(`date` or `second`, default `date`). A CHECK makes them agree both ways:
-`second` if and only if `accepted_at` is set. Existing rows stay `date` with
-`accepted_at` NULL until #393 backfills them. `documents_entity_accepted_idx`
-supports `(entity_id, accepted_at)` cutoff reads.
+Adds four columns to `documents`: `accepted_at`, `public_at` and
+`public_at_basis` (`acceptance` or `next_session_open`), all nullable, and
+`timestamp_precision` (`date` or `second`, default `date`). Acceptance is not
+publication: most submissions begun after 17:30 ET get the next business day's
+filing date and are not disseminated until then (ADR-0034 Amendment 1). CHECKs
+enforce that:
 
-`fel_guard_candidate` now rejects a candidate when
-`COALESCE(accepted_at, published_at)` **or** `published_at` is after the query
-cutoff. The second test is deliberate. A filing accepted after 17:30 ET gets the
-next business day's filing date, so its `accepted_at` can precede its
-`published_at` midnight; COALESCE alone would then admit it earlier than 0003
-did. Retrieval lanes that switch to acceptance time (#394) must use the same
-two-sided test, or the guard will reject candidates the lane proposed.
+- the three are all set or all NULL;
+- `timestamp_precision = 'second'` exactly when they are set;
+- `public_at >= accepted_at`;
+- `public_at_basis = 'acceptance'` exactly when `public_at = accepted_at`.
+
+The migration does not derive `public_at`. One ingestion function owned by
+#393 does, by the rule in the column comment. Existing rows stay `date` with
+NULLs until #393 backfills them. `documents_entity_public_idx` supports
+`(entity_id, public_at)` cutoff reads.
+
+`fel_guard_candidate` rejects a candidate when
+`GREATEST(COALESCE(public_at, published_at), published_at)` is after the query
+cutoff, the expression #394's lanes use. It cannot admit anything the 0003
+`published_at` rule rejected.
 
 `fel_public_read` is a NOLOGIN group role with SELECT on ten untenanted tables:
 the eight 0002 corpus tables and `retrieval_index_versions` and

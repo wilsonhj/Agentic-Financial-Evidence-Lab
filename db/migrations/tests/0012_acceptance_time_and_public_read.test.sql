@@ -1,15 +1,19 @@
 -- Harness for 0012_acceptance_time_and_public_read.sql (issue #392,
--- ADR-0034 decisions 2 and 4).
+-- ADR-0034 decisions 2 and 4 with Amendment 1).
 --
 -- Three things are pinned here:
--- 1. documents.accepted_at / timestamp_precision: defaults, the CHECKs that
---    tie them together, and the (entity_id, accepted_at) index.
--- 2. fel_guard_candidate: a same-day filing accepted after the cutoff is
---    rejected; a NULL accepted_at falls back to published_at in both
---    directions; and an after-hours filing whose acceptance precedes its
---    filing-date midnight is still held to published_at (never weaker than
---    the 0003 rule). Candidates are inserted as fel_app, the role that
---    writes them in production.
+-- 1. documents.accepted_at / public_at / public_at_basis /
+--    timestamp_precision: defaults, every CHECK that ties them together, and
+--    the (entity_id, public_at) index.
+-- 2. fel_guard_candidate on GREATEST(COALESCE(public_at, published_at),
+--    published_at): a same-day filing made public after the cutoff is
+--    hidden; an after-hours filing (accepted the evening before its filing
+--    date) is hidden until 06:00 ET on the filing date and visible from then,
+--    across a weekend and a daylight-saving change; a NULL public_at falls
+--    back to published_at in both directions; and a row whose public_at
+--    precedes published_at is still held to published_at (never weaker than
+--    the 0003 rule). Candidates are inserted as fel_app, the role that writes
+--    them in production.
 -- 3. fel_public_read: exactly SELECT on the ten allowlisted untenanted
 --    tables, nothing on any other relation or sequence, no role attributes or
 --    memberships, and each denial proven by an actual statement raising 42501
@@ -29,19 +33,39 @@ BEGIN;
 
 INSERT INTO documents (
     id, entity_id, accession, source_url, content_hash, storage_key,
-    published_at, accepted_at, timestamp_precision
+    published_at, accepted_at, public_at, public_at_basis, timestamp_precision
 ) VALUES
-    -- Same-day: filing date 2024-03-06, accepted 15:00 ET (20:00Z).
+    -- D1 same day: filing date 2024-03-06, accepted 15:00 EST (20:00Z),
+    -- public at acceptance.
     ('00000000-0000-0000-0000-000000001201', '00000000-0000-0000-0000-000000001200',
      'acc-12-same-day', 'https://example.test/12/1',
      'sha256:1201120112011201120112011201120112011201120112011201120112011201', 'raw/1201',
-     '2024-03-06T00:00:00Z', '2024-03-06T20:00:00Z', 'second'),
-    -- After hours: accepted 17:45 ET on 03-06 (22:45Z), filing date 03-07.
+     '2024-03-06T00:00:00Z', '2024-03-06T20:00:00Z', '2024-03-06T20:00:00Z',
+     'acceptance', 'second'),
+    -- D3 after hours: accepted 18:00 EST on 03-05 (23:00Z), filing date
+    -- 03-06, so accepted_at precedes published_at. Public at 06:00 EST on
+    -- 03-06 (11:00Z).
     ('00000000-0000-0000-0000-000000001203', '00000000-0000-0000-0000-000000001200',
      'acc-12-after-hours', 'https://example.test/12/3',
      'sha256:1203120312031203120312031203120312031203120312031203120312031203', 'raw/1203',
-     '2024-03-07T00:00:00Z', '2024-03-06T22:45:00Z', 'second');
--- Date-only: no acceptance time; the defaults must apply.
+     '2024-03-06T00:00:00Z', '2024-03-05T23:00:00Z', '2024-03-06T11:00:00Z',
+     'next_session_open', 'second'),
+    -- D4 adversarial: public_at (22:00Z on 03-05) precedes published_at
+    -- (03-06). The constraints allow the row; the derivation rule would not
+    -- produce it. The guard must still hold it to published_at.
+    ('00000000-0000-0000-0000-000000001204', '00000000-0000-0000-0000-000000001200',
+     'acc-12-early-public', 'https://example.test/12/4',
+     'sha256:1204120412041204120412041204120412041204120412041204120412041204', 'raw/1204',
+     '2024-03-06T00:00:00Z', '2024-03-05T22:00:00Z', '2024-03-05T22:00:00Z',
+     'acceptance', 'second'),
+    -- D5 weekend after hours: accepted Friday 2024-03-08 18:30 EST (23:30Z),
+    -- filing date Monday 03-11. DST began 03-10, so 06:00 EDT is 10:00Z.
+    ('00000000-0000-0000-0000-000000001205', '00000000-0000-0000-0000-000000001200',
+     'acc-12-weekend', 'https://example.test/12/5',
+     'sha256:1205120512051205120512051205120512051205120512051205120512051205', 'raw/1205',
+     '2024-03-11T00:00:00Z', '2024-03-08T23:30:00Z', '2024-03-11T10:00:00Z',
+     'next_session_open', 'second');
+-- D2 date-only: no acceptance or publication time; the defaults must apply.
 INSERT INTO documents (
     id, entity_id, accession, source_url, content_hash, storage_key, published_at
 ) VALUES
@@ -52,102 +76,124 @@ INSERT INTO documents (
 
 DO $$
 BEGIN
-    IF (SELECT ROW(accepted_at, timestamp_precision) FROM documents
-        WHERE id = '00000000-0000-0000-0000-000000001202')
-       IS DISTINCT FROM ROW(NULL::timestamptz, 'date'::text) THEN
-        RAISE EXCEPTION 'not ok - legacy insert did not default to (NULL, date)';
+    IF (SELECT ROW(accepted_at, public_at, public_at_basis, timestamp_precision)
+        FROM documents WHERE id = '00000000-0000-0000-0000-000000001202')
+       IS DISTINCT FROM ROW(NULL::timestamptz, NULL::timestamptz, NULL::text, 'date'::text) THEN
+        RAISE EXCEPTION 'not ok - legacy insert did not default to (NULL, NULL, NULL, date)';
     END IF;
-    RAISE NOTICE 'ok - legacy insert defaults to accepted_at NULL, precision date';
+    RAISE NOTICE 'ok - legacy insert defaults to NULL instants, NULL basis, precision date';
 
     IF NOT EXISTS (
         SELECT 1
         FROM pg_index i
         JOIN pg_class c ON c.oid = i.indexrelid
-        WHERE c.relname = 'documents_entity_accepted_idx'
+        WHERE c.relname = 'documents_entity_public_idx'
           AND i.indrelid = 'documents'::regclass
           AND (SELECT array_agg(a.attname::text ORDER BY k.ord)
                FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum)
-              = ARRAY['entity_id', 'accepted_at']
+              = ARRAY['entity_id', 'public_at']
     ) THEN
-        RAISE EXCEPTION 'not ok - (entity_id, accepted_at) index missing';
+        RAISE EXCEPTION 'not ok - (entity_id, public_at) index missing';
     END IF;
-    RAISE NOTICE 'ok - documents_entity_accepted_idx covers (entity_id, accepted_at)';
+    IF to_regclass('documents_entity_accepted_idx') IS NOT NULL THEN
+        RAISE EXCEPTION 'not ok - superseded (entity_id, accepted_at) index exists';
+    END IF;
+    RAISE NOTICE 'ok - documents_entity_public_idx covers (entity_id, public_at)';
 END
 $$;
 
-SELECT pg_temp.expect_rejection('second precision without accepted_at', $sql$
-    INSERT INTO documents (id, entity_id, accession, source_url, content_hash, storage_key,
-                           published_at, timestamp_precision)
-    VALUES ('00000000-0000-0000-0000-000000001211', '00000000-0000-0000-0000-000000001200',
-            'acc-12-bad-1', 'https://example.test/12/b1',
-            'sha256:1211121112111211121112111211121112111211121112111211121112111211', 'raw/b1',
-            '2024-03-06T00:00:00Z', 'second')
-$sql$, ARRAY['23514']);
-SELECT pg_temp.expect_rejection('accepted_at labeled date precision', $sql$
-    INSERT INTO documents (id, entity_id, accession, source_url, content_hash, storage_key,
-                           published_at, accepted_at)
-    VALUES ('00000000-0000-0000-0000-000000001212', '00000000-0000-0000-0000-000000001200',
-            'acc-12-bad-2', 'https://example.test/12/b2',
-            'sha256:1212121212121212121212121212121212121212121212121212121212121212', 'raw/b2',
-            '2024-03-06T00:00:00Z', '2024-03-06T20:00:00Z')
-$sql$, ARRAY['23514']);
-SELECT pg_temp.expect_rejection('unknown timestamp precision', $sql$
-    INSERT INTO documents (id, entity_id, accession, source_url, content_hash, storage_key,
-                           published_at, accepted_at, timestamp_precision)
-    VALUES ('00000000-0000-0000-0000-000000001213', '00000000-0000-0000-0000-000000001200',
-            'acc-12-bad-3', 'https://example.test/12/b3',
-            'sha256:1213121312131213121312131213121312131213121312131213121312131213', 'raw/b3',
-            '2024-03-06T00:00:00Z', '2024-03-06T20:00:00Z', 'approximate')
-$sql$, ARRAY['23514']);
-SELECT pg_temp.expect_rejection('null timestamp precision', $sql$
-    INSERT INTO documents (id, entity_id, accession, source_url, content_hash, storage_key,
-                           published_at, timestamp_precision)
-    VALUES ('00000000-0000-0000-0000-000000001214', '00000000-0000-0000-0000-000000001200',
-            'acc-12-bad-4', 'https://example.test/12/b4',
-            'sha256:1214121412141214121412141214121412141214121412141214121412141214', 'raw/b4',
-            '2024-03-06T00:00:00Z', NULL)
-$sql$, ARRAY['23502']);
+-- Each case inserts one document with the given (accepted_at, public_at,
+-- public_at_basis, timestamp_precision) and expects the CHECK to refuse it.
+CREATE FUNCTION pg_temp.document_sql(
+    n integer, accepted text, pub text, basis text, precision_ text
+) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT format(
+        'INSERT INTO documents (id, entity_id, accession, source_url, content_hash, '
+        'storage_key, published_at, accepted_at, public_at, public_at_basis, '
+        'timestamp_precision) VALUES (%L, %L, %L, %L, %L, %L, %L, %L::timestamptz, '
+        '%L::timestamptz, %L, %L)',
+        format('00000000-0000-0000-0000-0000000012%s', 10 + n),
+        '00000000-0000-0000-0000-000000001200',
+        format('acc-12-bad-%s', n),
+        format('https://example.test/12/b%s', n),
+        'sha256:' || repeat(lpad(n::text, 2, '0'), 32),
+        format('raw/b%s', n),
+        '2024-03-06T00:00:00Z', accepted, pub, basis, precision_)
+$$;
+
+SELECT pg_temp.expect_rejection('second precision without any instant',
+    pg_temp.document_sql(1, NULL, NULL, NULL, 'second'), ARRAY['23514']);
+SELECT pg_temp.expect_rejection('instants labeled date precision',
+    pg_temp.document_sql(2, '2024-03-06T20:00:00Z', '2024-03-06T20:00:00Z', 'acceptance', 'date'),
+    ARRAY['23514']);
+SELECT pg_temp.expect_rejection('unknown timestamp precision',
+    -- NULL instants, so only the enum CHECK (not the precision pair) can refuse it.
+    pg_temp.document_sql(3, NULL, NULL, NULL, 'approximate'),
+    ARRAY['23514']);
+SELECT pg_temp.expect_rejection('null timestamp precision',
+    pg_temp.document_sql(4, NULL, NULL, NULL, NULL), ARRAY['23502']);
+SELECT pg_temp.expect_rejection('accepted_at without public_at',
+    pg_temp.document_sql(5, '2024-03-06T20:00:00Z', NULL, NULL, 'second'), ARRAY['23514']);
+SELECT pg_temp.expect_rejection('public_at without accepted_at',
+    pg_temp.document_sql(6, NULL, '2024-03-06T20:00:00Z', 'acceptance', 'second'), ARRAY['23514']);
+SELECT pg_temp.expect_rejection('instants without a basis',
+    pg_temp.document_sql(7, '2024-03-06T20:00:00Z', '2024-03-06T20:00:00Z', NULL, 'second'),
+    ARRAY['23514']);
+SELECT pg_temp.expect_rejection('basis without instants',
+    pg_temp.document_sql(8, NULL, NULL, 'acceptance', 'date'), ARRAY['23514']);
+SELECT pg_temp.expect_rejection('unknown public_at_basis',
+    -- public_at > accepted_at, so only the enum CHECK (not consistency) can refuse it.
+    pg_temp.document_sql(9, '2024-03-05T23:00:00Z', '2024-03-06T11:00:00Z', 'dissemination', 'second'),
+    ARRAY['23514']);
+SELECT pg_temp.expect_rejection('public_at before accepted_at',
+    pg_temp.document_sql(10, '2024-03-06T20:00:00Z', '2024-03-06T19:59:59Z', 'next_session_open', 'second'),
+    ARRAY['23514']);
+SELECT pg_temp.expect_rejection('acceptance basis with public_at after accepted_at',
+    pg_temp.document_sql(11, '2024-03-05T23:00:00Z', '2024-03-06T11:00:00Z', 'acceptance', 'second'),
+    ARRAY['23514']);
+SELECT pg_temp.expect_rejection('next_session_open basis with public_at = accepted_at',
+    pg_temp.document_sql(12, '2024-03-06T20:00:00Z', '2024-03-06T20:00:00Z', 'next_session_open', 'second'),
+    ARRAY['23514']);
 
 -- ---------------------------------------------------------------------------
--- 2. fel_guard_candidate on acceptance time
+-- 2. fel_guard_candidate on publication time
 -- ---------------------------------------------------------------------------
 
 INSERT INTO organizations (id, name)
-VALUES ('00000000-0000-0000-0000-000000001221', 'Acceptance Org');
+VALUES ('00000000-0000-0000-0000-000000001221', 'Publication Org');
 INSERT INTO memberships (org_id, user_id, role)
 VALUES ('00000000-0000-0000-0000-000000001221', '00000000-0000-0000-0000-000000001222', 'owner');
 INSERT INTO workspaces (id, org_id, name, entity_id, base_currency, fiscal_calendar, as_of)
 VALUES ('00000000-0000-0000-0000-000000001223', '00000000-0000-0000-0000-000000001221',
-        'Acceptance WS', '00000000-0000-0000-0000-000000001200', 'USD', 'calendar',
+        'Publication WS', '00000000-0000-0000-0000-000000001200', 'USD', 'calendar',
         '2030-01-01T00:00:00Z');
 
+-- One parsed version, section, span and retrieval item per document n = 1..5.
 INSERT INTO document_versions (id, document_id, parser_version, normalizer_version,
                                canonical_text_key)
-VALUES
-    ('00000000-0000-0000-0000-000000001231', '00000000-0000-0000-0000-000000001201', 'p1', 'n1', 'text/1231'),
-    ('00000000-0000-0000-0000-000000001232', '00000000-0000-0000-0000-000000001202', 'p1', 'n1', 'text/1232'),
-    ('00000000-0000-0000-0000-000000001233', '00000000-0000-0000-0000-000000001203', 'p1', 'n1', 'text/1233');
+SELECT format('00000000-0000-0000-0000-00000000123%s', n)::uuid,
+       format('00000000-0000-0000-0000-00000000120%s', n)::uuid,
+       'p1', 'n1', format('text/123%s', n)
+FROM generate_series(1, 5) AS n;
 INSERT INTO sections (id, document_version_id, heading, heading_path, ord, start_char, end_char)
-VALUES
-    ('00000000-0000-0000-0000-000000001241', '00000000-0000-0000-0000-000000001231', 'S', ARRAY['S'], 0, 0, 10),
-    ('00000000-0000-0000-0000-000000001242', '00000000-0000-0000-0000-000000001232', 'S', ARRAY['S'], 0, 0, 10),
-    ('00000000-0000-0000-0000-000000001243', '00000000-0000-0000-0000-000000001233', 'S', ARRAY['S'], 0, 0, 10);
+SELECT format('00000000-0000-0000-0000-00000000124%s', n)::uuid,
+       format('00000000-0000-0000-0000-00000000123%s', n)::uuid,
+       'S', ARRAY['S'], 0, 0, 10
+FROM generate_series(1, 5) AS n;
 INSERT INTO source_spans (id, document_version_id, section_id, start_char, end_char, text_hash)
-VALUES
-    ('00000000-0000-0000-0000-000000001251', '00000000-0000-0000-0000-000000001231', '00000000-0000-0000-0000-000000001241', 0, 10,
-     'sha256:1251125112511251125112511251125112511251125112511251125112511251'),
-    ('00000000-0000-0000-0000-000000001252', '00000000-0000-0000-0000-000000001232', '00000000-0000-0000-0000-000000001242', 0, 10,
-     'sha256:1252125212521252125212521252125212521252125212521252125212521252'),
-    ('00000000-0000-0000-0000-000000001253', '00000000-0000-0000-0000-000000001233', '00000000-0000-0000-0000-000000001243', 0, 10,
-     'sha256:1253125312531253125312531253125312531253125312531253125312531253');
+SELECT format('00000000-0000-0000-0000-00000000125%s', n)::uuid,
+       format('00000000-0000-0000-0000-00000000123%s', n)::uuid,
+       format('00000000-0000-0000-0000-00000000124%s', n)::uuid,
+       0, 10, 'sha256:' || repeat(format('125%s', n), 16)
+FROM generate_series(1, 5) AS n;
 INSERT INTO corpus_versions (id, label, status, is_active, published_at)
-VALUES ('00000000-0000-0000-0000-000000001260', 'Acceptance corpus', 'superseded', false, now());
+VALUES ('00000000-0000-0000-0000-000000001260', 'Publication corpus', 'superseded', false, now());
 INSERT INTO corpus_version_documents (corpus_version_id, document_version_id)
-VALUES
-    ('00000000-0000-0000-0000-000000001260', '00000000-0000-0000-0000-000000001231'),
-    ('00000000-0000-0000-0000-000000001260', '00000000-0000-0000-0000-000000001232'),
-    ('00000000-0000-0000-0000-000000001260', '00000000-0000-0000-0000-000000001233');
+SELECT '00000000-0000-0000-0000-000000001260',
+       format('00000000-0000-0000-0000-00000000123%s', n)::uuid
+FROM generate_series(1, 5) AS n;
 -- A keyword-only index version (ADR-0034 decision 6): sentinel provider.
 INSERT INTO retrieval_index_versions (id, corpus_version_id, chunker_version, config_hash,
                                       embedding_provider, embedding_model)
@@ -159,55 +205,45 @@ UPDATE retrieval_index_versions SET status = 'building'
 INSERT INTO retrieval_items (id, index_version_id, kind, entity_id, document_id,
                              document_version_id, section_id, source_span_id, content,
                              content_sha256, start_char, end_char, token_count)
-VALUES
-    ('00000000-0000-0000-0000-000000001271', '00000000-0000-0000-0000-000000001261', 'passage',
-     '00000000-0000-0000-0000-000000001200', '00000000-0000-0000-0000-000000001201',
-     '00000000-0000-0000-0000-000000001231', '00000000-0000-0000-0000-000000001241',
-     '00000000-0000-0000-0000-000000001251', 'same day',
-     'sha256:1271127112711271127112711271127112711271127112711271127112711271', 0, 10, 2),
-    ('00000000-0000-0000-0000-000000001272', '00000000-0000-0000-0000-000000001261', 'passage',
-     '00000000-0000-0000-0000-000000001200', '00000000-0000-0000-0000-000000001202',
-     '00000000-0000-0000-0000-000000001232', '00000000-0000-0000-0000-000000001242',
-     '00000000-0000-0000-0000-000000001252', 'date only',
-     'sha256:1272127212721272127212721272127212721272127212721272127212721272', 0, 10, 2),
-    ('00000000-0000-0000-0000-000000001273', '00000000-0000-0000-0000-000000001261', 'passage',
-     '00000000-0000-0000-0000-000000001200', '00000000-0000-0000-0000-000000001203',
-     '00000000-0000-0000-0000-000000001233', '00000000-0000-0000-0000-000000001243',
-     '00000000-0000-0000-0000-000000001253', 'after hours',
-     'sha256:1273127312731273127312731273127312731273127312731273127312731273', 0, 10, 2);
+SELECT format('00000000-0000-0000-0000-00000000127%s', n)::uuid,
+       '00000000-0000-0000-0000-000000001261', 'passage',
+       '00000000-0000-0000-0000-000000001200',
+       format('00000000-0000-0000-0000-00000000120%s', n)::uuid,
+       format('00000000-0000-0000-0000-00000000123%s', n)::uuid,
+       format('00000000-0000-0000-0000-00000000124%s', n)::uuid,
+       format('00000000-0000-0000-0000-00000000125%s', n)::uuid,
+       format('passage %s', n), 'sha256:' || repeat(format('127%s', n), 16), 0, 10, 2
+FROM generate_series(1, 5) AS n;
 UPDATE retrieval_index_versions SET status = 'ready', published_at = now()
     WHERE id = '00000000-0000-0000-0000-000000001261';
 
--- One query per cutoff. q1: 09:00 ET on 03-06. q2: 18:00 ET on 03-06.
--- q3: before the filing date. q4: just after the 03-07 filing-date midnight.
+-- One query (and run) per cutoff:
+--   q1 09:00 EST 03-06   q2 05:00 EST 03-06 (after the filing-date midnight,
+--   before EDGAR opens)  q3 18:30 EST 03-05   q4 16:00 EST 03-06
+--   q5 Saturday 03-09    q6 05:59:59 EDT 03-11   q7 06:00 EDT 03-11
+CREATE TEMP TABLE cutoffs (n integer PRIMARY KEY, cutoff timestamptz NOT NULL);
+INSERT INTO cutoffs VALUES
+    (1, '2024-03-06T14:00:00Z'), (2, '2024-03-06T10:00:00Z'),
+    (3, '2024-03-05T23:30:00Z'), (4, '2024-03-06T21:00:00Z'),
+    (5, '2024-03-09T15:00:00Z'), (6, '2024-03-11T09:59:59Z'),
+    (7, '2024-03-11T10:00:00Z');
 INSERT INTO queries (id, org_id, workspace_id, created_by, question, effective_as_of,
                      corpus_version_id, index_version_id, plan, planner_version)
-VALUES
-    ('00000000-0000-0000-0000-000000001281', '00000000-0000-0000-0000-000000001221',
-     '00000000-0000-0000-0000-000000001223', '00000000-0000-0000-0000-000000001222',
-     'morning', '2024-03-06T14:00:00Z', '00000000-0000-0000-0000-000000001260',
-     '00000000-0000-0000-0000-000000001261', '{}'::jsonb, 'planner-v1'),
-    ('00000000-0000-0000-0000-000000001282', '00000000-0000-0000-0000-000000001221',
-     '00000000-0000-0000-0000-000000001223', '00000000-0000-0000-0000-000000001222',
-     'evening', '2024-03-06T23:00:00Z', '00000000-0000-0000-0000-000000001260',
-     '00000000-0000-0000-0000-000000001261', '{}'::jsonb, 'planner-v1'),
-    ('00000000-0000-0000-0000-000000001283', '00000000-0000-0000-0000-000000001221',
-     '00000000-0000-0000-0000-000000001223', '00000000-0000-0000-0000-000000001222',
-     'day before', '2024-03-05T12:00:00Z', '00000000-0000-0000-0000-000000001260',
-     '00000000-0000-0000-0000-000000001261', '{}'::jsonb, 'planner-v1'),
-    ('00000000-0000-0000-0000-000000001284', '00000000-0000-0000-0000-000000001221',
-     '00000000-0000-0000-0000-000000001223', '00000000-0000-0000-0000-000000001222',
-     'next day', '2024-03-07T01:00:00Z', '00000000-0000-0000-0000-000000001260',
-     '00000000-0000-0000-0000-000000001261', '{}'::jsonb, 'planner-v1');
+SELECT format('00000000-0000-0000-0000-00000000128%s', n)::uuid,
+       '00000000-0000-0000-0000-000000001221', '00000000-0000-0000-0000-000000001223',
+       '00000000-0000-0000-0000-000000001222', format('cutoff %s', n), cutoff,
+       '00000000-0000-0000-0000-000000001260', '00000000-0000-0000-0000-000000001261',
+       '{}'::jsonb, 'planner-v1'
+FROM cutoffs;
 INSERT INTO retrieval_runs (id, org_id, query_id, mode, config_hash, embedding_provider,
                             embedding_model, planner_version)
-SELECT ('00000000-0000-0000-0000-00000000129' || n)::uuid,
+SELECT format('00000000-0000-0000-0000-00000000129%s', n)::uuid,
        '00000000-0000-0000-0000-000000001221',
-       ('00000000-0000-0000-0000-00000000128' || n)::uuid,
+       format('00000000-0000-0000-0000-00000000128%s', n)::uuid,
        'execute',
        'sha256:1290129012901290129012901290129012901290129012901290129012901290',
        'none', 'none', 'planner-v1'
-FROM generate_series(1, 4) AS n;
+FROM cutoffs;
 UPDATE retrieval_runs SET status = 'planning'
     WHERE org_id = '00000000-0000-0000-0000-000000001221';
 UPDATE retrieval_runs SET status = 'retrieving'
@@ -232,45 +268,58 @@ SET LOCAL ROLE fel_app;
 SELECT set_config('request.jwt.claims',
                   '{"org_id":"00000000-0000-0000-0000-000000001221"}', true);
 
-
--- q1, 09:00 ET: the same-day filing accepted at 15:00 ET is hidden. Under
--- the 0003 rule (published_at midnight <= cutoff) it was admitted: the P1 leak.
-SELECT pg_temp.expect_rejection('same-day filing accepted after the cutoff',
+-- q1, 09:00 EST: the same-day filing made public at 15:00 EST is hidden.
+-- Under the 0003 rule (published_at midnight <= cutoff) it was admitted.
+SELECT pg_temp.expect_rejection('same-day filing public after the cutoff',
     pg_temp.candidate_sql(1, 1), ARRAY['P0001']);
--- q1: NULL accepted_at falls back to published_at, which is before the cutoff.
 DO $$ BEGIN EXECUTE pg_temp.candidate_sql(1, 2);
-    RAISE NOTICE 'ok - NULL accepted_at falls back to published_at (admitted)'; END $$;
--- q1: after-hours filing is hidden on both counts.
-SELECT pg_temp.expect_rejection('after-hours filing before acceptance',
-    pg_temp.candidate_sql(1, 3), ARRAY['P0001']);
+    RAISE NOTICE 'ok - NULL public_at falls back to published_at (admitted)'; END $$;
+DO $$ BEGIN EXECUTE pg_temp.candidate_sql(1, 3);
+    RAISE NOTICE 'ok - after-hours filing visible after 06:00 ET on its filing date'; END $$;
 
--- q2, 18:00 ET: the same-day filing is now accepted and visible.
-DO $$ BEGIN EXECUTE pg_temp.candidate_sql(2, 1);
-    RAISE NOTICE 'ok - same-day filing accepted before the cutoff is admitted'; END $$;
--- q2: accepted 17:45 ET <= cutoff, but its filing-date midnight (03-07) is
--- after the cutoff. The 0003 guard rejected it, so 0012 must too.
-SELECT pg_temp.expect_rejection('after-hours filing held to its filing date (never weaker)',
+-- q2, 05:00 EST on the filing date: the after-hours filing was accepted the
+-- evening before and its filing-date midnight has passed, but EDGAR has not
+-- opened. Acceptance-time and filing-date rules would both admit it.
+SELECT pg_temp.expect_rejection('after-hours filing before EDGAR opens on its filing date',
     pg_temp.candidate_sql(2, 3), ARRAY['P0001']);
+DO $$ BEGIN EXECUTE pg_temp.candidate_sql(2, 2);
+    RAISE NOTICE 'ok - date-only filing admitted after its filing-date midnight'; END $$;
 
--- q3: NULL accepted_at falls back to published_at, which is after the cutoff.
-SELECT pg_temp.expect_rejection('NULL accepted_at falls back to published_at (rejected)',
+-- q3, 18:30 EST the evening before: after acceptance, before the filing date.
+SELECT pg_temp.expect_rejection('after-hours filing between acceptance and filing date',
+    pg_temp.candidate_sql(3, 3), ARRAY['P0001']);
+SELECT pg_temp.expect_rejection('NULL public_at falls back to published_at (rejected)',
     pg_temp.candidate_sql(3, 2), ARRAY['P0001']);
+SELECT pg_temp.expect_rejection('public_at before published_at is held to published_at (never weaker)',
+    pg_temp.candidate_sql(3, 4), ARRAY['P0001']);
 
--- q4: past both instants, the after-hours filing is admitted.
-DO $$ BEGIN EXECUTE pg_temp.candidate_sql(4, 3);
-    RAISE NOTICE 'ok - after-hours filing admitted once both instants pass'; END $$;
+-- q4, 16:00 EST: the same-day filing is public; D4 is past both instants.
+DO $$ BEGIN EXECUTE pg_temp.candidate_sql(4, 1);
+    RAISE NOTICE 'ok - same-day filing public before the cutoff is admitted'; END $$;
+DO $$ BEGIN EXECUTE pg_temp.candidate_sql(4, 4);
+    RAISE NOTICE 'ok - early-public row admitted once published_at passes'; END $$;
+
+-- q5-q7: the Friday-evening filing stays hidden all weekend and until 06:00
+-- EDT Monday (after the 03-10 daylight-saving change), inclusive.
+SELECT pg_temp.expect_rejection('weekend: Friday after-hours filing hidden on Saturday',
+    pg_temp.candidate_sql(5, 5), ARRAY['P0001']);
+SELECT pg_temp.expect_rejection('weekend: hidden one second before 06:00 EDT Monday',
+    pg_temp.candidate_sql(6, 5), ARRAY['P0001']);
+DO $$ BEGIN EXECUTE pg_temp.candidate_sql(7, 5);
+    RAISE NOTICE 'ok - weekend filing visible at exactly 06:00 EDT Monday'; END $$;
 
 DO $$
 BEGIN
     IF (SELECT count(*) FROM retrieval_candidates
-        WHERE org_id = '00000000-0000-0000-0000-000000001221') <> 3 THEN
-        RAISE EXCEPTION 'not ok - expected exactly three admitted candidates';
+        WHERE org_id = '00000000-0000-0000-0000-000000001221') <> 6 THEN
+        RAISE EXCEPTION 'not ok - expected exactly six admitted candidates';
     END IF;
-    RAISE NOTICE 'ok - exactly the three visible candidates persisted';
+    RAISE NOTICE 'ok - exactly the six visible candidates persisted';
 END
 $$;
 
 RESET ROLE;
+
 
 -- ---------------------------------------------------------------------------
 -- 3. fel_public_read
@@ -368,9 +417,9 @@ SET LOCAL ROLE fel_public_read;
 DO $$
 BEGIN
     IF (SELECT count(*) FROM documents
-        WHERE entity_id = '00000000-0000-0000-0000-000000001200') <> 3
+        WHERE entity_id = '00000000-0000-0000-0000-000000001200') <> 5
        OR (SELECT count(*) FROM retrieval_items
-           WHERE index_version_id = '00000000-0000-0000-0000-000000001261') <> 3 THEN
+           WHERE index_version_id = '00000000-0000-0000-0000-000000001261') <> 5 THEN
         RAISE EXCEPTION 'not ok - fel_public_read cannot read the public corpus';
     END IF;
     RAISE NOTICE 'ok - fel_public_read reads documents and retrieval_items';
