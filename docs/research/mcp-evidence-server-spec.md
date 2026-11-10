@@ -268,6 +268,13 @@ is rebuilt. Pins are therefore request inputs as well as response fields:
   so they are not replayable until the client passes back the returned
   context. §12 exercises replay through the public tools, across an index
   rebuild.
+- **One exemption.** `get_corpus_status` returns a `live_status` object
+  describing the server at request time: the active and retained versions,
+  available verifier versions and known limitations. Publishing a corpus or
+  rebuilding an index changes it by design, so it is outside the replay
+  guarantee and is labeled `replayable: false`. The tool's `coverage` object
+  is bound to the resolved context and replays like any other result. No
+  other tool returns live state.
 - Cursors are bound to the context that created them. A cursor used with a
   different context returns `invalid_input`.
 - How long retired versions remain replayable is open question 8.
@@ -290,8 +297,8 @@ JSON in a text block.
 | `read_filing` | `document_id` or `accession`, `as_of?`, `section?` (heading path or id), `cursor?`, `corpus_version_id?` | One bounded section chunk: text, its spans as Citations, `next_cursor`, and a section outline on the first page |
 | `get_citation` | `span_id` or (`document_version_id`, `start_char`, `end_char`), `as_of?` | One Citation with text, after a hash re-check. A stale, hidden or nonexistent reference returns the same `not_found`. |
 | `get_financial_facts` | `company`, `concept?`, `period?`, `as_of?`, `limit`, `cursor?`, `corpus_version_id?` | XBRL facts: `concept`, `value` (decimal string), `unit`, `scale`, `period`, `dimensions`, `reported_or_derived`, a Citation of the source span, and `restated_by`/`duplicate_of` filtered by visibility |
-| `verify_claim` | `claim`, `citations[]` (Citation refs with optional `quote`), `numeric?` (`concept?`, `value`, `unit`, `scale`, `period`, `sign`), `as_of?`, `corpus_version_id?`, `verifier_version?` | Verification report (§7.2) |
-| `get_corpus_status` | `as_of?` | Active and retained corpus and index versions, verifier version, known limitations, and issuer coverage, date range and timestamp-precision mix computed under the visibility predicate, plus `effective_as_of` |
+| `verify_claim` | `claim`, `citations[]` (Citation refs with optional `quote`), `numeric?` (`concept?`, `value`, `unit`, `scale`, `period`; sign is derived from `value`), `as_of?`, `corpus_version_id?`, `verifier_version?` | Verification report (§7.2) |
+| `get_corpus_status` | `as_of?`, `corpus_version_id?`, `index_version_id?` | Two separate objects. `coverage`: issuer coverage, date range and timestamp-precision mix for the resolved context, computed under the visibility predicate, plus `effective_as_of`; it is replayable. `live_status`: the active and retained corpus and index versions, available verifier versions and known limitations at request time; it is exempt from replay (§6.3). |
 
 Correctness and uncertainty live in the server's contracts, not in the
 plugin. Every result carries its `evidence_context`, `timestamp_precision`
@@ -447,7 +454,7 @@ work. The numbers are proposed defaults that ADR-0034 freezes.
 | `top_k` | ≤ 20 |
 | `limit` | ≤ 50 |
 | `numeric.value` | Finite decimal string, ≤ 34 significant digits (the engine's Decimal precision) |
-| `numeric.scale` | Integer in [-12, 12] |
+| `numeric.scale` | One of 0, 3, 6 or 9: the base-ten exponents the existing `NumericTuple` accepts (`NUMERIC_SCALE_EXPONENTS` in `packages/retrieval/fel_retrieval/generation.py`). Widening this set is a verifier change and needs its own tests. |
 | `as_of` | Between 1994-01-01T00:00:00Z and request time; future cutoffs rejected |
 | Cursor | Lifetime ≤ 15 minutes, bound to its `evidence_context` |
 
@@ -686,7 +693,9 @@ integration.
      whole-evidence text identity.
 4. **Determinism and replay.**
    - The same resolved `evidence_context` and input give byte-identical
-     `structuredContent`.
+     `structuredContent`. The `live_status` object of `get_corpus_status` is
+     the one exemption (§6.3): after a publish it changes, while the tool's
+     `coverage` object for the original pins does not.
    - Through the public tools: run a search, publish a new corpus version and
      rebuild the index, then replay with the original pins. The result is
      unchanged.
