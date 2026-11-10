@@ -40,9 +40,10 @@ EXCLUDE = {
 # item's content; such a line is code even if it looks like a fence), HTML
 # comments, HTML blocks, code spans, escaped brackets, images, and reference
 # definitions that are unused or interrupt a paragraph; it strips blockquote
-# markers and accepts <angle> and balanced-parenthesis targets. Thematic breaks,
-# list items and table rows end the block before them, so a link cannot span
-# them. Exotic constructs (lazy continuations, nested containers, tables without
+# markers and accepts <angle> and balanced-parenthesis targets. Paragraph-
+# interrupting list markers and delimiter-confirmed table rows end the block;
+# raw HTML tags stay open through blank lines until their closer. Exotic
+# constructs (lazy continuations, nested containers, tables without
 # a leading pipe) may be misjudged: the job exists to catch unlinked new docs,
 # not to validate Markdown.
 QUOTE = re.compile(r"^ {0,3}> ?")
@@ -52,6 +53,7 @@ SETEXT = re.compile(r"^ {0,3}(=+|-+) *$")
 THEMATIC = re.compile(r"^ {0,3}(?:(?:\* *){3,}|(?:_ *){3,}|(?:- *){3,})$")
 LIST_ITEM = re.compile(r"^( *)([-*+]|\d{1,9}[.)])( +|$)")
 TABLE_ROW = re.compile(r"^ {0,3}\|")
+TABLE_DELIMITER = re.compile(r"^ {0,3}\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *$")
 # CommonMark HTML blocks of type 6 (block-level tags, which may interrupt a
 # paragraph) and type 7 (any other complete tag alone on its line, which may
 # not). Both end at the next blank line; Markdown inside them is not rendered.
@@ -67,6 +69,7 @@ HTML_TAG_LINE = re.compile(
     r"^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][\w.:-]*"
     r"(?:\s*=\s*(?:[^\s\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>)\s*$"
 )
+HTML_RAW = re.compile(r"^ {0,3}<(script|pre|style|textarea)(?:\s|>|$)", re.I)
 BACKTICKS = re.compile(r"\\[\\`]|`+")
 BRACKETS = re.compile(r"(?<!\\)\[((?:[^\[\]\\]|\\.)*)\]")
 REFDEF = re.compile(r"^ *\[((?:[^\[\]\\]|\\.)+)\]:[ \t]*(.*)$")
@@ -109,11 +112,36 @@ def closes_fence(content, fence):
                 and not content.strip().strip(fence[0]))
 
 
-def separate_block(content):
+def closes_raw_html(content, tag):
+    return bool(re.search(r"</" + tag + r">", content, re.I))
+
+
+def table_rows(lines):
+    """Identify pipe-led GFM rows only after a header and delimiter row."""
+    rows, active = set(), False
+    for index, line in enumerate(lines):
+        content, depth = split_quotes(line)
+        if not TABLE_ROW.match(content):
+            active = False
+            continue
+        if index + 1 < len(lines):
+            following, next_depth = split_quotes(lines[index + 1])
+            header = content.strip().strip("|").split("|")
+            delimiter = following.strip().strip("|").split("|")
+            if depth == next_depth and TABLE_DELIMITER.fullmatch(following) \
+                    and len(header) == len(delimiter):
+                active = True
+        if active:
+            rows.add(index)
+    return rows
+
+
+def separate_block(content, *, table_row=False, list_open=False):
     """True for a line that cannot continue the paragraph or row above it."""
+    item = LIST_ITEM.match(content)
+    interrupts = item and (list_open or item.group(2) in {"-", "*", "+", "1.", "1)"})
     return bool(ATX.match(content) or SETEXT.match(content)
-                or THEMATIC.match(content) or LIST_ITEM.match(content)
-                or TABLE_ROW.match(content))
+                or THEMATIC.match(content) or interrupts or table_row)
 
 
 def indented_code(line, blank, in_code, content):
@@ -127,6 +155,10 @@ def indented_code(line, blank, in_code, content):
     if indent >= (content or 0) + 4 and (blank or in_code):
         return True, content
     item = LIST_ITEM.match(line)
+    if item and item.group(2)[0].isdigit() and item.group(2) not in {"1.", "1)"} \
+            and content is None and not blank:
+        # Only a list starting at 1 can interrupt a paragraph.
+        item = None
     if item:
         gap = len(item.group(3))
         content = (len(item.group(1)) + len(item.group(2))
@@ -145,7 +177,7 @@ def mask_code_spans(text):
     NUL placeholders keep code-only continuation lines inside their paragraph.
     """
     pending, result, fence = [], [], None
-    depth, blank, in_code, item = 0, True, False, None
+    depth, blank, in_code, item, raw_html = 0, True, False, None, None
 
     def flush():
         if not pending:
@@ -154,11 +186,20 @@ def mask_code_spans(text):
         result.append(mask_inline_code(block))
         pending.clear()
 
-    for line in text.expandtabs(4).splitlines():
+    lines = text.expandtabs(4).splitlines()
+    rows = table_rows(lines)
+    for index, line in enumerate(lines):
+        table_row = index in rows
         content, quotes = split_quotes(line)
         marker = FENCE.match(content)
         if quotes != depth:
             blank = True
+            raw_html = None
+        if raw_html:
+            result.append(line)
+            if closes_raw_html(content, raw_html):
+                raw_html, blank = None, True
+            continue
         if fence:
             result.append(line)
             if closes_fence(content, fence):
@@ -174,14 +215,24 @@ def mask_code_spans(text):
                 result.append(line)
                 blank = False
                 continue
+            if raw := HTML_RAW.match(content):
+                flush()
+                raw_html = raw.group(1)
+                if closes_raw_html(content, raw_html):
+                    raw_html = None
+                result.append(line)
+                depth, blank = quotes, True
+                continue
             blank = bool(ATX.match(content) or SETEXT.match(content))
         else:
             blank = True
-        if not content.strip() or quotes != depth or separate_block(content):
+        if not content.strip() or quotes != depth or separate_block(
+            content, table_row=table_row, list_open=item is not None,
+        ):
             flush()
         depth = quotes
         if not content.strip() or ATX.match(content) or SETEXT.match(content) \
-                or THEMATIC.match(content) or TABLE_ROW.match(content):
+                or THEMATIC.match(content) or table_row:
             # Headings, breaks and table rows are blocks themselves, including
             # their inline code.
             result.append(mask_inline_code(line))
@@ -198,11 +249,19 @@ def prose_lines(text):
     file or a blockquote, a heading, or a closing fence.
     """
     fence, comment, in_code, content = None, False, False, None
-    blank, depth, html = True, 0, False
-    for line in mask_code_spans(text).splitlines():
+    blank, depth, html, raw_html = True, 0, False, None
+    lines = mask_code_spans(text).splitlines()
+    rows = table_rows(lines)
+    for index, line in enumerate(lines):
+        table_row = index in rows
         line, quotes = split_quotes(line)
         if quotes != depth:
             blank, depth, html = True, quotes, False
+            raw_html = None
+        if raw_html:
+            if closes_raw_html(line, raw_html):
+                raw_html, blank = None, True
+            continue
         if fence:
             if closes_fence(line, fence):
                 fence, blank = None, True
@@ -227,6 +286,12 @@ def prose_lines(text):
             if FENCE.match(line):
                 fence, blank = FENCE.match(line).group(1), False
                 continue
+            if raw := HTML_RAW.match(line):
+                raw_html = raw.group(1)
+                if closes_raw_html(line, raw_html):
+                    raw_html = None
+                blank = True
+                continue
             if HTML_BLOCK.match(line) or (blank and HTML_TAG_LINE.match(line)):
                 html, blank = True, False
                 continue
@@ -240,9 +305,11 @@ def prose_lines(text):
                 break
             line = line.split("-->", 1)[1]
         prose += line
-        starts_block = blank or separate_block(prose)
+        starts_block = blank or separate_block(
+            prose, table_row=table_row, list_open=content is not None,
+        )
         blank = bool(ATX.match(prose) or SETEXT.match(prose)
-                     or THEMATIC.match(prose) or TABLE_ROW.match(prose))
+                     or THEMATIC.match(prose) or table_row)
         yield prose, starts_block
 
 
@@ -355,9 +422,11 @@ def links(text):
                 if target is not None:
                     if not image:  # an image of a page is not a link to it
                         yield target
-                    # Do not scan the URI/title as prose or form an enclosing link.
+                    # Skip URI/title prose. Images may be enclosed by a link;
+                    # an actual link deactivates enclosing link openers.
                     i = end
-                    openers.clear()
+                    if not image:
+                        openers.clear()
                     continue
             i += 1
 
