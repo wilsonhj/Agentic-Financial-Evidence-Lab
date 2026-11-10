@@ -21,3 +21,4 @@ that package's own standing; the table below abbreviates it.
 | [003 agentic extraction](003-agentic-extraction/spec.md) | 001 v1.2 | Partly implemented: `T0301`–`T0305` checked, `T0306`–`T0310` open | PR #102 (2026-07-16) | M3: `T0301`–`T0310` |
 | [004 MVP completion](004-mvp-completion/spec.md) | 001 v1.2 | Ratified; §3 is a 2026-08-31 snapshot | PR #173 @ `fdcb3d2` (2026-08-31) | M3–M5 completion: `T0306`–`T0310`, `T0401`–`T0410`, `T0501`–`T0513` (less `T0506`), `T0214b`, `T0112` |
 | [005 M3 completion](005-m3-completion/spec.md) | 001 v1.2; sequences 003 | Merged; scope still open in the ledger | PR #182 @ `4e91235` | M3 remainder: `T0306`–`T0310` |
+| [006 MCP evidence server](006-mcp-evidence-server/spec.md) | 001 v1.2 | Proposed; not ratified; takes effect only if ADR-0034 is accepted | — | New scope outside M0–M5; no `T####` task |

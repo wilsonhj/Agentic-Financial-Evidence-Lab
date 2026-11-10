@@ -1501,3 +1501,115 @@ packages:
       - apps/web/playwright.reader-prod-smoke.config.ts
       - apps/web/e2e/reader-prod-smoke.acceptance.ts
       - .github/workflows/reader-prod-smoke.yml # Existing named shared-path exception in #108 accepted addendum.
+  # --- MCP evidence server (specs/006-mcp-evidence-server; ADR-0034 Proposed) ---
+  # New scope outside the MVP release gates: no canonical task covers it, so
+  # every entry carries `tasks: []`. All nine are blocked until the integration
+  # lead accepts ADR-0034; the eight after MCP-CONTRACT also wait on its merge.
+  # Flipping any of them is a dispatch decision reserved to the integration lead.
+  - id: MCP-CONTRACT
+    issue: 392
+    tasks: [] # New scope; milestone tasks MCP-101..107 in specs/006-mcp-evidence-server/tasks.md.
+    depends_on: []
+    team: contracts
+    branch: agent/mcp-contract
+    status: blocked # ADR-0034 is Proposed. Carries contract-change plus a dependency authorization record.
+    allowed_paths:
+      - db/migrations/**
+      - packages/contracts/**
+      - requirements.txt
+      - requirements.lock
+      - requirements-dev.txt
+      - requirements-dev.lock
+      - pyproject.toml # dependency tables only
+      - packages/retrieval/fel_retrieval/evidence/interfaces.py
+      - apps/api/app/serializers.py # document-metadata passthrough only
+      - docs/handoff/workstreams.yaml
+      - docs/decisions/ADR-0034-public-read-only-evidence-surface.md # status line only
+  - id: MCP-INGEST-ACCEPTED-AT
+    issue: 393
+    tasks: [] # MCP-201..204
+    depends_on: [MCP-CONTRACT]
+    team: data
+    branch: agent/mcp-ingest-accepted-at
+    status: blocked # Waits on ADR-0034 and MCP-CONTRACT. Must not run concurrently with #62 or #66 (workers/tests/**).
+    allowed_paths:
+      - workers/src/fel_workers/ingestion/**
+      - workers/src/fel_workers/consumer.py
+      - workers/tests/**
+  - id: MCP-CUTOFF-PREDICATES
+    issue: 394
+    tasks: [] # MCP-301..304
+    depends_on: [MCP-CONTRACT]
+    team: api
+    branch: agent/mcp-cutoff-predicates
+    status: blocked # Waits on ADR-0034 and MCP-CONTRACT.
+    allowed_paths:
+      - apps/api/app/corpus.py
+      - apps/api/app/reader.py
+      - apps/api/tests/**
+      - packages/retrieval/fel_retrieval/lanes.py
+      - packages/retrieval/tests/test_lanes*.py
+  - id: MCP-EVIDENCE-READ
+    issue: 395
+    tasks: [] # MCP-401..407
+    depends_on: [MCP-CONTRACT]
+    team: retrieval
+    branch: agent/mcp-evidence-read
+    status: blocked # Waits on ADR-0034 and MCP-CONTRACT. Imports lanes.py; must not edit it (owned by MCP-CUTOFF-PREDICATES).
+    allowed_paths:
+      - packages/retrieval/fel_retrieval/evidence/** # except interfaces.py, owned by MCP-CONTRACT
+      - packages/retrieval/tests/evidence/**
+  - id: MCP-VERIFIER
+    issue: 396
+    tasks: [] # MCP-501..503
+    depends_on: [MCP-CONTRACT]
+    team: trust
+    branch: agent/mcp-verifier
+    status: blocked # Waits on ADR-0034 and MCP-CONTRACT. Existing mock identity strings and goldens must stay byte-identical.
+    allowed_paths:
+      - packages/retrieval/fel_retrieval/verification.py
+      - packages/retrieval/fel_retrieval/verification_report.py
+      - packages/retrieval/tests/test_verification*.py
+  - id: MCP-SERVER
+    issue: 397
+    tasks: [] # MCP-601..606
+    depends_on: [MCP-CONTRACT]
+    team: platform
+    branch: agent/mcp-server
+    status: blocked # Waits on ADR-0034 and MCP-CONTRACT. Builds against an interface mock; final integration needs MCP-EVIDENCE-READ and MCP-VERIFIER merged.
+    allowed_paths:
+      - packages/mcp-server/**
+      - apps/api/app/main.py # the /mcp mount only
+      - apps/api/app/config.py # one enabling setting only
+      - apps/api/tests/test_mcp_mount.py
+  - id: MCP-PLUGIN
+    issue: 398
+    tasks: [] # MCP-701..703
+    depends_on: [MCP-CONTRACT]
+    team: experience
+    branch: agent/mcp-plugin
+    status: blocked # Waits on ADR-0034 and MCP-CONTRACT. Lead to rule whether .claude-plugin/marketplace.json is shared configuration.
+    allowed_paths:
+      - plugins/financial-evidence-lab/**
+      - .claude-plugin/marketplace.json
+  - id: MCP-EVALS
+    issue: 399
+    tasks: [] # MCP-801..806
+    depends_on: [MCP-CONTRACT]
+    team: trust
+    branch: agent/mcp-evals
+    status: blocked # Waits on ADR-0034 and MCP-CONTRACT. Confined to a new subtree of the evals/** claimed by #62/#67/#68/#108/#177/#201.
+    allowed_paths:
+      - evals/mcp/**
+  - id: MCP-HOSTED-PILOT
+    issue: 400
+    tasks: [] # MCP-901..905
+    depends_on: [MCP-INGEST-ACCEPTED-AT, MCP-CUTOFF-PREDICATES, MCP-EVIDENCE-READ, MCP-VERIFIER, MCP-SERVER, MCP-PLUGIN, MCP-EVALS, RELEASE-LIVE-CUTOVER]
+    team: integration
+    branch: agent/mcp-hosted-pilot
+    status: blocked # Hosting, the operating budget and the live corpus are not provisioned (ADR-0034 owner inputs; #177; #108 shared storage).
+    credentials: hosted-required # override defaults.credentials mock-only; names only until lead provisions
+    allowed_paths:
+      - infra/**
+      - docs/runbooks/**
+      - docs/handoff/CREDENTIALS.md
