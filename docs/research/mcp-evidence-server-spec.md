@@ -9,6 +9,10 @@ about third-party protocols and services were gathered by research agents on
 the same date. Items marked **(unverified)** were not confirmed against a
 primary source.
 
+This document may merge as non-authorizing research. Its auth, deployment,
+timestamp and operating-budget decisions are explicit ADR-0034 prerequisites
+(§4, §11, §14). Nothing here implies those gates are already satisfied.
+
 Related: the Claude for Financial Services review
 (`claude-for-financial-services-review.md`, proposed in
 [PR #388](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/388)),
@@ -75,15 +79,19 @@ which allows no owner-funded inference.
 - Citations a third party can re-verify without trusting the model.
 - A deterministic claim verifier with honest, closed output states.
 - Distribution in three forms:
-  - a remote Streamable HTTP endpoint;
-  - local stdio for self-hosters;
-  - a Claude plugin with skills that encode the usage discipline.
-- Eligibility for Anthropic's Connectors Directory.
+  - a remote Streamable HTTP endpoint, first as an invitation-only pilot;
+  - local stdio for self-hosters (an engineering milestone);
+  - a Claude plugin with skills that improve workflow discipline.
+- Eligibility for Anthropic's Connectors Directory, pursued after the pilot.
 
 **Non-goals (v1)**
 
 - Generating answers or claims on the server. The client model does this.
-- Semantic (model-based) entailment. That is deferred to v3 under BYOK.
+- Semantic (model-based) entailment. That is deferred to phase 4 under BYOK.
+- Company-facts snapshot documents and the facts that cite them (P10).
+- Approximate timestamps on the hosted server. Hosted mode is strict only
+  (§6.2).
+- General release before the pilot exit criteria are met (§11).
 - Tenant data: workspaces, saved queries, extraction review, or models.
 - Licensed vendor data or transcripts (`spec.md:84`, `:917`).
 - On-demand EDGAR fetching at tool-call time. The server reads only the
@@ -97,7 +105,7 @@ paths.
 
 | # | Gap | Evidence | Required change |
 |---|---|---|---|
-| P1 | **The SEC acceptance time is not stored.** `published_at` and `filed_at` are both set to the EDGAR filing date at midnight UTC. A filing accepted at 15:00 ET is therefore visible to a 09:00 ET cutoff the same day. That is look-ahead leakage. | `workers/src/fel_workers/consumer.py` sets `published_at=filed_at` from the filing date with a "midnight UTC" comment. Discovery reads only `accessionNumber`, `form`, `filingDate` and `primaryDocument` (`ingestion/discovery.py`). `evals/datasets/benchmark-seed/README.md` already calls such cutoffs provisional. | Read `acceptanceDateTime` from the submissions JSON. Add `accepted_at` and `timestamp_precision` to `documents` (a migration). Backfill. Gate visibility on `accepted_at`. Until the backfill finishes, use the conservative rule in §6.2. Confirm the timezone of `acceptanceDateTime` empirically against a filing index page's "Accepted" time **(unverified: UTC vs Eastern)**. |
+| P1 | **The SEC acceptance time is not stored.** `published_at` and `filed_at` are both set to the EDGAR filing date at midnight UTC. A filing accepted at 15:00 ET is therefore visible to a 09:00 ET cutoff the same day. That is look-ahead leakage. | `workers/src/fel_workers/consumer.py` sets `published_at=filed_at` from the filing date with a "midnight UTC" comment. Discovery reads only `accessionNumber`, `form`, `filingDate` and `primaryDocument` (`ingestion/discovery.py`). `evals/datasets/benchmark-seed/README.md` already calls such cutoffs provisional. | Read `acceptanceDateTime` from the submissions JSON. Add `accepted_at` and `timestamp_precision` to `documents` (a migration). Backfill. Switch **every** reused visibility predicate to `accepted_at`, not only the new MCP reads. That covers corpus listing and resolve, the reader, retrieval lanes, `fel_guard_candidate`, and the restatement-target query. The backfill must also repair same-day amendment links: `pipeline.py` selects restatement targets with `d.published_at < %s`, which drops originals filed on the same date as their amendment while timestamps are date-only. Strict historical mode (§6.2) has no visible documents until this lands. Confirm the timezone of `acceptanceDateTime` empirically against a filing index page's "Accepted" time **(unverified: UTC vs Eastern)**. |
 | P2 | **Two reads have no cutoff.** `GET /v1/documents/{id}` and `GET /v1/source-spans/{id}` take no `as_of`. They are existence and content oracles for post-cutoff filings. | `apps/api/app/corpus.py` (`get_source_span` selects by id only) | The MCP layer must not call them. Add a cutoff-guarded span read that joins `documents` and applies the visibility predicate. |
 | P3 | **There is no company resolver.** `/v1/entities` is `x-fel-status: planned`. | `packages/contracts/openapi/openapi.yaml` | Add a ticker/CIK/name to `entity_id` lookup over the cohort and corpus. |
 | P4 | **The verifier is labelled mock.** The pipeline calls `verify_claims(..., MockCitationVerifier())`. Its logic is deterministic (exact Decimal numeric tuples, text identity, lexical coverage), but it is named and owned as a test double. | `apps/api/app/retrieval_pipeline.py:268`, `packages/retrieval/fel_retrieval/verification.py` | Promote it to a named, versioned production verifier (`deterministic-v1`) with tests. Do not ship "verified" on a class called mock. |
@@ -106,20 +114,36 @@ paths.
 | P7 | **Quotes are not persisted.** The `citations` table has no `quote` column, and traces return only `source_span_id`. | `db/migrations/0003_retrieval_core.sql` | Not blocking for v1, because the MCP server returns text sliced from canonical text at read time. Needed later for stored verification reports. |
 | P8 | **The live corpus is not loaded or accepted.** | T0112 / #56; `docs/handoff/STATUS.md` | A hosted server needs the 20-issuer cohort ingested with P1 timestamps. Self-hosters bring their own. |
 | P9 | **No MCP dependency.** Adding `mcp` changes lockfiles. | `requirements.lock`, `uv.lock` | `contract-change` plus an authorization record. Check whether `mcp` 2.x's transitive dependencies (reportedly `httpx2` replacing `httpx`, unverified) coexist with the pinned `httpx` 0.28.1. |
-| P10 | **Company-facts documents are dated by fetch time.** `published_at=fetched_at` for the company-facts blob, so facts sourced only from it have no filing-accurate time. | `workers/src/fel_workers/ingestion/company_facts.py:707` | Date each fact by its source accession's acceptance time, which company facts expose per fact as `accn` and `filed`. Until then, exclude company-facts-only facts from cutoff queries. |
+| P10 | **Company-facts facts cite a fetch-dated snapshot.** The company-facts document gets `published_at=fetched_at`. Its facts cite spans inside that snapshot document version (`source_span_id=observation.span_id`). Re-dating a fact by its source accession would not change that provenance. Backdating the snapshot would expose observations filed later. | `workers/src/fel_workers/ingestion/company_facts.py:631`, `:707` | **v1 excludes `COMPANYFACTS` snapshot documents and every fact citing them from all MCP tools.** Facts come only from filing-native XBRL, whose spans live in the filing itself. Including company facts later requires a frozen design, decided before promotion, for: observation time, snapshot vintage, source-accession provenance, and citation round-trip semantics. |
 
 ## 5. Architecture
 
 ### 5.1 Placement
 
-Create a new package `packages/mcp-server/` (module `fel_mcp`). It owns tool
-definitions, input and output schemas, and the cutoff-guarded read layer. It
-calls the existing read functions and `fel_retrieval` lanes directly; it does
-not call FEL's own HTTP API. Tenant authentication is meaningless for
-public-corpus reads, and a second network hop adds failure modes without
-adding isolation.
+Put the cutoff-guarded reads in **one shared evidence-read service**, with
+thin REST and MCP adapters over it:
 
-It has two entry points:
+```text
+REST reader/API ───────┐
+                       ├─ Shared evidence-read service
+MCP HTTP / stdio ──────┘   ├─ versioned public corpus, restricted DB role and pool
+                           ├─ immutable canonical text
+                           └─ deterministic verification
+```
+
+- The service is a library: visibility predicate, pins, span slicing and
+  hashing, lexical search and verification. Both adapters reuse it. The MCP
+  adapter must not call FastAPI route handlers. Those carry tenant
+  dependencies, connection contexts and app settings.
+- Public reads get a dedicated connection context and pool on a role with
+  SELECT on public-corpus tables only. Sharing the database is fine; the new
+  surface must not inherit tenant-table privileges.
+- A new package `packages/mcp-server/` (module `fel_mcp`) owns the MCP
+  adapter: tool definitions, input and output schemas, and error mapping. It
+  does not call FEL's own HTTP API. A second network hop adds failure modes
+  without adding isolation.
+
+The adapter has two entry points:
 
 - **Remote.** An ASGI app mounted by `apps/api` at `/mcp`, sharing the
   database pool. The SDK requires the host to enter its session manager in
@@ -129,10 +153,17 @@ It has two entry points:
   mount. Only the Starlette example was verified; confirm FastAPI
   `app.mount()` behaviour in a spike.
 - **Local.** `python -m fel_mcp --stdio`, for self-hosters with their own
-  Postgres and object storage, and for the plugin's local mode.
+  Postgres and object storage. This is an engineering and self-hosting
+  milestone, not the analyst on-ramp: provisioning PostgreSQL, storage and
+  ingestion blocks first value for analysts.
 
-A separate deployable is the alternative if the API's public-mode guard
-(ADR-0027) conflicts with an anonymous mount. Decide this in ADR-0034.
+The API's public-mode guard (ADR-0027) runs through the authentication
+dependencies (`get_verifier` calls `require_auth_deployment` in
+`apps/api/app/dependencies.py`), not through middleware. An independently
+authorized `/mcp` mount that does not use those dependencies does not inherit
+the guard, so mounting needs no guard exemption. ADR-0034 must authorize that
+mount explicitly. The web reader's `PUBLIC_AUTH_NOT_READY` guard
+(`apps/web/src/proxy.ts`) is separate, and this spec does not relax it (§7.1).
 
 ### 5.2 Protocol target
 
@@ -179,23 +210,31 @@ dependencies.
 ### 6.2 Visibility predicate
 
 A document is visible when its public-availability instant is at or before
-`effective_as_of`:
+`effective_as_of`.
 
-- **With P1 done:** `accepted_at <= as_of`, with
-  `timestamp_precision = "second"`.
-- **Interim, before P1:** use a conservative upper bound,
-  `filing_date at 22:00 America/New_York`. EDGAR accepts submissions until
-  22:00 ET. Submissions after 17:30 ET receive the next business day's filing
-  date (17 CFR 232.13), so acceptance normally falls no later than 22:00 ET
-  on the filing date. This hides some filings for part of a day rather than
-  leaking them. One exception: when the SEC grants a filing-date adjustment
-  under 232.13(b), acceptance can come after the assigned date. Those cases
-  are rare, and P1 closes them. Responses report
-  `timestamp_precision = "date-conservative"`.
+- **Strict mode (the default and the only hosted mode).** A document is
+  visible only if it has a verified `accepted_at` (P1) and
+  `accepted_at <= effective_as_of`. Records without a verified acceptance
+  timestamp are invisible. Strict mode is the only mode covered by the
+  temporal acceptance gate (§12).
+- **Approximate mode (opt-in, self-hosted only, never gated).** Requests may
+  pass `timestamp_mode: "approximate"` to use the bound
+  `filing_date at 22:00 America/New_York` for records without `accepted_at`.
+  This bound is **not a strict guarantee**. Submissions after 17:30 ET usually
+  receive the next business day's filing date, but the SEC can adjust filing
+  dates under
+  [17 CFR 232.13(b)](https://www.ecfr.gov/current/title-17/chapter-II/part-232/section-232.13),
+  which can place acceptance after the bound. Every result in this mode is
+  labeled `timestamp_precision: "approximate"` and
+  `temporal_guarantee: "none"`, and results are excluded from temporal
+  acceptance evidence.
 - Spans, sections, facts and tables inherit visibility from their document
   version. This is the existing ADR-0005 rule.
 - A hidden document returns the same not-found error as a missing one. This
-  is the existing ADR-0005 no-oracle rule.
+  is the existing ADR-0005 no-oracle rule. It applies to every tool:
+  references are resolved only within the visible evidence set, so hidden and
+  nonexistent ids follow the same code path. They produce identical outward
+  errors and check results. Detailed diagnostics are internal logs only.
 - Fact restatement and duplicate links are returned only when the target
   document is also visible.
 
@@ -219,9 +258,18 @@ is rebuilt. Pins are therefore request inputs as well as response fields:
 - A pinned version that is unknown, unpublished or retired returns an
   explicit `PIN_UNAVAILABLE` error naming the pin. The server never silently
   falls back to the active version.
-- The same input with the same pins returns byte-identical structured
-  content. §12 exercises this through the public tools, across an index
+- Every response returns one `evidence_context` object. It holds the resolved
+  cutoff (`effective_as_of`), `timestamp_mode`, corpus and index pins,
+  `verifier_version`, the selected `document_version_id` where one applies,
+  and the cursor's frozen filters. A client keeps one context per research
+  workflow by passing it back.
+- Byte-identical replay is guaranteed for a **resolved context**: an explicit
+  cutoff plus pins. Requests that omit `as_of` default to the current time,
+  so they are not replayable until the client passes back the returned
+  context. §12 exercises replay through the public tools, across an index
   rebuild.
+- Cursors are bound to the context that created them. A cursor used with a
+  different context returns `invalid_input`.
 - How long retired versions remain replayable is open question 8.
 
 ## 7. Tools
@@ -240,10 +288,18 @@ JSON in a text block.
 | `list_filings` | `company`, `as_of?`, `forms?`, `limit` (≤50), `cursor?`, `corpus_version_id?` | Filing metadata: `accession`, `form`, `filing_date`, `accepted_at`, `timestamp_precision`, `period_end`, `document_id`, `document_version_id`, `source_url`, `content_hash`, `amends?`, plus `effective_as_of` |
 | `search_filings` | `query`, `as_of?`, `companies?`, `forms?`, `periods?`, `top_k` (≤20), `corpus_version_id?`, `index_version_id?` | Ranked passages, each with a **Citation** (§7.1) and `lanes` contributions, plus resolved pins and `effective_as_of` |
 | `read_filing` | `document_id` or `accession`, `as_of?`, `section?` (heading path or id), `cursor?`, `corpus_version_id?` | One bounded section chunk: text, its spans as Citations, `next_cursor`, and a section outline on the first page |
-| `get_citation` | `span_id` or (`document_version_id`, `start_char`, `end_char`), `as_of?` | One Citation with text, after a hash re-check. A stale or hidden reference returns not-found. |
+| `get_citation` | `span_id` or (`document_version_id`, `start_char`, `end_char`), `as_of?` | One Citation with text, after a hash re-check. A stale, hidden or nonexistent reference returns the same `not_found`. |
 | `get_financial_facts` | `company`, `concept?`, `period?`, `as_of?`, `limit`, `cursor?`, `corpus_version_id?` | XBRL facts: `concept`, `value` (decimal string), `unit`, `scale`, `period`, `dimensions`, `reported_or_derived`, a Citation of the source span, and `restated_by`/`duplicate_of` filtered by visibility |
 | `verify_claim` | `claim`, `citations[]` (Citation refs with optional `quote`), `numeric?` (`concept?`, `value`, `unit`, `scale`, `period`, `sign`), `as_of?`, `corpus_version_id?`, `verifier_version?` | Verification report (§7.2) |
 | `get_corpus_status` | `as_of?` | Active and retained corpus and index versions, verifier version, known limitations, and issuer coverage, date range and timestamp-precision mix computed under the visibility predicate, plus `effective_as_of` |
+
+Correctness and uncertainty live in the server's contracts, not in the
+plugin. Every result carries its `evidence_context`, `timestamp_precision`
+and verification method. Every response's `coverage_note` states the
+issuers, forms and date range searched. An empty result reads "no matching
+evidence in the visible indexed corpus", never a claim that the company did
+not disclose something. A generic MCP client without the plugin must remain
+safe and understandable.
 
 Every resource-bearing output also returns `resource_link` items with URIs of
 the form `fel://filings/{accession}?as_of={instant}&corpus_version_id={id}`
@@ -273,7 +329,7 @@ under the same cutoff guard and pins.
   "filing_date": "2024-03-06",
   "accepted_at": "2024-03-06T21:14:09Z",
   "timestamp_precision": "second",
-  "reader_url": "https://…/reader/{document_id}?span={span_id}&document_version_id={document_version_id}&as_of={effective_as_of}&corpus_version_id={corpus_version_id}",
+  "reader_url": "https://…/reader/{document_id}?span={span_id}&document_version_id={document_version_id}&as_of={effective_as_of}&corpus_version_id={corpus_version_id}  (optional; see below)",
   "untrusted_source_text": true
 }
 ```
@@ -286,7 +342,14 @@ under the same cutoff guard and pins.
   `source_url`, hash it, and confirm the document. Offsets refer to FEL's
   canonical text for `parser_version`, which `read_filing` and the resources
   serve.
-- `reader_url` always carries the citation's evidence scope:
+- `reader_url` is **optional**. It is emitted only when a public, read-only
+  reader that preserves scope is deployed. Today the public web reader returns
+  HTTP 503 `PUBLIC_AUTH_NOT_READY` (`apps/web/src/proxy.ts`), and hosted
+  reader acceptance (#108) is unfinished. Until both are resolved, Citations
+  omit `reader_url`. Clients use `source_url` and `get_citation` instead.
+  A working public scoped reader is an explicit hosted-launch dependency
+  (§11). This spec does not relax the existing public-session guard.
+- When present, `reader_url` always carries the citation's evidence scope:
   `document_version_id`, `as_of` set to the response's `effective_as_of`, and
   `corpus_version_id`. The reader treats an omitted cutoff as request time and
   an omitted version as the latest parsed version (`apps/api/app/reader.py`).
@@ -305,14 +368,18 @@ under the same cutoff guard and pins.
 promoted under P4 with its rules unchanged. The MCP layer adds only integrity
 checks in front of it.
 
-**Integrity checks, per citation.** Any failure makes the claim
-`unsupported`, and the report names the failed check and citation.
+**Integrity checks, per citation.** References are resolved only within the
+evidence set visible under the request's `evidence_context` (§6.2). A hidden
+span and a nonexistent span take the same code path. Both produce the same
+outward result: check `visible: false` and reason `not_found`, with no other
+detail. Which case applied is recorded only in internal logs. Any failure
+makes the claim `unsupported`. The report names the failing citation by its
+position in the request, never by facts about the hidden document.
 
 | Check | Rule |
 |---|---|
-| `resolved` | The reference resolves to an existing span. |
-| `within_cutoff` | The span's document is visible at `effective_as_of`. |
-| `hash_valid` | The recomputed hash equals the stored `text_hash`. |
+| `visible` | The reference resolves to a span whose document is visible at `effective_as_of`. Missing and hidden spans are indistinguishable. |
+| `hash_valid` | The recomputed hash equals the stored `text_hash`. Evaluated only for visible spans. |
 | `quote_found` | If a quote is given, it occurs verbatim in the span text. Whitespace normalization is versioned and listed. |
 
 **Edge status, per citation.** The rules are applied in order, as the
@@ -348,7 +415,7 @@ whose wording changed. Transformed or paraphrased claims stay at most
 Every report states `semantic_entailment: "not_evaluated"` and
 `entailment_method: "lexical-coverage-v1"`. The server never upgrades a
 claim to `supported` on the client model's say-so. That would let the model
-grade its own work. Independent semantic entailment is v3 (§11).
+grade its own work. Independent semantic entailment is deferred to phase 4 (§11).
 
 ### 7.3 Size and latency budgets
 
@@ -362,15 +429,82 @@ grade its own work. Independent semantic entailment is v3 (§11).
   20-issuer corpus. The reader's existing caps (32 MiB, 10,000 spans) remain
   the backstop.
 
+### 7.4 Request limits and backend work bounds
+
+Output caps alone do not bound work. One admitted request could still trigger
+large reads and hashing. Input schemas enforce these maxima, and an
+over-limit request is rejected with `invalid_input` before any database
+work. The numbers are proposed defaults that ADR-0034 freezes.
+
+| Field | Limit |
+|---|---|
+| `query` | ≤ 500 characters |
+| `claim` | ≤ 2,000 characters |
+| `quote` | ≤ 1,000 characters each |
+| `citations[]` | ≤ 10 per `verify_claim` |
+| `companies`, `forms` | ≤ 10 each |
+| `periods` | ≤ 12 |
+| `top_k` | ≤ 20 |
+| `limit` | ≤ 50 |
+| `numeric.value` | Finite decimal string, ≤ 34 significant digits (the engine's Decimal precision) |
+| `numeric.scale` | Integer in [-12, 12] |
+| `as_of` | Between 1994-01-01T00:00:00Z and request time; future cutoffs rejected |
+| Cursor | Lifetime ≤ 15 minutes, bound to its `evidence_context` |
+
+Per-request backend bounds:
+
+- **Deadline.** Each tool call has a 10 s total deadline. The public pool sets
+  `statement_timeout` to 2 s with `SET LOCAL`.
+- **Reads.** Canonical-text bytes read per request are capped at 4 MiB.
+  Hashing is limited to the spans the request names or returns.
+- **Concurrency.** Each replica admits at most 16 in-flight tool calls, and
+  each client IP at most 4 concurrent calls. Excess returns `overloaded` with
+  `retry_after_seconds`.
+- **Global budget.** A server-wide token bucket on tool calls per minute is
+  sized to a monthly infrastructure budget that ADR-0034 records. When it is
+  exhausted, the server sheds load with `rate_limited` or `overloaded`. It
+  never degrades the cutoff or verification guarantees.
+
+**Per-IP limits are coarse abuse controls, not per-user quotas.** claude.ai
+and Claude Desktop connector traffic comes from Anthropic's shared cloud
+egress range (`160.79.104.0/21`). Many users therefore share a few
+addresses, so per-IP buckets must be sized for that. Individual quotas need
+authenticated identity: lazy OAuth (§8).
+
+### 7.5 Errors
+
+Tool-execution failures return `isError: true` with a structured
+`{"error": {"code", "message", "retryable", "retry_after_seconds"?, "field"?, "recovery"}}`.
+JSON-RPC protocol errors stay JSON-RPC errors. Only the evidence-existence
+case is deliberately uninformative. Every other failure is specific and
+actionable, as the connector review criteria require.
+
+| Code | When | Retryable | Recovery guidance |
+|---|---|---|---|
+| `not_found` | The reference is missing **or** hidden by the cutoff. Both cases are identical outward. | No | Check the identifier, or search within the current context. |
+| `invalid_input` | Schema or §7.4 limit violation, or a cursor used with a different context | No | Names `field` and the violated constraint. |
+| `cursor_expired` | Cursor older than its lifetime | No | Restart the listing with the same `evidence_context`. |
+| `pin_unavailable` | Pinned corpus, index or verifier version unknown or retired | No | Names the pin. Omit it to start a new context on active versions. |
+| `rate_limited` | Per-IP or global token bucket empty | Yes | Wait `retry_after_seconds`. |
+| `overloaded` | Concurrency cap reached | Yes | Wait `retry_after_seconds`. |
+| `deadline_exceeded` | Request deadline hit | Yes | Narrow filters or `top_k`, then retry. |
+| `unavailable` | Database or object-storage outage | Yes | Wait `retry_after_seconds`. |
+| `integrity_error` | A visible span's stored hash does not match its canonical text | No | Fails closed, like the reader's `span_hash_mismatch`, and is logged for operators. |
+
+Messages never include filing text, and never state facts about hidden
+documents.
+
 ## 8. Access, auth and cost
 
 - **Hosted v1: authless, read-only and rate-limited.** The data is public,
   and there is no inference cost. Claude supports `none` authentication and
-  lazy authentication. Enforce a per-IP token bucket and the size budgets. Do
-  not log query text by default; record tool name, status, latency and pins.
+  lazy authentication. Enforce the §7.4 request limits, deadlines,
+  concurrency caps and global budget; per-IP buckets are only coarse abuse
+  controls. Do not log query text by default; record tool name, status,
+  latency and pins.
   The directory requires that conversation data not be collected. Publish a
   privacy policy. ADR-0034 must amend ADR-0004 for this surface only (P6).
-- **Later: lazy OAuth.** Gate specific tools (higher quotas, v3 semantic
+- **Later: lazy OAuth.** Gate specific tools (higher quotas, phase 4 semantic
   verification) with an HTTP-layer 401 carrying `WWW-Authenticate` and
   `resource_metadata`. Claude starts sign-in only on a real 401, not on a
   200 with `isError`.
@@ -430,9 +564,12 @@ plugins/financial-evidence-lab/
 - `userConfig` offers an optional self-hosted URL that overrides the default
   (`${user_config.server_url}`). A stdio variant documents
   `python -m fel_mcp --stdio`.
-- The skills hold the discipline the tool descriptions may not. They are the
-  plugin's main value over a bare connector: cutoff hygiene, citation
-  rendering, and verify-then-assert.
+- The skills improve workflow discipline: cutoff hygiene, citation rendering,
+  and verify-then-assert. They do **not** supply safety guarantees. Cutoffs,
+  no-oracle behaviour, verification states and uncertainty labels are
+  enforced in the server contract (§6, §7), so a bare connector is safe
+  without the plugin. The pilot evaluates the bare connector and the plugin
+  separately (§11.1).
 - The skills are original content. If any text is adapted from
   `anthropics/financial-services` (Apache-2.0), carry that attribution in
   `NOTICE` and mark the modified files.
@@ -464,19 +601,47 @@ plugins/financial-evidence-lab/
   unless `TransportSecuritySettings` lists them.
 - Parameterize all inputs. Reuse the lanes' code-controlled SQL projection.
   Bound `top_k`, `limit` and cursor lifetimes.
-- Use a read-only database role with SELECT on the public-corpus tables only.
-  This server never touches tenant tables.
-- Per-IP and per-token rate limits. No egress. Errors are generic and carry no
-  existence oracle.
+- Use a dedicated connection pool on a read-only role with SELECT on the
+  public-corpus tables only. This server never touches tenant tables.
+- Request limits, deadlines, concurrency caps and the global budget are in
+  §7.4. There is no egress.
+- Errors follow §7.5. Only evidence existence is deliberately uninformative;
+  every other error is specific and actionable.
 
 ## 11. Phasing
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| 0. Prerequisites | ADR-0034; P1 (acceptance time and backfill); P2 guarded span read; P3 company resolver; P4 verifier promotion; P5 lexical-only search and index; P9 dependency authorization; P10 fact dating | Migration merged. Temporal-leakage suite (§12) green on fixtures. Benchmark-seed cutoffs re-derived from `accepted_at`. |
-| 1. Local server and plugin | `fel_mcp` with all §7 tools over stdio and local HTTP; the plugin in this repository's marketplace | In-memory SDK client tests, MCP Inspector run, `claude plugin validate`, and an end-to-end Claude Code session on the fixture corpus. |
-| 2. Hosted connector | Public `/mcp` on the 20-issuer corpus (P8); rate limits; privacy policy; directory submission | Directory scan passed. Budgets in §7.3 met. Load test at the expected request rate. |
-| 3. Semantic verification and dense search | Lazy OAuth; BYOK model entailment for `verify_claim` (ADR-0026); the dense lane with the user's key; an optional MCP Apps evidence-reader view with a highlighted span | Entailment precision on the frozen benchmark meets spec §19.6 (≥95%). No owner-funded calls. |
+| 0. Prerequisites | ADR-0034, which covers the mount authorization, anonymous read and the operating budget. Also: P1 (acceptance time, every predicate, same-day amendment repair); P2 guarded span read; P3 company resolver; P4 verifier promotion; P5 lexical-only search and index; P9 dependency authorization; P10 company-facts exclusion; the shared evidence-read service (§5.1) | Migration merged. Strict-mode temporal-leakage suite (§12) green on fixtures. Benchmark-seed cutoffs re-derived from `accepted_at`. |
+| 1. Engineering build (local and self-hosted) | `fel_mcp` with all §7 tools over stdio and local HTTP; the plugin in this repository's marketplace | In-memory SDK client tests, MCP Inspector run, `claude plugin validate`, and an end-to-end Claude Code session on the fixture corpus. This is an engineering milestone, not the analyst on-ramp. |
+| 2. Invitation-only hosted pilot | Hosted `/mcp` on the canonical 20-issuer corpus (P8), with published coverage (issuers, forms, years, snapshot date, synchronization status, known gaps); §7.4 limits; privacy policy; demonstrated research questions. Hosted-launch dependency: a working public read-only reader that preserves scope; otherwise Citations omit `reader_url` (§7.1). No directory listing yet. | Technical: §12 tests, §7.3 budgets, a load test at pilot volume. Product: the pilot measures in §11.1 meet the useful-task bar ADR-0034 sets. Applicable parent release gates (spec §19.6) are preserved, not waived. |
+| 3. General release | Connectors Directory submission and public listing | Pilot exit met. Directory acceptance is necessary but does not establish usefulness. |
+| 4. Deferred until the pilot shows repeat value | S&P 500 corpus expansion; the dense lane with the user's key; lazy OAuth with BYOK semantic entailment for `verify_claim` (ADR-0026); an MCP Apps evidence-reader view | Entailment precision meets spec §19.6 (≥95%) on the frozen benchmark. No owner-funded calls. |
+
+### 11.1 First promise and pilot measures
+
+The first promise the pilot tests:
+
+> Find a reported fact or exact management quote for a supported SaaS
+> company, known at a specified historical instant, and inspect its source.
+
+Pilot participants consent to measurement. Query text is not collected for
+analytics, and anonymous telemetry is not used to estimate individual
+retention. Measures:
+
+- setup completion rate;
+- time to the first evidence an analyst accepts;
+- completion rate on in-coverage tasks, with out-of-coverage attempts
+  reported separately;
+- repeat research sessions;
+- temporal and citation failures;
+- unsupported conclusions presented as verified;
+- infrastructure cost and tool calls per completed task;
+- the same measures for the bare connector and for the plugin, reported
+  separately.
+
+Existing fixture visualizations are not presented as live modeling
+integration.
 
 ## 12. Acceptance tests
 
@@ -484,17 +649,29 @@ plugins/financial-evidence-lab/
    - For every tool and random cutoffs, nothing published after the cutoff
      appears: no ids, counts, facts, restatement links, pagination hints, or
      coverage aggregates from `resolve_company` and `get_corpus_status`.
-   - Hidden and missing documents return identical errors.
-   - Same-day cases: accepted before the cutoff is visible; accepted after is
-     not; date-only precision obeys the conservative rule.
+   - Hidden and missing documents return identical errors from every tool.
+   - `verify_claim` on a hidden span and on a nonexistent span gives
+     byte-identical reports: the same `visible: false`, the same reason and no
+     extra fields.
+   - Same-day cases in strict mode: accepted before the cutoff is visible;
+     accepted after is not; a record without a verified `accepted_at` is
+     invisible.
+   - Approximate-mode results are labeled `temporal_guarantee: "none"` and are
+     excluded from this suite's evidence.
    - Amendment accepted after the cutoff: the original is visible and the
      amendment and its `restates` links are not.
+   - A same-day original and amendment, accepted at different times, link
+     correctly after the P1 repair. The amendment is hidden before its own
+     acceptance.
+   - No `COMPANYFACTS` snapshot document, or fact citing one, appears through
+     any tool (P10).
 2. **Citation round-trip.**
    - Every Citation returned by any tool re-verifies through `get_citation`.
-   - Every `reader_url` and `fel://` link carries `as_of`,
-     `corpus_version_id` and, for the reader, `document_version_id`.
+   - Every `fel://` link, and every `reader_url` when emitted, carries `as_of`
+     and `corpus_version_id`, plus `document_version_id` for the reader.
      Following one from a historical search shows the cited version and no
-     post-cutoff siblings.
+     post-cutoff siblings. No `reader_url` is emitted while the public reader
+     is guarded.
    - Hashes recompute from canonical text.
    - Non-BMP characters (emoji, CJK extension B) slice correctly by code
      point. Reuse the #386 fixtures.
@@ -508,7 +685,8 @@ plugins/financial-evidence-lab/
      evidence is never `supported`. No path returns `supported` without
      whole-evidence text identity.
 4. **Determinism and replay.**
-   - The same pins and input give byte-identical `structuredContent`.
+   - The same resolved `evidence_context` and input give byte-identical
+     `structuredContent`.
    - Through the public tools: run a search, publish a new corpus version and
      rebuild the index, then replay with the original pins. The result is
      unchanged.
@@ -519,12 +697,22 @@ plugins/financial-evidence-lab/
    schemas, `structuredContent` and annotations. The legacy 2025-11-25
    session flow and the 2026-07-28 stateless flow both pass. The tool
    descriptions snapshot test passes.
-6. **Budgets.** Default pages stay at or under 8k tokens, and no response
-   exceeds 20k. The p95 latency targets in §7.3 are met.
-7. **Retrieval baseline.** Run the 65-question benchmark seed through
+6. **Budgets and limits.**
+   - Default pages stay at or under 8k tokens, and no response exceeds 20k.
+   - The p95 latency targets in §7.3 are met.
+   - Every §7.4 limit is rejected at its boundary with `invalid_input`, before
+     any database work.
+   - The deadline, `statement_timeout`, concurrency caps and global bucket
+     shed load with the §7.5 codes and `retry_after_seconds`.
+7. **Error contract.** Each §7.5 code is produced by a fixture scenario, with
+   the documented `retryable` flag, `field` and recovery text. No error
+   message contains filing text or hidden-document facts.
+8. **Retrieval baseline.** Run the 65-question benchmark seed through
    `search_filings` (lexical, facts and tables lanes). Report recall@10 and
    temporal validity. Temporal validity must be 1.0. Recall is reported, not
-   gated, until the seed is adjudicated.
+   gated, until the seed is adjudicated. That makes this a technical check,
+   not evidence of usefulness. Usefulness is judged by the pilot measures in
+   §11.1, and parent release gates still apply to general release.
 
 ## 13. Governance and paths
 
@@ -547,14 +735,17 @@ plugins/financial-evidence-lab/
    depends on it.
 2. **Should hosted v1 be authless?** The alternative is lazy OAuth from day
    one, which trades friction for abuse resistance and an amended ADR-0004.
-3. **Mount or separate deployable?** Mounting inside `apps/api` conflicts with
-   the public-mode 503 guard (ADR-0027) unless the guard exempts `/mcp`.
-4. **Who funds the hosted corpus and server?** Hosting and storage are
-   owner-funded infrastructure, not inference. Confirm this is consistent
-   with ADR-0026's intent.
-5. **Corpus breadth.** Twenty SaaS issuers limits usefulness. Should the
-   hosted corpus expand (for example to the S&P 500 10-K and 10-Q set) before
-   the directory submission? That is an ingestion and storage-cost decision.
+3. **Mount authorization.** The API's public-mode guard runs through the
+   authentication dependencies, so a `/mcp` mount does not inherit it (§5.1).
+   ADR-0034 must still authorize the anonymous mount explicitly, along with
+   its dedicated connection pool and role.
+4. **Who funds the hosted corpus and server, and how much?** Hosting and
+   storage are owner-funded infrastructure, not inference. Confirm this is
+   consistent with ADR-0026's intent. Set the monthly budget that sizes the
+   global bucket (§7.4).
+5. **Corpus breadth.** Resolved for now: the pilot keeps the canonical
+   20-issuer cohort and publishes its coverage and gaps. S&P 500 expansion
+   waits until the pilot shows repeat value (§11, phase 4).
 6. **Exhibits.** Should exhibits be served? The SEC permits redistribution of
    sec.gov information but does not address third-party content inside
    exhibits. Get a legal read before serving them.
