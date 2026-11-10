@@ -23,7 +23,7 @@ Rules (see ADR-0002 and the constitution):
 - Tenant-scoped tables must ship with their row-level-security policies in
   the same migration that creates them.
 
-The directory holds migrations `0001` through `0011`; list it for the
+The directory holds migrations `0001` through `0012`; list it for the
 current set rather than relying on this count.
 
 ## Guard locks and role coverage
@@ -198,3 +198,35 @@ This is a coordinated rollout requirement, not a zero-downtime migration.
 Rollback stops producers and preserves migrated history; do not downgrade data.
 The 0011 SQL harness and worker occurrence tests cover local acceptance. No
 hosted rollout is certified by merging this migration.
+
+### 0012: acceptance time and the public read role (ADR-0034)
+
+Adds `documents.accepted_at` (nullable) and `documents.timestamp_precision`
+(`date` or `second`, default `date`). A CHECK makes them agree both ways:
+`second` if and only if `accepted_at` is set. Existing rows stay `date` with
+`accepted_at` NULL until #393 backfills them. `documents_entity_accepted_idx`
+supports `(entity_id, accepted_at)` cutoff reads.
+
+`fel_guard_candidate` now rejects a candidate when
+`COALESCE(accepted_at, published_at)` **or** `published_at` is after the query
+cutoff. The second test is deliberate. A filing accepted after 17:30 ET gets the
+next business day's filing date, so its `accepted_at` can precede its
+`published_at` midnight; COALESCE alone would then admit it earlier than 0003
+did. Retrieval lanes that switch to acceptance time (#394) must use the same
+two-sided test, or the guard will reject candidates the lane proposed.
+
+`fel_public_read` is a NOLOGIN group role with SELECT on ten untenanted tables:
+the eight 0002 corpus tables and `retrieval_index_versions` and
+`retrieval_items`. The migration refuses to grant on any table that has an
+`org_id` column. It gets nothing on `ingestion_quarantine`, `ingestion_runs`,
+`retrieval_embeddings`, `schema_migrations`, sequences or any tenant table, and
+belongs to no other role. A role-level `statement_timeout` would not apply after
+`SET ROLE`, so the MCP pool sets it per transaction (design contract §7.4).
+
+The harness checks every relation in `public` against the allowlist in the
+catalog. It then runs each denied `SELECT`, write, row lock and `CREATE` as the
+role and expects `42501`. A table added later is denied by default and covered
+without editing the harness.
+
+0012 grants `fel_worker` no `UPDATE` on `documents`. A backfill run under
+`FEL_WORKER_DB_ROLE` needs a column-level grant from a later migration.
