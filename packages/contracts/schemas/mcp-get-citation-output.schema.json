@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.fel.dev/schemas/mcp-get-citation-output/v1",
+  "x-fel-version": "1.0.0",
+  "title": "McpGetCitationOutput",
+  "description": "Output of get_citation: one Citation whose text hash was recomputed from canonical text. A mismatch is integrity_error, never a returned citation. Every output carries evidence_context and coverage_note (design contract §7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence_context", "coverage_note", "citation", "hash_verified"],
+  "properties": {
+    "evidence_context": {
+      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1"
+    },
+    "coverage_note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "issuers", "forms", "date_range"],
+      "description": "What was searched: issuers, forms and date range under the visibility predicate. An empty result reads 'no matching evidence in the visible indexed corpus', never a claim that a company did not disclose something (design contract §7).",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "issuers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Issuers in scope, as CIKs."
+        },
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "date_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+              "description": "Earliest visible acceptance instant in scope, or null when nothing is visible."
+            },
+            "to": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+              "description": "Latest visible acceptance instant in scope, never after effective_as_of; null when nothing is visible."
+            }
+          }
+        }
+      }
+    },
+    "citation": {
+      "$ref": "https://contracts.fel.dev/schemas/mcp-citation/v1"
+    },
+    "hash_verified": {
+      "const": true
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "evidence_context": {
+    "effective_as_of": "2024-03-07T14:30:00Z",
+    "timestamp_mode": "strict",
+    "temporal_guarantee": "strict",
+    "corpus_version_id": "a07c9a8e-2f1d-4e4a-9b3c-738495a6b7c8",
+    "index_version_id": "b18dab9f-3a2e-4f5b-8c4d-8495a6b7c8d9",
+    "parser_version": "edgar-html-v3",
+    "verifier_version": "deterministic-v1",
+    "document_version_id": null,
+    "filters": {}
+  },
+  "coverage_note": {
+    "text": "Searched 10-K filings of Salesforce, Inc. (CIK 0001108524) accepted from 2023-03-08T21:05:12Z to 2024-03-06T21:14:09Z, visible at 2024-03-07T14:30:00Z.",
+    "issuers": ["0001108524"],
+    "forms": ["10-K"],
+    "date_range": {
+      "from": "2023-03-08T21:05:12Z",
+      "to": "2024-03-06T21:14:09Z"
+    }
+  },
+  "results": [
+    {
+      "rank": 1,
+      "kind": "passage",
+      "fused_score": "0.016393",
+      "lanes": [
+        {
+          "lane": "lexical",
+          "lane_rank": 1,
+          "rrf_contribution": "0.016393"
+        }
+      ],
+      "citation": {
+        "span_id": "7e4f6d5b-9c8a-4b1d-8e0f-405162738495",
+        "accession": "0001108524-24-000012",
+        "form": "10-K",
+        "company": {
+          "entity_id": "4b1c3a2e-6f5d-4e8a-9b7c-1d2e3f405162",
+          "cik": "0001108524",
+          "ticker": "CRM",
+          "name": "Salesforce, Inc."
+        },
+        "document_id": "5c2d4b3f-7a6e-4f9b-8c8d-2e3f40516273",
+        "document_version_id": "6d3e5c4a-8b7f-4a0c-9d9e-3f4051627384",
+        "parser_version": "edgar-html-v3",
+        "section_path": ["Part II", "Item 7. Management's Discussion and Analysis"],
+        "start_char": 120345,
+        "end_char": 120414,
+        "offset_unit": "unicode_code_point",
+        "text": "Total revenues were $34.9 billion, an increase of 11% year-over-year.",
+        "text_hash": "sha256:158bdc5e911280b52d0d49c1a0d54adaec9b1c281798cedc44b07696c7ad008a",
+        "document_content_hash": "sha256:3f6c1e0b9a8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1108524/000110852424000012/crm-20240131.htm",
+        "filing_date": "2024-03-06",
+        "accepted_at": "2024-03-06T21:14:09Z",
+        "timestamp_precision": "second",
+        "untrusted_source_text": true
+      }
+    }
+  ]
+}

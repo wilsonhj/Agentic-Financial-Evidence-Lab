@@ -1,0 +1,52 @@
+{
+  "evidence_context": {
+    "effective_as_of": "2024-03-07T14:30:00Z",
+    "timestamp_mode": "strict",
+    "temporal_guarantee": "strict",
+    "corpus_version_id": "a07c9a8e-2f1d-4e4a-9b3c-738495a6b7c8",
+    "index_version_id": "b18dab9f-3a2e-4f5b-8c4d-8495a6b7c8d9",
+    "parser_version": "edgar-html-v3",
+    "verifier_version": "deterministic-v1",
+    "document_version_id": null,
+    "filters": {}
+  },
+  "coverage_note": {
+    "text": "Searched 10-K filings of Salesforce, Inc. (CIK 0001108524) accepted from 2023-03-08T21:05:12Z to 2024-03-06T21:14:09Z, visible at 2024-03-07T14:30:00Z.",
+    "issuers": ["0001108524"],
+    "forms": ["10-K"],
+    "date_range": {
+      "from": "2023-03-08T21:05:12Z",
+      "to": "2024-03-06T21:14:09Z"
+    }
+  },
+  "report": {
+    "verifier": "deterministic-v1",
+    "claim_status": "unsupported",
+    "citations": [
+      {
+        "index": 0,
+        "checks": {
+          "visible": true,
+          "hash_valid": true,
+          "quote_found": true
+        },
+        "reason": null,
+        "edge_status": "partial",
+        "numeric_checks": null
+      },
+      {
+        "index": 1,
+        "checks": {
+          "visible": false,
+          "hash_valid": null,
+          "quote_found": null
+        },
+        "reason": "not_found",
+        "edge_status": "irrelevant"
+      }
+    ],
+    "semantic_entailment": "not_evaluated",
+    "entailment_method": "lexical-coverage-v1",
+    "quote_normalization": "whitespace-collapse-v1"
+  }
+}

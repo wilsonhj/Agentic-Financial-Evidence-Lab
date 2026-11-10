@@ -34,6 +34,36 @@ OpenAPI paths equal the FastAPI route table in both directions,
 `workers/tests/extraction/test_vendored_contract_schema.py` keeps the worker's
 vendored extraction-payload schema byte-identical to `schemas/`.
 
+## MCP evidence surface 0.10.0 (ADR-0034)
+
+Issue #392 adds 20 schemas for the read-only MCP server. Each starts at
+`x-fel-version` 1.0.0 and has a fixture:
+
+- `mcp-evidence-context/v1` is the resolved cutoff, timestamp mode, pins and
+  frozen cursor filters (design contract §6.3).
+- `mcp-citation/v1` is a span citation with code-point offsets and a
+  recomputable hash. `reader_url` is optional (§7.1).
+- `mcp-verification-report/v1` has one `visible` check per citation. It has no
+  `derived` status and states that semantic entailment was not evaluated
+  (§7.2).
+- `mcp-error/v1` holds the §7.5 codes. `not_found` has one fixed message and
+  recovery text, so hidden and missing evidence look the same.
+- `mcp-<tool>-input/v1` and `mcp-<tool>-output/v1` cover each of the eight
+  tools. Inputs encode the §7.4 limits and reject unknown members. Every
+  output requires `evidence_context` and `coverage_note`.
+
+`MCP_TOOL_SCHEMAS` in `src/index.ts` maps each tool name to its two `$id`s, in
+the published tool order. Tool outputs `$ref` the named MCP schemas by
+canonical `$id`. A server must bundle those references before it sends an
+`outputSchema` to clients. These schemas are not part of the REST surface or
+the generated client. `mcp-contracts.test.ts` checks every limit at its
+boundary, plus the no-oracle shapes and the replay exemption for
+`get_corpus_status.live_status`.
+
+The OpenAPI document moves to 0.10.0 for one additive change. `DocumentMeta`
+and `reader-response/v1` (now 1.2.0) gain optional `accepted_at` and
+`timestamp_precision` (`date` or `second`).
+
 ## Readable candidates 0.9.0 (ADR-0024 Amendment 1)
 
 Only proposal reads add `ExtractionCandidateFields`, an individually versioned
