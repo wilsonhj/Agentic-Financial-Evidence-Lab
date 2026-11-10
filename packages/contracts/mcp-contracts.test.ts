@@ -316,6 +316,37 @@ describe("citation (design contract §7.1)", () => {
     expect(valid({ ...citation, accepted_at: "2024-03-06T21:14:09" })).toBe(false);
   });
 
+  it("second precision requires public_at and its basis (ADR-0034 Amendment 1)", () => {
+    const citation = fixture("mcp-citation");
+    expect(citation.public_at_basis).toBe("acceptance");
+    expect(citation.public_at).toBe(citation.accepted_at);
+    expect(valid({ ...citation, public_at: null })).toBe(false);
+    expect(valid({ ...citation, public_at_basis: null })).toBe(false);
+    expect(valid({ ...citation, public_at_basis: "dissemination" })).toBe(false);
+    expect(valid({ ...citation, public_at: "2024-03-06T21:14:09" })).toBe(false);
+    const nextOpen = {
+      ...citation,
+      accepted_at: "2024-03-05T23:00:00Z",
+      public_at: "2024-03-06T11:00:00Z",
+      public_at_basis: "next_session_open",
+    };
+    expect(valid(nextOpen)).toBe(true);
+    expect(
+      valid({
+        ...citation,
+        timestamp_precision: "approximate",
+        accepted_at: null,
+        public_at: null,
+        public_at_basis: null,
+      }),
+    ).toBe(true);
+    for (const key of ["public_at", "public_at_basis"]) {
+      const body = fixture("mcp-citation");
+      delete body[key];
+      expect(valid(body), key).toBe(false);
+    }
+  });
+
   it("reader_url is optional but must carry span, version, cutoff and corpus scope", () => {
     const citation = fixture("mcp-citation");
     const scoped =
@@ -540,9 +571,81 @@ describe("document metadata acceptance fields (OpenAPI 0.10.0)", () => {
     ).toBe(true);
     expect(valid(withMeta({ timestamp_precision: "date" }))).toBe(true);
     expect(valid(withMeta({ timestamp_precision: "approximate" }))).toBe(false);
+    expect(
+      valid(
+        withMeta({
+          accepted_at: "2024-03-05T23:00:00Z",
+          public_at: "2024-03-06T11:00:00Z",
+          public_at_basis: "next_session_open",
+          timestamp_precision: "second",
+        }),
+      ),
+    ).toBe(true);
+    expect(valid(withMeta({ public_at_basis: "dissemination" }))).toBe(false);
     const yaml = readFileSync(join(here, "openapi/openapi.yaml"), "utf8");
     expect(yaml).toMatch(
       /DocumentMeta:[\s\S]*?timestamp_precision:\n\s+type: string\n\s+enum: \[date, second\]/,
     );
+  });
+});
+
+describe("publication time (ADR-0034 Amendment 1)", () => {
+  // The derivation rule lives in one ingestion function (#393); the fixtures
+  // must at least be consistent with it.
+  const easternDate = (instant: string) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(instant));
+  const easternTime = (instant: string) =>
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/New_York",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(instant));
+
+  it("list_filings fixture shows both bases, each consistent with the rule", () => {
+    const filings = fixture("mcp-list-filings-output").filings as Array<Record<string, string>>;
+    const bases = filings.map((f) => f.public_at_basis).sort();
+    expect(bases).toEqual(["acceptance", "next_session_open"]);
+    for (const f of filings) {
+      const later = f.filing_date! > easternDate(f.accepted_at!);
+      if (later) {
+        expect(f.public_at_basis, f.accession).toBe("next_session_open");
+        expect(easternDate(f.public_at!), f.accession).toBe(f.filing_date);
+        expect(easternTime(f.public_at!), f.accession).toBe("06:00");
+      } else {
+        expect(f.public_at_basis, f.accession).toBe("acceptance");
+        expect(f.public_at, f.accession).toBe(f.accepted_at);
+      }
+    }
+    expect(validator(SCHEMA_IDS.mcpListFilingsOutput)(fixture("mcp-list-filings-output"))).toBe(
+      true,
+    );
+  });
+
+  it("every schema that carries accepted_at also carries public_at and public_at_basis", () => {
+    for (const file of readdirSync(join(here, "schemas")).filter((f) => f.startsWith("mcp-"))) {
+      const text = readFileSync(join(here, "schemas", file), "utf8");
+      const accepted = (text.match(/"accepted_at":/g) ?? []).length;
+      expect((text.match(/"public_at":/g) ?? []).length, file).toBe(accepted);
+      expect((text.match(/"public_at_basis":/g) ?? []).length, file).toBe(accepted);
+    }
+  });
+
+  it("live_status must state both residual uncertainties", () => {
+    const valid = validator(SCHEMA_IDS.mcpGetCorpusStatusOutput);
+    const body = fixture("mcp-get-corpus-status-output");
+    const codes = body.live_status.known_limitations.map((l: { code: string }) => l.code);
+    expect(codes).toContain("public_at_next_session_open_is_earliest");
+    expect(codes).toContain("intraday_dissemination_delay_assumed_zero");
+    expect(valid(body)).toBe(true);
+    for (const code of [
+      "public_at_next_session_open_is_earliest",
+      "intraday_dissemination_delay_assumed_zero",
+    ]) {
+      const without = structuredClone(body);
+      without.live_status.known_limitations = without.live_status.known_limitations.filter(
+        (l: { code: string }) => l.code !== code,
+      );
+      expect(valid(without), code).toBe(false);
+    }
   });
 });

@@ -46,13 +46,13 @@
               "type": ["string", "null"],
               "format": "date-time",
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
-              "description": "Earliest visible acceptance instant in scope, or null when nothing is visible."
+              "description": "Earliest visible public_at in scope, or null when nothing is visible."
             },
             "to": {
               "type": ["string", "null"],
               "format": "date-time",
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
-              "description": "Latest visible acceptance instant in scope, never after effective_as_of; null when nothing is visible."
+              "description": "Latest visible public_at in scope, never after effective_as_of; null when nothing is visible."
             }
           }
         }
@@ -106,7 +106,14 @@
                   {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["accession", "form", "filing_date", "accepted_at"],
+                    "required": [
+                      "accession",
+                      "form",
+                      "filing_date",
+                      "accepted_at",
+                      "public_at",
+                      "public_at_basis"
+                    ],
                     "properties": {
                       "accession": {
                         "type": "string",
@@ -123,6 +130,18 @@
                         "type": ["string", "null"],
                         "format": "date-time",
                         "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+                      },
+                      "public_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+                        "description": "Instant the filing became public, the visibility instant (ADR-0034 decision 4, Amendment 1). Strict mode shows a document only when public_at <= effective_as_of."
+                      },
+                      "public_at_basis": {
+                        "type": ["string", "null"],
+                        "enum": ["acceptance", "next_session_open", null],
+                        "x-fel-open-enum": false,
+                        "description": "acceptance: public_at equals accepted_at. next_session_open: the filing date is later than the Eastern date of acceptance, so public_at is 06:00 America/New_York on the filing date, the earliest it could have been public."
                       }
                     }
                   }
@@ -136,7 +155,14 @@
                   {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["accession", "form", "filing_date", "accepted_at"],
+                    "required": [
+                      "accession",
+                      "form",
+                      "filing_date",
+                      "accepted_at",
+                      "public_at",
+                      "public_at_basis"
+                    ],
                     "properties": {
                       "accession": {
                         "type": "string",
@@ -153,6 +179,18 @@
                         "type": ["string", "null"],
                         "format": "date-time",
                         "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+                      },
+                      "public_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+                        "description": "Instant the filing became public, the visibility instant (ADR-0034 decision 4, Amendment 1). Strict mode shows a document only when public_at <= effective_as_of."
+                      },
+                      "public_at_basis": {
+                        "type": ["string", "null"],
+                        "enum": ["acceptance", "next_session_open", null],
+                        "x-fel-open-enum": false,
+                        "description": "acceptance: public_at equals accepted_at. next_session_open: the filing date is later than the Eastern date of acceptance, so public_at is 06:00 America/New_York on the filing date, the earliest it could have been public."
                       }
                     }
                   }

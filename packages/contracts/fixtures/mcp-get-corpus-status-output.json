@@ -65,8 +65,26 @@
     ],
     "verifier_versions": ["deterministic-v1"],
     "known_limitations": [
-      "Company-facts snapshots are excluded; facts come only from filing-native XBRL.",
-      "Semantic entailment is not evaluated."
+      {
+        "code": "public_at_next_session_open_is_earliest",
+        "text": "For filings accepted after hours (basis next_session_open), public_at is 06:00 ET on the filing date, when EDGAR opens. The SEC does not state the exact dissemination second, so this is the earliest the filing could have been public."
+      },
+      {
+        "code": "intraday_dissemination_delay_assumed_zero",
+        "text": "The SEC does not state the delay between acceptance and dissemination during the day. For basis acceptance, public_at equals accepted_at and the delay is treated as zero."
+      },
+      {
+        "code": "acceptance_timezone_unconfirmed",
+        "text": "The timezone of the SEC acceptanceDateTime field has not been confirmed against a live filing (ADR-0034 owner input 4)."
+      },
+      {
+        "code": "company_facts_excluded",
+        "text": "Company-facts snapshots are excluded; facts come only from filing-native XBRL."
+      },
+      {
+        "code": "semantic_entailment_not_evaluated",
+        "text": "Semantic entailment is not evaluated."
+      }
     ]
   }
 }

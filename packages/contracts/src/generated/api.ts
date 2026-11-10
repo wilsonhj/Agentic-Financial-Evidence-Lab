@@ -770,7 +770,17 @@ export interface components {
        */
       accepted_at?: string;
       /**
-       * @description second when accepted_at is a verified acceptance instant; date when only the filing date is known (v0.10.0, ADR-0034).
+       * Format: date-time
+       * @description Instant the filing became public, the visibility instant (v0.10.0, ADR-0034 Amendment 1). Equals accepted_at, or 06:00 America/New_York on the filing date when that date is later than the Eastern date of acceptance. Omitted when unknown.
+       */
+      public_at?: string;
+      /**
+       * @description How public_at was derived (v0.10.0, ADR-0034 Amendment 1). Present exactly when public_at is.
+       * @enum {string}
+       */
+      public_at_basis?: "acceptance" | "next_session_open";
+      /**
+       * @description second when accepted_at and public_at are verified instants; date when only the filing date is known (v0.10.0, ADR-0034).
        * @enum {string}
        */
       timestamp_precision?: "date" | "second";

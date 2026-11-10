@@ -46,13 +46,13 @@
               "type": ["string", "null"],
               "format": "date-time",
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
-              "description": "Earliest visible acceptance instant in scope, or null when nothing is visible."
+              "description": "Earliest visible public_at in scope, or null when nothing is visible."
             },
             "to": {
               "type": ["string", "null"],
               "format": "date-time",
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
-              "description": "Latest visible acceptance instant in scope, never after effective_as_of; null when nothing is visible."
+              "description": "Latest visible public_at in scope, never after effective_as_of; null when nothing is visible."
             }
           }
         }
@@ -243,10 +243,44 @@
         },
         "known_limitations": {
           "type": "array",
+          "description": "Limitations stated at request time. Always includes the two residual uncertainties of ADR-0034 Amendment 1: next_session_open is the earliest a filing could have been public, and intraday dissemination delay is treated as zero.",
           "items": {
-            "type": "string",
-            "minLength": 1
-          }
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "text"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "x-fel-open-enum": true
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            }
+          },
+          "allOf": [
+            {
+              "contains": {
+                "properties": {
+                  "code": {
+                    "const": "public_at_next_session_open_is_earliest"
+                  }
+                }
+              }
+            },
+            {
+              "contains": {
+                "properties": {
+                  "code": {
+                    "const": "intraday_dissemination_delay_assumed_zero"
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     }

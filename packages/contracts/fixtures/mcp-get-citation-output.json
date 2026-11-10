@@ -42,6 +42,8 @@
     "source_url": "https://www.sec.gov/Archives/edgar/data/1108524/000110852424000012/crm-20240131.htm",
     "filing_date": "2024-03-06",
     "accepted_at": "2024-03-06T21:14:09Z",
+    "public_at": "2024-03-06T21:14:09Z",
+    "public_at_basis": "acceptance",
     "timestamp_precision": "second",
     "untrusted_source_text": true
   },

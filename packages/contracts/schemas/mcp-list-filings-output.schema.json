@@ -46,13 +46,13 @@
               "type": ["string", "null"],
               "format": "date-time",
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
-              "description": "Earliest visible acceptance instant in scope, or null when nothing is visible."
+              "description": "Earliest visible public_at in scope, or null when nothing is visible."
             },
             "to": {
               "type": ["string", "null"],
               "format": "date-time",
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
-              "description": "Latest visible acceptance instant in scope, never after effective_as_of; null when nothing is visible."
+              "description": "Latest visible public_at in scope, never after effective_as_of; null when nothing is visible."
             }
           }
         }
@@ -70,6 +70,8 @@
           "form",
           "filing_date",
           "accepted_at",
+          "public_at",
+          "public_at_basis",
           "timestamp_precision",
           "period_end",
           "document_id",
@@ -99,10 +101,22 @@
             "format": "date-time",
             "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
           },
+          "public_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+            "description": "Instant the filing became public, the visibility instant (ADR-0034 decision 4, Amendment 1). Strict mode shows a document only when public_at <= effective_as_of."
+          },
+          "public_at_basis": {
+            "type": ["string", "null"],
+            "enum": ["acceptance", "next_session_open", null],
+            "x-fel-open-enum": false,
+            "description": "acceptance: public_at equals accepted_at. next_session_open: the filing date is later than the Eastern date of acceptance, so public_at is 06:00 America/New_York on the filing date, the earliest it could have been public."
+          },
           "timestamp_precision": {
             "type": "string",
             "enum": ["second", "approximate"],
-            "description": "second: accepted_at is a verified SEC acceptance instant. approximate: the self-hosted approximate mode was used and nothing is guaranteed (design contract §6.2)."
+            "description": "second: accepted_at and public_at are verified instants. approximate: the self-hosted approximate mode was used and nothing is guaranteed (design contract §6.2)."
           },
           "period_end": {
             "type": ["string", "null"],
@@ -153,6 +167,14 @@
                   "type": "string",
                   "format": "date-time",
                   "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+                },
+                "public_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+                },
+                "public_at_basis": {
+                  "enum": ["acceptance", "next_session_open"]
                 }
               }
             }

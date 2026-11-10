@@ -24,12 +24,14 @@ def document_body(row: dict[str, Any]) -> dict[str, Any]:
     }
     if row["form"] is not None:
         body["form"] = row["form"]
-    # Acceptance time (0012, ADR-0034): optional, so rows read with an
-    # explicit column list that predates 0012 still serialize unchanged.
-    if row.get("accepted_at") is not None:
-        body["accepted_at"] = row["accepted_at"].isoformat()
-    if row.get("timestamp_precision") is not None:
-        body["timestamp_precision"] = row["timestamp_precision"]
+    # Acceptance and publication time (0012, ADR-0034): optional, so rows read
+    # with an explicit column list that predates 0012 still serialize unchanged.
+    for key in ("accepted_at", "public_at"):
+        if row.get(key) is not None:
+            body[key] = row[key].isoformat()
+    for key in ("public_at_basis", "timestamp_precision"):
+        if row.get(key) is not None:
+            body[key] = row[key]
     for key in ("filed_at", "valid_from", "valid_to"):
         if row[key] is not None:
             body[key] = row[key].isoformat()

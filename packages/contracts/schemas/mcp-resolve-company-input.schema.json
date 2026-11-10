@@ -32,7 +32,7 @@
       "type": "string",
       "enum": ["strict", "approximate"],
       "default": "strict",
-      "description": "strict (the default and the only hosted mode) shows a document only when its verified acceptance time is at or before the cutoff. approximate is self-hosted only and carries no temporal guarantee (design contract §6.2)."
+      "description": "strict (the default and the only hosted mode) shows a document only when its verified public_at (the instant it became public) is at or before the cutoff. approximate is self-hosted only and carries no temporal guarantee (design contract §6.2)."
     }
   }
 }

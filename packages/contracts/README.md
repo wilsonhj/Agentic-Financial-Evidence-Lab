@@ -42,7 +42,10 @@ Issue #392 adds 20 schemas for the read-only MCP server. Each starts at
 - `mcp-evidence-context/v1` is the resolved cutoff, timestamp mode, pins and
   frozen cursor filters (design contract §6.3).
 - `mcp-citation/v1` is a span citation with code-point offsets and a
-  recomputable hash. `reader_url` is optional (§7.1).
+  recomputable hash. It carries `accepted_at`, `public_at` and
+  `public_at_basis`, which `list_filings`, `read_filing` and
+  `resolve_company` also carry. `public_at` is the visibility instant
+  (ADR-0034 Amendment 1). `reader_url` is optional (§7.1).
 - `mcp-verification-report/v1` has one `visible` check per citation. It has no
   `derived` status and states that semantic entailment was not evaluated
   (§7.2).
@@ -60,8 +63,13 @@ the generated client. `mcp-contracts.test.ts` checks every limit at its
 boundary, plus the no-oracle shapes and the replay exemption for
 `get_corpus_status.live_status`.
 
+`get_corpus_status.live_status.known_limitations` must state the two residual
+uncertainties of Amendment 1. These are the `next_session_open` lower bound
+and the assumption of zero intraday dissemination delay.
+
 The OpenAPI document moves to 0.10.0 for one additive change. `DocumentMeta`
-and `reader-response/v1` (now 1.2.0) gain optional `accepted_at` and
+and `reader-response/v1` (now 1.2.0) gain four optional fields: `accepted_at`,
+`public_at`, `public_at_basis` (`acceptance` or `next_session_open`) and
 `timestamp_precision` (`date` or `second`).
 
 ## Readable candidates 0.9.0 (ADR-0024 Amendment 1)

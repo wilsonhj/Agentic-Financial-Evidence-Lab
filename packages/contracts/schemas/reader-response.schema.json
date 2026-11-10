@@ -109,10 +109,20 @@
           "format": "date-time",
           "description": "Verified SEC acceptance instant (ADR-0034). Omitted when unknown."
         },
+        "public_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Instant the filing became public, the visibility instant (ADR-0034 Amendment 1). Omitted when unknown."
+        },
+        "public_at_basis": {
+          "type": "string",
+          "enum": ["acceptance", "next_session_open"],
+          "description": "How public_at was derived. Present exactly when public_at is."
+        },
         "timestamp_precision": {
           "type": "string",
           "enum": ["date", "second"],
-          "description": "second when accepted_at is a verified acceptance instant; date when only the filing date is known."
+          "description": "second when accepted_at and public_at are verified instants; date when only the filing date is known."
         },
         "filed_at": {
           "type": "string",
