@@ -1,11 +1,11 @@
 # MCP Evidence Server — Public Read-Only Evidence Surface
 
-**Status:** Proposed. Not ratified. It takes effect only if ADR-0034 is accepted.
+**Status:** Accepted with ADR-0034 on 2026-11-10. Nothing is implemented. Hosted work stays blocked on the open owner inputs.
 **Version:** 0.1.0
 **Date:** 2026-11-10
 **Parent specification:** `specs/001-financial-evidence-lab/spec.md` v1.2 (governs on conflict)
 **Design contract:** [`docs/research/mcp-evidence-server-spec.md`](../../docs/research/mcp-evidence-server-spec.md). ADR-0034 freezes its §6 and §7. This document adds no design; it states the requirements, packages and gates.
-**Decision record:** [ADR-0034](../../docs/decisions/ADR-0034-public-read-only-evidence-surface.md) (Proposed)
+**Decision record:** [ADR-0034](../../docs/decisions/ADR-0034-public-read-only-evidence-surface.md) (Accepted, qualified)
 **Scope:** new scope outside the MVP release gates (parent §19.6, §26). No canonical `T####` task covers it.
 **Baseline measured:** `origin/main` @ `2f7f066`
 **Canonical task ledger:** `specs/001-financial-evidence-lab/tasks.md`. This package changes nothing in it. [`tasks.md`](tasks.md) here lists milestone tasks only and tracks no completion state.
@@ -25,9 +25,9 @@ else.
 
 ### 1.1 What this document does not do
 
-It authorizes nothing. Accepting ADR-0034, flipping a registry `status`,
-provisioning a credential or hosting target, and adding canonical tasks are
-integration-lead actions. §7 lists what is owed.
+It authorizes nothing beyond ADR-0034. Flipping a registry `status`,
+provisioning a credential or hosting target, and adding canonical tasks
+remain integration-lead actions. §7 lists what is owed.
 
 ## 2. Evidence basis
 
@@ -76,11 +76,11 @@ list these.
 
 ## 4. Packages
 
-All nine are registered `blocked` in `docs/handoff/workstreams.yaml`.
+All nine are registered in `docs/handoff/workstreams.yaml`, which holds their status.
 
 | Package | Issue | Delivers | Depends on |
 |---|---|---|---|
-| `MCP-CONTRACT` | #392 | Migration `0012`, read-only role, schemas and fixtures, OpenAPI 0.10.0, the `mcp` dependency, the evidence interface | ADR-0034 accepted |
+| `MCP-CONTRACT` | #392 | Migration `0012`, read-only role, schemas and fixtures, OpenAPI 0.10.0, the `mcp` dependency, the evidence interface | ADR-0034 (accepted) |
 | `MCP-INGEST-ACCEPTED-AT` | #393 | Acceptance timestamps at ingest, backfill, same-day amendment repair | `MCP-CONTRACT` |
 | `MCP-CUTOFF-PREDICATES` | #394 | Existing reads and lanes compare against acceptance time | `MCP-CONTRACT` |
 | `MCP-EVIDENCE-READ` | #395 | The shared evidence-read service and keyword-only search | `MCP-CONTRACT` |
@@ -128,9 +128,10 @@ Directory acceptance does not establish usefulness.
 
 ## 7. Owed by the integration lead
 
-1. Accept, amend or reject ADR-0034, and record its six owner inputs.
+1. Supply the open owner inputs in ADR-0034: the operating budget, the
+   product name and the plugin-manifest ruling.
 2. Merge the design contract (PR #389) before or with this package.
-3. Flip `MCP-CONTRACT` to `ready` and assign it.
+3. Review and merge `MCP-CONTRACT` (#392), then flip the lanes to `ready`.
 4. Confirm the acceptance-time timezone with an approved SEC user agent.
 5. Decide whether to add canonical tasks for this scope.
 6. Provision hosting and the operating budget before #400.

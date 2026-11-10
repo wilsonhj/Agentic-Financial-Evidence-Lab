@@ -1,7 +1,9 @@
 # ADR-0034: Public read-only evidence surface over MCP
 
-Status: Proposed. Nothing below is authorized until the integration lead
-accepts this ADR and records the owner inputs in the last section.
+Status: Accepted for bounded implementation under the owner's 2026-11-10
+acceptance of this ADR as drafted, including anonymous read-only access. The
+last section records which owner inputs that acceptance settled and which
+remain open.
 
 Date: 2026-11-10
 
@@ -9,7 +11,7 @@ Issues: #392 (contract), #393–#399 (lanes), #400 (hosted pilot). Design:
 [`docs/research/mcp-evidence-server-spec.md`](../research/mcp-evidence-server-spec.md).
 Package: [`specs/006-mcp-evidence-server/`](../../specs/006-mcp-evidence-server/spec.md).
 
-Amends in part, if accepted: [ADR-0004](ADR-0004-public-corpus-tenancy.md)
+Amends in part: [ADR-0004](ADR-0004-public-corpus-tenancy.md)
 (anonymous reads) and [ADR-0027](ADR-0027-deployment-modes.md) (an
 independently authorized mount). It does not change ADR-0002, ADR-0026 or any
 release gate.
@@ -127,22 +129,21 @@ day.
 - **Keep filing-date cutoffs.** They leak same-day filings, and SEC filing
   date adjustments mean no date-only bound is strict.
 
-## Owner inputs required before acceptance
+## Owner inputs
 
-These are decisions or facts only the owner can supply. The ADR text above
-assumes the first option of each.
+The owner accepted this ADR as drafted on 2026-11-10. That settles the inputs
+that had a drafted option. The rest are facts or figures only the owner can
+supply. Each open input gates the package named beside it and nothing else.
 
-1. **Anonymous hosted access.** Accept decision 2, or require sign-in from
-   the first hosted release (which then waits on #324).
-2. **Operating budget.** A monthly infrastructure figure that sizes the
-   global request limit.
-3. **Hosting target.** Mount in `apps/api` on the planned Railway service,
-   or name another target.
-4. **Acceptance-time timezone.** Whether `acceptanceDateTime` in the
-   submissions JSON is UTC or US Eastern is unverified. Confirming it needs
-   one request to sec.gov with an approved `FEL_SEC_USER_AGENT`. #393 isolates
-   the assumption in one function until then.
-5. **Product name and domain.** They must avoid the SEC and EDGAR marks
-   before any directory submission.
-6. **Root plugin manifest.** Whether `.claude-plugin/marketplace.json`
-   counts as shared configuration (#398).
+| # | Input | Outcome | Gates |
+|---|---|---|---|
+| 1 | Anonymous hosted access | **Accepted.** Decision 2 stands. | — |
+| 2 | Operating budget: a monthly infrastructure figure that sizes the global request limit | **Open** | #400 |
+| 3 | Hosting target | **Accepted as drafted:** mount in `apps/api` on the planned Railway service. Provisioning is still owed. | #400 |
+| 4 | Acceptance-time timezone: whether `acceptanceDateTime` in the submissions JSON is UTC or US Eastern. Confirming it needs one request to sec.gov with an approved `FEL_SEC_USER_AGENT`. | **Open.** #393 isolates the assumption in one function. | Any hosted run |
+| 5 | Product name and domain, which must avoid the SEC and EDGAR marks | **Open** | Directory submission |
+| 6 | Whether `.claude-plugin/marketplace.json` counts as shared configuration | **Open.** #398 treats it as shared until ruled. | #398 |
+
+Acceptance authorizes the offline packages #392 to #399 in the order
+`specs/006-mcp-evidence-server/plan.md` gives. It authorizes no hosted
+deployment, credential, paid call or canonical task change.

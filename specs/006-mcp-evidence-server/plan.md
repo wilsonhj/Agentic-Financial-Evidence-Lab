@@ -18,7 +18,8 @@ One contract package freezes every shared-path change. Seven packages then
 run in parallel on mocks and fixtures. The ninth, the hosted pilot, waits on
 infrastructure.
 
-Nothing is dispatchable until ADR-0034 is accepted.
+ADR-0034 was accepted on 2026-11-10, so the offline packages may be
+dispatched in wave order. The hosted pilot stays blocked.
 
 ## Technical Context
 
@@ -60,22 +61,20 @@ a paid provider.
   denial tests, untrusted-text handling and per-request work bounds. **Open:**
   the operating budget that sizes the global limit is an owner input
   (ADR-0034 input 2). It must be recorded before `MCP-HOSTED-PILOT`.
-- [ ] **The design stays within the approved stack or includes an approved
+- [x] **The design stays within the approved stack or includes an approved
   complexity ADR.** A new dependency and a new package are added. ADR-0034
-  covers both and is **Proposed**. The item passes only on acceptance.
+  covers both and was accepted on 2026-11-10.
 
 ### Gate result
 
-**Two of five are open, both by design.** They are the two things this
-package asks the integration lead to decide. Offline packages may be
-dispatched once ADR-0034 is accepted. The hosted pilot additionally needs the
-budget recorded.
+**One of five is open: the operating budget.** It gates only
+`MCP-HOSTED-PILOT`. Offline packages may be dispatched in wave order.
 
 ## Waves
 
 | Wave | Packages | Gate to enter |
 |---|---|---|
-| 0. Decision | none | The lead accepts ADR-0034 and records the owner inputs |
+| 0. Decision | none | Done: ADR-0034 accepted on 2026-11-10 |
 | 1. Contract | `MCP-CONTRACT` (#392) | Wave 0 |
 | 2. Lanes | `MCP-INGEST-ACCEPTED-AT` (#393), `MCP-CUTOFF-PREDICATES` (#394), `MCP-EVIDENCE-READ` (#395), `MCP-VERIFIER` (#396), `MCP-SERVER` (#397), `MCP-PLUGIN` (#398), `MCP-EVALS` (#399) | #392 merged |
 | 3. Integration | #397 against real #395 and #396; #399 full runs | #395, #396 merged |
