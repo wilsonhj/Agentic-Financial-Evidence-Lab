@@ -1681,17 +1681,3 @@ a {
   height: 100%;
   background: var(--color-accent);
 }
-
-.obs-stage-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.obs-stage-chip {
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  font-size: 0.78rem;
-}

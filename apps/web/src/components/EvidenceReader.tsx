@@ -10,10 +10,17 @@ import type {
   SourceSpanRecord,
 } from "../lib/contracts";
 import type { CitationIntegrityFailure } from "../lib/citation-integrity";
+import type { AmendmentLink } from "../lib/amendments";
 import { amendmentStatusFor, linkAmendments } from "../lib/amendments";
 import { formatPeriodRange } from "../lib/document-display";
 import type { DuplicateFactGroup } from "../lib/facts";
-import { duplicateGroupIndex, formatScaledValue, groupDuplicateFacts } from "../lib/facts";
+import {
+  conflictKind,
+  duplicateGroupIndex,
+  formatScaledValue,
+  groupDuplicateFacts,
+  isRestatementGroup,
+} from "../lib/facts";
 import { buildOutline } from "../lib/outline";
 import type { NoteAnchor } from "../lib/notes";
 import { initReaderState, readerReducer } from "../lib/reader-state";
@@ -290,6 +297,7 @@ export function EvidenceReader({
       {conflictGroups.length > 0 && (
         <ConflictSummary
           groups={conflictGroups}
+          amendmentLinks={amendmentLinks}
           documentId={documentId}
           spansById={spansById}
           sectionsById={sectionsById}
@@ -340,6 +348,7 @@ export function EvidenceReader({
 
 interface ConflictSummaryProps {
   groups: DuplicateFactGroup[];
+  amendmentLinks: AmendmentLink[];
   documentId: string;
   spansById: Map<string, SourceSpanRecord>;
   sectionsById: Map<string, SectionRecord>;
@@ -364,6 +373,7 @@ function joinPlainly(parts: string[]): string {
  */
 function ConflictSummary({
   groups,
+  amendmentLinks,
   documentId,
   spansById,
   sectionsById,
@@ -380,11 +390,35 @@ function ConflictSummary({
       ) ?? group.records[0];
     return own?.fact.label ?? own?.fact.concept ?? "A reported fact";
   });
+  // A difference fully explained by an amendment is a restatement, not an
+  // inconsistency; it is labelled the way the fact card labels it.
+  const kinds = groups.map((group) => conflictKind(group, documentIdBySpanId, amendmentLinks));
+  const conflictMetrics = metrics.filter((_, index) => kinds[index] === "conflict");
+  const restatedMetrics = metrics.filter((_, index) => kinds[index] === "restatement");
+  const onlyRestatements = conflictMetrics.length === 0;
 
   return (
-    <section className="conflict-summary" aria-labelledby="conflict-summary-heading">
+    <section
+      className={
+        onlyRestatements ? "conflict-summary conflict-summary-restated" : "conflict-summary"
+      }
+      aria-labelledby="conflict-summary-heading"
+    >
       <h2 id="conflict-summary-heading">
-        <span aria-hidden="true">&#9888;</span> Conflicting values: {joinPlainly(metrics)}
+        {onlyRestatements ? (
+          <>
+            <span aria-hidden="true">&#8505;</span> Restated by amendment:{" "}
+            {joinPlainly(restatedMetrics)}
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true">&#9888;</span> Conflicting values:{" "}
+            {joinPlainly(conflictMetrics)}
+            {restatedMetrics.length > 0 && (
+              <>; restated by amendment: {joinPlainly(restatedMetrics)}</>
+            )}
+          </>
+        )}
       </h2>
       {groups.map((group, groupIndex) => {
         const locations = group.records.map((record) => {
@@ -416,8 +450,22 @@ function ConflictSummary({
         return (
           <div className="conflict-group" key={group.key}>
             <p>
-              <strong>{metrics[groupIndex]}</strong> is reported with {group.canonicalValues.length}{" "}
-              different values: {sentence}.
+              {kinds[groupIndex] === "restatement" ? (
+                <>
+                  <span className="badge badge-info">Restated by amendment</span>{" "}
+                  <strong>{metrics[groupIndex]}</strong> was restated: {sentence}.
+                </>
+              ) : (
+                <>
+                  {isRestatementGroup(group, documentIdBySpanId, amendmentLinks) && (
+                    <>
+                      <span className="badge badge-info">Restated by amendment</span>{" "}
+                    </>
+                  )}
+                  <strong>{metrics[groupIndex]}</strong> is reported with{" "}
+                  {group.canonicalValues.length} different values: {sentence}.
+                </>
+              )}
             </p>
             <ul className="conflict-values">
               {locations.map((location) => (

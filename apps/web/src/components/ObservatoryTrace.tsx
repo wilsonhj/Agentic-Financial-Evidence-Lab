@@ -70,6 +70,14 @@ export function ShortId({ id }: { id: string }) {
   );
 }
 
+/**
+ * A pin needed to reproduce the run (corpus or index version). Shown in full so
+ * it can be read and copied without a hover tooltip, wrapping on narrow screens.
+ */
+function PinnedId({ id }: { id: string }) {
+  return <code className="obs-id obs-id-full">{id}</code>;
+}
+
 function UtcTime({ iso }: { iso: string }) {
   return (
     <time dateTime={iso} title={iso}>
@@ -186,13 +194,13 @@ function PlanSection({ snapshot, trace }: { snapshot?: QuerySnapshot; trace: Ret
         <div>
           <dt>Corpus version</dt>
           <dd>
-            <ShortId id={plan.corpus_version_id} />
+            <PinnedId id={plan.corpus_version_id} />
           </dd>
         </div>
         <div>
           <dt>Index version</dt>
           <dd>
-            <ShortId id={plan.index_version_id} />
+            <PinnedId id={plan.index_version_id} />
           </dd>
         </div>
         <div>
@@ -267,6 +275,11 @@ function BudgetSection({ trace }: { trace: RetrievalTrace }) {
             </tr>
           </tbody>
         </table>
+        {timings.length === 0 && totalMs > 0 && (
+          <p className="obs-muted">
+            <strong>Total latency:</strong> {totalMs} ms. No per-stage timings were recorded.
+          </p>
+        )}
         {timings.length > 0 && (
           <table className="doc-table obs-num-table">
             <caption>Stage latency</caption>

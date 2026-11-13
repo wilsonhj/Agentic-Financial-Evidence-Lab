@@ -12,7 +12,7 @@ import type { AmendmentLink } from "../lib/amendments";
 import type { CitationIntegrityFailure } from "../lib/citation-integrity";
 import { describeIntegrityReason } from "../lib/citation-integrity";
 import type { DuplicateFactGroup } from "../lib/facts";
-import { formatScaledValue, scaledDecimal } from "../lib/facts";
+import { formatScaledValue, isRestatementGroup, scaledDecimal } from "../lib/facts";
 import { extractSpanText } from "../lib/spans";
 
 export interface FactPanelProps {
@@ -68,29 +68,8 @@ function locate(
   return { span, section, document };
 }
 
-/**
- * True when an amendment reports a different canonical value than the filing
- * it amends — i.e. the fact was actually restated, not merely repeated.
- */
-function isRestatementGroup(group: DuplicateFactGroup, ctx: FactPanelProps): boolean {
-  const valuesByDoc = new Map<string, Set<string>>();
-  for (const record of group.records) {
-    const docId = ctx.documentIdBySpanId[record.fact.source_span_id];
-    if (!docId) continue;
-    const values = valuesByDoc.get(docId) ?? new Set<string>();
-    values.add(scaledDecimal(record.fact.value, record.fact.scale));
-    valuesByDoc.set(docId, values);
-  }
-  return ctx.amendmentLinks.some((link) => {
-    const original = valuesByDoc.get(link.originalId);
-    const amended = valuesByDoc.get(link.amendmentId);
-    if (!original || !amended) return false;
-    return [...amended].some((value) => !original.has(value));
-  });
-}
-
 function DuplicateComparison({ group, ctx }: { group: DuplicateFactGroup; ctx: FactPanelProps }) {
-  const restatement = isRestatementGroup(group, ctx);
+  const restatement = isRestatementGroup(group, ctx.documentIdBySpanId, ctx.amendmentLinks);
   const conflicting = group.status === "conflicting";
   return (
     <div className="duplicate-compare">

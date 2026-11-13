@@ -174,3 +174,13 @@
     overflow: visible;
   }
 }
+
+/* A summary holding only restatements is information, not a warning. */
+.conflict-summary-restated {
+  border-color: var(--color-info-border);
+  background: var(--color-info-bg);
+}
+
+.conflict-summary-restated h2 {
+  color: var(--color-text);
+}

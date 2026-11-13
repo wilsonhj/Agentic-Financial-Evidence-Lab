@@ -225,6 +225,34 @@ describe("EvidenceReader conflict summary and history notice", () => {
     expect(markup).toContain("Inconsistent duplicate values");
   });
 
+  it("labels a difference explained by an amendment as a restatement, not a conflict", async () => {
+    const data = await readyData(DOC_10QA_ID);
+    // Net income only: $86.4M in the 10-Q, restated to $79.5M by the 10-Q/A.
+    const markup = renderReader(DOC_10QA_ID, {
+      ...data,
+      facts: data.facts.filter((record) => record.fact.concept === "us-gaap:NetIncomeLoss"),
+    });
+    expect(markup).toContain(
+      '<section class="conflict-summary conflict-summary-restated" aria-labelledby="conflict-summary-heading">',
+    );
+    expect(markup).toMatch(/<h2 id="conflict-summary-heading">.*Restated by amendment: Net income/);
+    expect(markup).not.toContain("Conflicting values");
+    expect(markup).toContain("was restated:");
+  });
+
+  it("keeps a group that is inconsistent within one filing a conflict even when it was also restated", async () => {
+    const data = await readyData(DOC_10QA_ID);
+    // Revenue: $1,250.0M vs $1,243.0M inside the 10-Q itself, plus the 10-Q/A value.
+    const markup = renderReader(DOC_10QA_ID, {
+      ...data,
+      facts: data.facts.filter((record) => record.fact.concept.startsWith("us-gaap:Revenue")),
+    });
+    expect(markup).toContain(
+      '<section class="conflict-summary" aria-labelledby="conflict-summary-heading">',
+    );
+    expect(markup).toMatch(/Conflicting values: Revenue/);
+  });
+
   it("renders no conflict summary when the loaded facts have no inconsistent duplicates", async () => {
     const data = await readyData(DOC_10Q_ID);
     const markup = renderToStaticMarkup(

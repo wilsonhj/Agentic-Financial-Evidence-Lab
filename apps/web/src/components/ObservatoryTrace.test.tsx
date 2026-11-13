@@ -99,6 +99,21 @@ describe("ObservatoryTrace", () => {
     expect(markup).toContain(">75%<");
   });
 
+  it("still shows the elapsed time when only an aggregate total was recorded", () => {
+    const markup = renderToStaticMarkup(
+      <ObservatoryTrace
+        trace={{ ...MOCK_TRACE, timings_ms: { total: 57 } }}
+        snapshot={MOCK_QUERY_SNAPSHOT}
+        documentIdByVersionId={DOC_MAP}
+      />,
+    );
+    expect(markup).not.toContain("<caption>Stage latency</caption>");
+    expect(markup).toContain(
+      "<strong>Total latency:</strong> 57 ms. No per-stage timings were recorded.",
+    );
+    expect(markup).toContain("<strong>Total latency:</strong> 57 ms.");
+  });
+
   it("orders the page for a reader: question and status, then claims, then the pipeline", () => {
     const markup = render();
     const order = ["obs-plan", "obs-claims", "obs-flow", "obs-lanes", "obs-timeline", "obs-budget"];
@@ -113,7 +128,15 @@ describe("ObservatoryTrace", () => {
     expect(markup).toContain('title="partially_supported">Partially supported');
     expect(markup).toContain("Published after cutoff");
     expect(markup).toContain("Near-duplicate");
-    expect(markup).toContain(`title="${MOCK_TRACE.plan.corpus_version_id}">12121212`);
+    // Run ids are shortened with the full id in the tooltip...
+    expect(markup).toContain(`title="${MOCK_TRACE.run_id}">ffffffff`);
+    // ...but the version pins needed to reproduce the run are shown in full.
+    expect(markup).toContain(
+      `<code class="obs-id obs-id-full">${MOCK_TRACE.plan.corpus_version_id}</code>`,
+    );
+    expect(markup).toContain(
+      `<code class="obs-id obs-id-full">${MOCK_TRACE.plan.index_version_id}</code>`,
+    );
     // Rejected candidates are told apart by fused rank, not a shared id prefix.
     expect(markup).toContain("Passage, fused rank 4");
   });

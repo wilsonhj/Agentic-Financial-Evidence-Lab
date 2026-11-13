@@ -342,11 +342,13 @@ export function ObservatoryFlowViz({ trace }: { trace: RetrievalTrace }) {
         </div>
 
         {/* Per-stage latency lives in one place: the "Budgets, latency and cost" section. */}
-        {timingEntries.length > 0 && (
+        {(timingEntries.length > 0 || totalLatencyMs > 0) && (
           <p className="obs-meter-box obs-muted">
             <span>
               <strong>Total latency:</strong> {totalLatencyMs} ms.{" "}
-              <a href="#obs-budget">Per-stage latency and cost</a>
+              <a href="#obs-budget">
+                {timingEntries.length > 0 ? "Per-stage latency and cost" : "Budget and cost"}
+              </a>
             </span>
           </p>
         )}
