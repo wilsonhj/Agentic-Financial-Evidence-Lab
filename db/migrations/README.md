@@ -23,7 +23,7 @@ Rules (see ADR-0002 and the constitution):
 - Tenant-scoped tables must ship with their row-level-security policies in
   the same migration that creates them.
 
-The directory holds migrations `0001` through `0012`; list it for the
+The directory holds migrations `0001` through `0013`; list it for the
 current set rather than relying on this count.
 
 ## Guard locks and role coverage
@@ -236,5 +236,31 @@ catalog. It then runs each denied `SELECT`, write, row lock and `CREATE` as the
 role and expects `42501`. A table added later is denied by default and covered
 without editing the harness.
 
-0012 grants `fel_worker` no `UPDATE` on `documents`. A backfill run under
-`FEL_WORKER_DB_ROLE` needs a column-level grant from a later migration.
+0012 grants `fel_worker` no `UPDATE` on `documents`. Migration 0013 adds the
+column-level grants for the #393 backfill run under `FEL_WORKER_DB_ROLE`.
+
+### 0013: worker backfill column privileges (ADR-0034 Amendment 2, #405)
+
+Grants `fel_worker` UPDATE on exactly `documents.accepted_at`, `public_at`,
+`public_at_basis`, `timestamp_precision`, and `financial_facts.restates`.
+Existing SELECT/INSERT grants and other runtime permissions are preserved;
+neither table receives table-level UPDATE. No new permission goes to `fel_app`
+or `fel_public_read`. Raw source metadata, source hashes, canonical text,
+financial values, units, periods, dimensions and duplicate links remain outside
+these UPDATE grants. The 0012 publication CHECKs and restatement foreign key
+still apply.
+
+Column privileges do not restrict which rows the worker may update. The #393
+implementation must exclude COMPANYFACTS, validate pinned publication metadata
+and constrain restatement targets; this migration does not enforce those row
+selection rules or claim backfill completion. Deployment must still adopt
+`fel_worker` explicitly rather than use a database owner connection.
+
+Harness: `tests/0013_mcp_backfill_privileges.test.sql`. It inserts evidence and
+performs publication/backfill updates as `fel_worker`, proves existing CHECK/FK
+constraints still reject invalid writes, and rejects UPDATE of every other
+column on both tables. It also checks mixed allowed/forbidden writes, evidence
+rewrites and deletion denials, and individually denies all five new column
+writes as `fel_app` and `fel_public_read`. Public corpus reads remain available
+while tenant reads stay denied. Existing 0008/0012 harnesses retain coverage of
+the worker's other runtime privileges and the full public-role allowlist.
