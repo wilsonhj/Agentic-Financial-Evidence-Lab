@@ -1536,7 +1536,7 @@ packages:
     depends_on: [MCP-CONTRACT]
     team: contracts
     branch: agent/mcp-replay-contract
-    status: active # Owner's 2026-11-13 plan authorizes this bounded stacked correction against #402; runtime dispatch still waits for merge.
+    status: review # Draft PR #406; authoring on #402 was authorized 2026-11-13. Different-vendor and lead review outstanding; runtime dispatch waits for merge.
     allowed_paths:
       - packages/contracts/**
       - packages/retrieval/fel_retrieval/evidence/interfaces.py
@@ -1553,7 +1553,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: data
     branch: agent/mcp-backfill-privileges
-    status: active # Bounded stacked prerequisite authorized 2026-11-13; merge after #404, before #393 dispatch. No ingestion runtime edits.
+    status: review # Draft PR #407; bounded stacked prerequisite authorized 2026-11-13. Different-vendor/lead review and #404 merge required before #393 dispatch.
     allowed_paths:
       - db/migrations/0013_mcp_backfill_privileges.sql
       - db/migrations/tests/0013_mcp_backfill_privileges.test.sql
