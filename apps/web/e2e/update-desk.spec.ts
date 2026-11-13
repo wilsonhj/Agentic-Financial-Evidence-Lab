@@ -120,41 +120,54 @@ test("validated cookie restores OLED appearance and mirrors changes", async ({ c
   ]);
   await page.goto("/desk");
 
-  await expect(page.getByTestId("desk-shell")).toHaveAttribute("data-fel-theme", "oled");
-  await expect(page.locator("html")).not.toHaveAttribute("data-fel-theme");
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-fel-theme", "oled");
   await page.reload();
-  await expect(page.getByTestId("desk-shell")).toHaveAttribute("data-fel-theme", "oled");
-  await expect(page.locator("html")).not.toHaveAttribute("data-fel-theme");
+  await expect(html).toHaveAttribute("data-fel-theme", "oled");
 
   await page.getByTestId("button-theme-menu").click();
   await page.getByTestId("button-theme-light").click();
-  await expect(page.getByTestId("desk-shell")).toHaveAttribute("data-fel-theme", "light");
+  await expect(html).toHaveAttribute("data-fel-theme", "light");
   await expect
     .poll(() => page.evaluate(() => window.localStorage.getItem("fel-theme")))
     .toBe("light");
+
+  // The appearance is site-wide: it follows navigation to another workspace.
+  await page.getByTestId("link-observatory").click();
+  await expect(page).toHaveURL(/\/observatory$/);
+  await expect(html).toHaveAttribute("data-fel-theme", "light");
 });
 
-test("localStorage cannot override the server-selected theme", async ({ page }) => {
+test("localStorage cannot override the cookie-selected theme", async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem("fel-theme", "oled"));
   await page.goto("/desk");
 
-  await expect(page.getByTestId("desk-shell")).toHaveAttribute("data-fel-theme", "system");
-  await expect(page.locator("html")).not.toHaveAttribute("data-fel-theme");
+  await expect(page.locator("html")).toHaveAttribute("data-fel-theme", "system");
   await expect
     .poll(() => page.evaluate(() => window.localStorage.getItem("fel-theme")))
     .toBe("system");
 });
 
-test("filings reader stays on light document tokens under system dark", async ({ page }) => {
+test("filings follow the site-wide theme under system dark and stay readable", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");
-  await expect(page.locator("html")).not.toHaveAttribute("data-fel-theme");
+  await expect(page.locator("html")).toHaveAttribute("data-fel-theme", "system");
   const color = await page.locator("body").evaluate((el) => getComputedStyle(el).color);
   const background = await page
     .locator("body")
     .evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(contrastRatio(color, background)).toBeGreaterThanOrEqual(4.5);
-  expect(relativeLuminance(background)).toBeGreaterThan(0.5);
+  expect(relativeLuminance(background)).toBeLessThan(0.1);
+});
+
+test("desk does not scroll sideways at phone width", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/desk");
+  await expect(page.getByTestId("desk-shell")).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
 });
 
 test("changing review inputs after apply clears staged facts; reload drops review state", async ({

@@ -90,9 +90,13 @@ describe("interactive controls never fall back to a user-agent colour", () => {
 
 describe("SC 1.4.11: interactive-control borders clear 3:1 in every theme", () => {
   // Each theme's own block, plus :root for the default light theme.
-  const themes = [":root", 'html[data-fel-theme="oled"]'];
+  const themes = [":root", 'html[data-fel-theme="oled"]', 'html[data-fel-theme="system"]'];
 
   for (const theme of themes) {
+    it(`${theme} — defines its own ground (not a silent :root fallback)`, () => {
+      const own = rules(css).filter((r) => r.selector.endsWith(theme));
+      expect(own.some((r) => declaration(r.body, "--color-bg") !== null)).toBe(true);
+    });
     for (const ground of ["--color-bg", "--color-surface"]) {
       it(`${theme} — border-strong against ${ground}`, () => {
         const border = tokenIn(theme, "--color-border-strong");

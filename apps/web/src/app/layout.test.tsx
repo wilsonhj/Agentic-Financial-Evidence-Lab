@@ -41,8 +41,64 @@ describe("RootLayout skip-link stylesheet contract", async () => {
   });
 });
 
-describe("RootLayout theme boundary", () => {
-  it("leaves the shared document outside the Desk theme", () => {
-    expect(renderLayout()).not.toContain("data-fel-theme");
+describe("RootLayout site-wide theme", () => {
+  it("puts the theme on <html> with a system default for every route", () => {
+    expect(renderLayout()).toMatch(/<html[^>]*data-fel-theme="system"/);
+  });
+
+  it("applies the saved cookie theme in <head> before the body paints", () => {
+    const markup = renderLayout();
+    const scriptIndex = markup.indexOf("<script>");
+    expect(scriptIndex).toBeGreaterThan(-1);
+    expect(scriptIndex).toBeLessThan(markup.indexOf("<body"));
+    expect(markup).toContain("fel-theme=");
+  });
+
+  it("puts the appearance control in the shared header", () => {
+    const markup = renderLayout();
+    const header = markup.slice(markup.indexOf('class="site-header"'), markup.indexOf("</header>"));
+    expect(header).toContain('data-testid="button-theme-menu"');
+  });
+});
+
+describe("theme boot script", () => {
+  const run = async (cookie: string) => {
+    const { themeBootScript } = await import("../components/theme");
+    const attributes: Record<string, string> = {};
+    const document = {
+      cookie,
+      documentElement: {
+        setAttribute: (name: string, value: string) => {
+          attributes[name] = value;
+        },
+      },
+    };
+    new Function("document", themeBootScript)(document);
+    return attributes["data-fel-theme"];
+  };
+
+  it.each([
+    ["fel-theme=oled", "oled"],
+    ["a=1; fel-theme=light; b=2", "light"],
+    ["fel-theme=system", "system"],
+    ["fel-theme=chartreuse", "system"],
+    ["", "system"],
+  ])("maps cookie %j to %s", async (cookie, expected) => {
+    expect(await run(cookie)).toBe(expected);
+  });
+});
+
+describe("RootLayout primary navigation", () => {
+  it("links every workspace, including extraction review", () => {
+    const links = renderLayout().match(/<a [^>]*>/g) ?? [];
+    for (const [testId, href] of [
+      ["link-update-desk", "/desk"],
+      ["link-filings", "/"],
+      ["link-extractions", "/extractions"],
+      ["link-observatory", "/observatory"],
+    ]) {
+      const link = links.find((tag) => tag.includes(`data-testid="${testId}"`));
+      expect(link).toContain(`href="${href}"`);
+    }
   });
 });
