@@ -1,0 +1,142 @@
+/* Filings home page and shared pagination control. Colours come from :root tokens only. */
+
+.filings-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+.filings-picker label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.filings-picker select,
+.filings-picker button {
+  min-height: 24px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.filings-picker select {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.filings-picker button {
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--color-surface);
+}
+
+.filings-picker button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.filings-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.filings-note p {
+  margin: 0;
+}
+
+.filings-caveat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--color-info-border);
+  border-radius: 8px;
+  background: var(--color-info-bg);
+  color: var(--color-accent);
+  font-size: 0.85rem;
+}
+
+.filings-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.filings-table-scroll .doc-table {
+  min-width: 36rem;
+}
+
+.filings-table-scroll .doc-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.filings-table-scroll .doc-table td,
+.filings-table-scroll .doc-table th {
+  vertical-align: top;
+}
+
+.filings-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* PageNavigation */
+.page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  margin: 0.75rem 0;
+}
+
+.page-nav-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.page-nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  text-decoration: none;
+  color: var(--color-accent);
+  background: var(--color-surface);
+}
+
+a.page-nav-link:hover {
+  text-decoration: underline;
+}
+
+.page-nav-link[aria-current="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 600;
+}
+
+.page-nav-link[aria-disabled="true"] {
+  border-style: dashed;
+  border-color: var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: not-allowed;
+}

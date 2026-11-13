@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import "../styles/filings.css";
+
 /** Links always target a known application route; cursors remain opaque query values. */
 export function PageNavigation({
   path,
@@ -27,23 +29,35 @@ export function PageNavigation({
     if (cursor) query.set(cursorKey, cursor);
     return `${path}?${query}`;
   };
+  const sortLink = (direction: "asc" | "desc", text: string) => (
+    <Link
+      className="page-nav-link"
+      href={href(direction)}
+      aria-current={order === direction ? "true" : undefined}
+    >
+      {text}
+    </Link>
+  );
+  const pageLink = (cursor: string | null, text: string) =>
+    cursor ? (
+      <Link className="page-nav-link" href={href(order, cursor)}>
+        {text}
+      </Link>
+    ) : (
+      <span className="page-nav-link" aria-disabled="true">
+        {text}
+      </span>
+    );
   return (
-    <nav className="obs-actions" aria-label={label}>
-      <Link href={href("asc")}>Oldest first</Link>
-      {" · "}
-      <Link href={href("desc")}>Newest first</Link>
-      {" · "}
-      {previousCursor ? (
-        <Link href={href(order, previousCursor)}>Previous page</Link>
-      ) : (
-        <span aria-disabled="true">Previous page</span>
-      )}
-      {" · "}
-      {nextCursor ? (
-        <Link href={href(order, nextCursor)}>Next page</Link>
-      ) : (
-        <span aria-disabled="true">Next page</span>
-      )}
+    <nav className="obs-actions page-nav" aria-label={label}>
+      <span className="page-nav-group">
+        {sortLink("asc", "Oldest first")}
+        {sortLink("desc", "Newest first")}
+      </span>
+      <span className="page-nav-group">
+        {pageLink(previousCursor, "Previous page")}
+        {pageLink(nextCursor, "Next page")}
+      </span>
     </nav>
   );
 }
