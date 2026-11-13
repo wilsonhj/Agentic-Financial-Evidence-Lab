@@ -106,6 +106,7 @@ Root `SPEC.md`, `PLAN.md`, and `TASKS.md` are pointer stubs only.
 | [Ontology research](research/ontology/README.md) | EXT-3 SaaS disclosure research draft | reference |
 | [SaaS disclosure survey](research/ontology/saas-disclosure-survey.md) | Raw survey feeding the T0301 ontology | reference |
 | [Financial evidence skills review](research/financial-evidence-skills-review.md) | External evidence-router review; adopted items live in `workers/src/fel_workers/http.py` | reference |
+| [Repository code review, 2026-11-13](research/2026-11-13-repository-code-review.md) | Adversarial full-repo review at `2f7f066` for external agent fix packages | reference |
 
 ## Implementation plans
 

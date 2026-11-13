@@ -39,6 +39,7 @@ date it was first committed is used and marked "(committed)".
 | [deployment-guard-contract.md](deployment-guard-contract.md) | 2026-09-16 | Frozen contract | `FEL_DEPLOYMENT_MODE` guard rules for API and web under ADR-0027 |
 | [offline-calibration-contract.md](offline-calibration-contract.md) | 2026-09-16 | Frozen contract | Offline calibration dataset interchange and numerical primitives under ADR-0028 |
 | [financial-evidence-skills-review.md](financial-evidence-skills-review.md) | 2026-09-26 | Review | What was adopted from, improved on, and left as proposals from an external read-only evidence router; adopted items live in `workers/src/fel_workers/http.py` |
+| [2026-11-13-repository-code-review.md](2026-11-13-repository-code-review.md) | 2026-11-13 | Review | Full-repo adversarial review at `2f7f066` for an external agent team; citation/span/numeric/CI/tenancy findings with suggested fix packages — no implementation in this note |
 
 ## Related pages
 
