@@ -1483,7 +1483,7 @@ a {
   color: var(--color-text);
   background: var(--color-bg);
   border: 1px solid var(--color-border-strong);
-  border-radius: 9px;
+  border-radius: 8px;
   padding: 6px 11px;
   min-height: 32px;
   font-size: 0.78rem;
@@ -1506,14 +1506,14 @@ a {
   flex-wrap: wrap;
   gap: 12px 20px;
   padding: 10px 14px;
-  border-radius: 11px;
+  border-radius: 12px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   font-size: 0.8rem;
 }
 
 .viz3d-canvas-wrap {
-  border-radius: 14px;
+  border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--color-border-strong);
   background: #080e1a;
@@ -1534,7 +1534,7 @@ a {
   display: grid;
   gap: 6px;
   padding: 10px 14px;
-  border-radius: 11px;
+  border-radius: 12px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
 }
