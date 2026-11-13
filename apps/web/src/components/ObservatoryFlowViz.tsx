@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { RetrievalTrace } from "../lib/observatory/query-source";
+import { splitTimings } from "../lib/observatory/labels";
 import {
   claimViews,
   LANE_LABELS,
@@ -59,8 +60,7 @@ export function ObservatoryFlowViz({ trace }: { trace: RetrievalTrace }) {
   const flaggedClaims = claims.length - supportedClaims;
 
   const totalCandidates = supported.length + rejected.length;
-  const timingEntries = Object.entries(trace.timings_ms);
-  const totalLatencyMs = timingEntries.reduce((acc, [, ms]) => acc + ms, 0);
+  const { stages: timingEntries, totalMs: totalLatencyMs } = splitTimings(trace.timings_ms);
 
   const contextItemsUsed = trace.budget_usage.context_items;
   const contextItemsCap = Math.max(1, trace.plan.budgets.context_items);

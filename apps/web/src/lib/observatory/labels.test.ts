@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { candidateLabel, formatUtc, humanizeCode, shortId } from "./labels";
+import { candidateLabel, formatUtc, humanizeCode, shortId, splitTimings } from "./labels";
 
 describe("Observatory display labels", () => {
   it("maps known codes and humanizes unknown ones", () => {
@@ -31,5 +31,27 @@ describe("Observatory display labels", () => {
     expect(candidateLabel({ item_id: id, kind: "table_row", fused_rank: null })).toBe(
       "Table row 10101010",
     );
+  });
+
+  it("keeps a recorded total out of the stages and uses it as the elapsed time", () => {
+    // API-produced traces carry an aggregate `total` next to the stage entries.
+    expect(splitTimings({ planning: 5, retrieving: 40, total: 90 })).toEqual({
+      stages: [
+        ["planning", 5],
+        ["retrieving", 40],
+      ],
+      totalMs: 90,
+    });
+  });
+
+  it("sums the stages when no total is recorded", () => {
+    expect(splitTimings({ plan: 22, retrieve: 61 })).toEqual({
+      stages: [
+        ["plan", 22],
+        ["retrieve", 61],
+      ],
+      totalMs: 83,
+    });
+    expect(splitTimings({})).toEqual({ stages: [], totalMs: 0 });
   });
 });

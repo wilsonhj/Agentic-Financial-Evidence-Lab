@@ -82,6 +82,23 @@ describe("ObservatoryTrace", () => {
     expect(markup.match(/>812</g)).toHaveLength(1);
   });
 
+  it("does not count a recorded total as a stage or double the elapsed time", () => {
+    const markup = renderToStaticMarkup(
+      <ObservatoryTrace
+        trace={{ ...MOCK_TRACE, timings_ms: { planning: 10, retrieving: 30, total: 40 } }}
+        snapshot={MOCK_QUERY_SNAPSHOT}
+        documentIdByVersionId={DOC_MAP}
+      />,
+    );
+    // The aggregate is the footer total, not a stage row, and not 80 ms.
+    expect(markup).not.toContain('title="total"');
+    expect(markup).toContain("<strong>Total latency:</strong> 40 ms.");
+    expect(markup).not.toContain(">80<");
+    // Shares are of the elapsed 40 ms: 25% and 75%.
+    expect(markup).toContain(">25%<");
+    expect(markup).toContain(">75%<");
+  });
+
   it("orders the page for a reader: question and status, then claims, then the pipeline", () => {
     const markup = render();
     const order = ["obs-plan", "obs-claims", "obs-flow", "obs-lanes", "obs-timeline", "obs-budget"];

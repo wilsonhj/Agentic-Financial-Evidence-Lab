@@ -69,3 +69,20 @@ export function candidateLabel(candidate: CandidateLike): string {
     ? `${kind}, fused rank ${candidate.fused_rank}`
     : `${kind} ${shortId(candidate.item_id)}`;
 }
+
+/**
+ * Split a trace's `timings_ms` into its per-stage entries and the elapsed
+ * total. API-produced traces already carry an aggregate `total` entry, so it
+ * must not be summed with (or listed among) the stages. When no aggregate is
+ * recorded the total is the sum of the stages.
+ */
+export function splitTimings(timings: Readonly<Record<string, number>>): {
+  stages: [string, number][];
+  totalMs: number;
+} {
+  const stages = Object.entries(timings).filter(([stage]) => stage !== "total");
+  const recorded = timings.total;
+  const totalMs =
+    typeof recorded === "number" ? recorded : stages.reduce((sum, [, ms]) => sum + ms, 0);
+  return { stages, totalMs };
+}

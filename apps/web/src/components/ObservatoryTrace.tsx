@@ -6,7 +6,13 @@ import type {
   RetrievalCitation,
   RetrievalTrace,
 } from "../lib/observatory/query-source";
-import { candidateLabel, formatUtc, humanizeCode, shortId } from "../lib/observatory/labels";
+import {
+  candidateLabel,
+  formatUtc,
+  humanizeCode,
+  shortId,
+  splitTimings,
+} from "../lib/observatory/labels";
 import {
   claimViews,
   decisionTimeline,
@@ -217,8 +223,7 @@ function PlanSection({ snapshot, trace }: { snapshot?: QuerySnapshot; trace: Ret
 function BudgetSection({ trace }: { trace: RetrievalTrace }) {
   const { budgets } = trace.plan;
   const usage = trace.budget_usage;
-  const timings = Object.entries(trace.timings_ms);
-  const totalMs = timings.reduce((sum, [, ms]) => sum + ms, 0);
+  const { stages: timings, totalMs } = splitTimings(trace.timings_ms);
   return (
     <section
       id="obs-budget"
@@ -276,7 +281,7 @@ function BudgetSection({ trace }: { trace: RetrievalTrace }) {
             </thead>
             <tbody>
               {timings.map(([stage, ms]) => {
-                const pct = totalMs > 0 ? Math.round((ms / totalMs) * 100) : 0;
+                const pct = totalMs > 0 ? Math.min(100, Math.round((ms / totalMs) * 100)) : 0;
                 return (
                   <tr key={stage}>
                     <th scope="row">
