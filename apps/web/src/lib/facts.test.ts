@@ -175,6 +175,34 @@ describe("restatement classification", () => {
     expect(conflictKind(group, docs, links)).toBe("conflict");
   });
 
+  it("follows a chain of successive amendments", () => {
+    const SECOND = "dddddddd-0000-4000-8000-000000000004";
+    const chain = [
+      { originalId: ORIGINAL, amendmentId: AMENDMENT },
+      { originalId: AMENDMENT, amendmentId: SECOND },
+    ];
+    const group = groupOf([
+      [span(1), "100"],
+      [span(2), "110"],
+      [span(3), "120"],
+    ]);
+    const docs = { [span(1)]: ORIGINAL, [span(2)]: AMENDMENT, [span(3)]: SECOND };
+    expect(conflictKind(group, docs, chain)).toBe("restatement");
+    // A filing outside the chain that disagrees is still a conflict.
+    const withOther = groupOf([
+      [span(1), "100"],
+      [span(2), "110"],
+      [span(4), "130"],
+    ]);
+    expect(
+      conflictKind(
+        withOther,
+        { [span(1)]: ORIGINAL, [span(2)]: AMENDMENT, [span(4)]: OTHER },
+        chain,
+      ),
+    ).toBe("conflict");
+  });
+
   it("keeps a difference between filings no amendment links a conflict", () => {
     const group = groupOf([
       [span(1), "864"],

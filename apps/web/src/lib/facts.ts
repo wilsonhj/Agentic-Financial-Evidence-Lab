@@ -165,22 +165,30 @@ export function conflictKind(
   if (!isRestatementGroup(group, documentIdBySpanId, amendmentLinks)) return "conflict";
   const byDoc = valuesByDocument(group, documentIdBySpanId);
   if ([...byDoc.values()].some((values) => values.size > 1)) return "conflict";
-  // Every filing whose value differs from another must be linked to it by an
-  // amendment; otherwise the disagreement is not explained by a restatement.
+  // Every pair of filings that disagree must belong to one amendment chain
+  // (original -> amendment 1 -> amendment 2 ...); otherwise the disagreement is
+  // not explained by a restatement. Links are successive, so connectivity is
+  // checked through the whole chain, not just direct edges.
+  const root = new Map<string, string>();
+  const find = (id: string): string => {
+    let current = id;
+    while (root.has(current) && root.get(current) !== current) current = root.get(current)!;
+    return current;
+  };
+  for (const link of amendmentLinks) {
+    const a = find(link.originalId);
+    const b = find(link.amendmentId);
+    root.set(a, a);
+    if (a !== b) root.set(b, a);
+  }
   const docs = [...byDoc.keys()];
-  const linked = (a: string, b: string) =>
-    amendmentLinks.some(
-      (link) =>
-        (link.originalId === a && link.amendmentId === b) ||
-        (link.originalId === b && link.amendmentId === a),
-    );
   for (let i = 0; i < docs.length; i += 1) {
     for (let j = i + 1; j < docs.length; j += 1) {
       const a = docs[i]!;
       const b = docs[j]!;
       const [va] = byDoc.get(a)!;
       const [vb] = byDoc.get(b)!;
-      if (va !== vb && !linked(a, b)) return "conflict";
+      if (va !== vb && find(a) !== find(b)) return "conflict";
     }
   }
   return "restatement";
