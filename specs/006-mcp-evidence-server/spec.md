@@ -1,6 +1,6 @@
 # MCP Evidence Server — Public Read-Only Evidence Surface
 
-**Status:** Accepted with ADR-0034 on 2026-11-10. Nothing is implemented. Hosted work stays blocked on the open owner inputs.
+**Status:** Accepted with ADR-0034 on 2026-11-10. Contract implementation is proposed in #402, with corrections in #404/#405. Runtime completion is not claimed. Hosted work stays blocked on the open owner inputs.
 **Version:** 0.1.0
 **Date:** 2026-11-10
 **Parent specification:** `specs/001-financial-evidence-lab/spec.md` v1.2 (governs on conflict)
@@ -54,7 +54,7 @@ contract's wording governs.
 | `FR-MCP-003` | Strict visibility: a document is visible only with a verified public-availability time at or before the cutoff. That time is derived from acceptance and the filing date by one rule, because acceptance is not publication for after-hours filings | §6.2 |
 | `FR-MCP-004` | No existence oracle: hidden and missing references are indistinguishable in every tool | §6.2, §7.2 |
 | `FR-MCP-005` | Citations carry code-point offsets, a recomputable hash, accession, source URL, and the acceptance and public-availability times with their basis | §7.1 |
-| `FR-MCP-006` | An `evidence_context` with request-side pins gives byte-identical replay; an unavailable pin is an explicit error | §6.3 |
+| `FR-MCP-006` | Pinned evidence, ordering, page boundaries and context replay byte-identically, excluding only cursor token bytes and `live_status`; unavailable pins are explicit errors | §6.3 |
 | `FR-MCP-007` | Deterministic verification with closed states; a numeric match alone never yields `supported` | §7.2 |
 | `FR-MCP-008` | Company-facts snapshots and their facts are never served | §4 (P10) |
 | `FR-MCP-009` | Search and index build resolve no model or embedding provider | §4 (P5), §8 |
@@ -76,18 +76,20 @@ list these.
 
 ## 4. Packages
 
-All nine are registered in `docs/handoff/workstreams.yaml`, which holds their status.
+The nine original packages and two prerequisite corrections are registered in `docs/handoff/workstreams.yaml`, which holds their status.
 
 | Package | Issue | Delivers | Depends on |
 |---|---|---|---|
 | `MCP-CONTRACT` | #392 | Migration `0012`, read-only role, schemas and fixtures, OpenAPI 0.10.0, the `mcp` dependency, the evidence interface | ADR-0034 (accepted) |
-| `MCP-INGEST-ACCEPTED-AT` | #393 | Acceptance and publication timestamps at ingest, backfill, same-day amendment repair | `MCP-CONTRACT` |
-| `MCP-CUTOFF-PREDICATES` | #394 | Existing reads and lanes compare against publication time | `MCP-CONTRACT` |
-| `MCP-EVIDENCE-READ` | #395 | The shared evidence-read service and keyword-only search | `MCP-CONTRACT` |
-| `MCP-VERIFIER` | #396 | The promoted deterministic verifier and the verification report | `MCP-CONTRACT` |
-| `MCP-SERVER` | #397 | The MCP package, its tools, limits, errors and the mount | `MCP-CONTRACT`; integration needs #395 and #396 |
-| `MCP-PLUGIN` | #398 | The Claude plugin and marketplace manifest | `MCP-CONTRACT` |
-| `MCP-EVALS` | #399 | The acceptance suites of the design contract §12 | `MCP-CONTRACT`; full runs need #395, #396, #397 |
+| `MCP-REPLAY-CONTRACT` | #404 | Replay contract corrections and bounded dispatch registration | `MCP-CONTRACT` |
+| `MCP-BACKFILL-PRIVILEGES` | #405 | Column-limited worker UPDATE grants and actual-role tests | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
+| `MCP-INGEST-ACCEPTED-AT` | #393 | Acceptance and publication timestamps at ingest, backfill, same-day amendment repair | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`, `MCP-BACKFILL-PRIVILEGES` |
+| `MCP-CUTOFF-PREDICATES` | #394 | Existing reads and lanes compare against publication time | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
+| `MCP-EVIDENCE-READ` | #395 | The shared evidence-read service and keyword-only search | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
+| `MCP-VERIFIER` | #396 | The promoted deterministic verifier and the verification report | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
+| `MCP-SERVER` | #397 | The MCP package, its tools, limits, errors and the mount | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`; integration needs #395 and #396 |
+| `MCP-PLUGIN` | #398 | The Claude plugin and marketplace manifest | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
+| `MCP-EVALS` | #399 | The acceptance suites of the design contract §12 | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`; full runs need #395, #396, #397 |
 | `MCP-HOSTED-PILOT` | #400 | The hosted invitation-only pilot | All of the above; #177; hosting |
 
 ## 5. Acceptance gates
@@ -101,8 +103,10 @@ All nine are registered in `docs/handoff/workstreams.yaml`, which holds their st
    non-BMP text.
 4. **Verifier contract.** Every rule of the design contract §7.2 has a test,
    and existing verification goldens are byte-identical.
-5. **Replay.** A resolved context replays byte-identically across a corpus
-   publish and an index rebuild.
+5. **Replay.** Pinned evidence and context replay byte-identically across a
+   corpus publish and index rebuild. Only `live_status` and opaque cursor
+   token bytes are exempt; cursor nullness, page boundaries and evidence stay
+   stable. Expired cursors can be reissued from the same pinned first page.
 6. **No provider calls.** A test proves search and index build resolve no
    provider.
 7. **Privilege.** The read-only role is denied every tenant and operational

@@ -140,11 +140,58 @@ Residual uncertainty, stated in responses and not hidden:
   timezone of `acceptanceDateTime`) must be confirmed before any hosted
   run.
 
+## Amendment 2 (2026-11-13): replay, backfill privileges and bounded dispatch
+
+Accepted under the owner's reviewed implementation plan and subsequent
+"Implement the proposed plan" instruction on 2026-11-13. The owner explicitly
+selected stable evidence/context replay with expiring cursor bytes exempt,
+MCP-first delivery, and retention of different-vendor review. Issues #404 and
+#405 carry the bounded corrections; neither closes a runtime lane by itself.
+
+- Complete replay inputs with optional corpus pins on `resolve_company` and
+  `get_citation`. Non-index tools return a null index; `get_corpus_status`
+  validates/echoes an explicit index and otherwise returns null. Non-verifier
+  contexts use the fixed `deterministic-v1` identity. Unknown, unpublished,
+  retired or incompatible pins fail explicitly. Design §6.3 is authoritative.
+- Evidence, ordering, page boundaries and context replay byte-identically.
+  Only opaque cursor token bytes and explicitly non-replayable `live_status`
+  are exempt. Cursor nullness and logical pagination remain stable; cursor
+  expiry and context/filter binding remain enforced.
+- Backfill publication fields and repair restatement links before exposing
+  affected corpus pins. Later repair preserves versioned results or retires
+  affected pins; no silent changes to retained replayable results.
+- Add a new migration after `0012`, without changing its checksum. Grant
+  `fel_worker` only `UPDATE(accepted_at, public_at, public_at_basis,
+  timestamp_precision)` on `documents` and `UPDATE(restates)` on
+  `financial_facts`. Existing public-read grants remain unchanged. These
+  column grants do not enforce row-level publication immutability or exclude
+  company-facts rows; #393's runtime and integration tests enforce those rules.
+- Use at most three implementation agents plus the coordinator; additional
+  advisors/reviewers do not own implementation packages. Serialize shared-file
+  writers and #394/#397 API-test ownership. Every runtime lane waits for #404
+  as well as #392; #393 additionally waits for #405. The two correction
+  branches may be authored against the open contract head as bounded stacked
+  prerequisites, without making any downstream package dispatchable.
+- Register #397's first-party package in `pyproject.toml`, `Makefile` and the
+  CI Python job using only mechanical directory-list additions. Under #399,
+  add `evals/mcp` to pytest collection when that subtree exists; prove CI
+  collection and failure propagation. This explicit authorization is separate
+  from ADR-0008's package-scaffold exception. One lead schedules these hunks.
+- Treat `.claude-plugin/marketplace.json` as shared configuration. #398 owns
+  its content under `contract-change` and lead review; `NOTICE` changes are
+  allowed only if attribution is required. No hosted URL is invented.
+
+Different-vendor review and integration-lead approval remain merge gates for
+all new changes, including these corrections. Sol, Terra and Astra are all
+OpenAI and do not satisfy that distinction for one another. No canonical
+ledger state, hosted budget, credential, deployment or paid call is authorized.
+
 ## Consequences
 
 - One reviewed contract package (#392) freezes the migration, schemas and
-  interface. Six lanes (#393–#398) and the acceptance suites (#399) can then
-  run in parallel on mocks and fixtures.
+  interface. After #404 corrects the replay contract, the six lanes
+  (#393–#398) and acceptance suites (#399) run in the bounded schedule; #393
+  also requires #405. All use mocks and fixtures.
 - Publication timestamps tighten existing cutoffs. Some retrieval goldens and
   the benchmark seed's provisional cutoffs will change. #394 must explain
   each change.
@@ -183,7 +230,7 @@ supply. Each open input gates the package named beside it and nothing else.
 | 3 | Hosting target | **Accepted as drafted:** mount in `apps/api` on the planned Railway service. Provisioning is still owed. | #400 |
 | 4 | Acceptance-time timezone: whether `acceptanceDateTime` in the submissions JSON is UTC or US Eastern. Confirming it needs one request to sec.gov with an approved `FEL_SEC_USER_AGENT`. | **Open.** #393 isolates the assumption in one function. | Any hosted run |
 | 5 | Product name and domain, which must avoid the SEC and EDGAR marks | **Open** | Directory submission |
-| 6 | Whether `.claude-plugin/marketplace.json` counts as shared configuration | **Open.** #398 treats it as shared until ruled. | #398 |
+| 6 | Whether `.claude-plugin/marketplace.json` counts as shared configuration | **Resolved by Amendment 2:** shared, with #398 ownership, `contract-change` and lead review. | — |
 
 Acceptance authorizes the offline packages #392 to #399 in the order
 `specs/006-mcp-evidence-server/plan.md` gives. It authorizes no hosted

@@ -266,39 +266,47 @@ form lists and filing counts.
 ### 6.3 Pins
 
 An explicit `as_of` does not freeze corpus membership, parsing or the
-retrieval index. These change when a corpus version is published or an index
-is rebuilt. Pins are therefore request inputs as well as response fields:
+retrieval index. Request pins and stable context fields make evidence
+replayable (ADR-0034 Amendment 2):
 
-- `search_filings`, `read_filing`, `get_financial_facts`, `list_filings` and
-  `verify_claim` accept optional `corpus_version_id` and `index_version_id`
-  (where retrieval applies) and `verifier_version` (for `verify_claim`). These
-  map onto the existing `LaneQuery` corpus and index pins.
-- Omitted pins resolve to the active versions. Every response echoes the
-  resolved `corpus_version_id`, `index_version_id`, `parser_version` and
-  `verifier_version`, so a client can replay a result by passing them back.
-- A pinned version that is unknown, unpublished or retired returns an
-  explicit `PIN_UNAVAILABLE` error naming the pin. The server never silently
-  falls back to the active version.
-- Every response returns one `evidence_context` object. It holds the resolved
-  cutoff (`effective_as_of`), `timestamp_mode`, corpus and index pins,
-  `verifier_version`, the selected `document_version_id` where one applies,
-  and the cursor's frozen filters. A client keeps one context per research
-  workflow by passing it back.
-- Byte-identical replay is guaranteed for a **resolved context**: an explicit
-  cutoff plus pins. Requests that omit `as_of` default to the current time,
-  so they are not replayable until the client passes back the returned
-  context. §12 exercises replay through the public tools, across an index
-  rebuild.
-- **One exemption.** `get_corpus_status` returns a `live_status` object
-  describing the server at request time: the active and retained versions,
-  available verifier versions and known limitations. Publishing a corpus or
-  rebuilding an index changes it by design, so it is outside the replay
-  guarantee and is labeled `replayable: false`. The tool's `coverage` object
-  is bound to the resolved context and replays like any other result. No
-  other tool returns live state.
-- Cursors are bound to the context that created them. A cursor used with a
-  different context returns `invalid_input`.
-- How long retired versions remain replayable is open question 8.
+- Every tool accepts optional `corpus_version_id`, including
+  `resolve_company` and `get_citation`. Omitted corpus pins resolve to the
+  active corpus. A supplied pin is never replaced with the active version.
+- `search_filings` accepts `index_version_id` and resolves an omitted index
+  to the active published index for its corpus. Its response has an index pin.
+  Other evidence tools do not use an index and return
+  `evidence_context.index_version_id: null`, regardless of active indexes.
+  Internally, only the search adapter sets `ContextRequest.require_index`;
+  context resolution stays in the evidence service, not in the transport.
+- `get_corpus_status` validates and echoes an explicitly supplied index pin
+  compatible with its corpus. When omitted, its context index is null;
+  current index inventory belongs only in `live_status`.
+- `verify_claim` accepts `verifier_version`; omission selects
+  `deterministic-v1`. Other tools always return `deterministic-v1` in their
+  context, never a mutable latest-verifier alias.
+- Unknown, unpublished, retired or incompatible pins return
+  `pin_unavailable`, naming the unavailable pin. There is no silent fallback.
+- Every response returns one `evidence_context`: resolved cutoff, timestamp
+  mode, corpus/index/parser/verifier pins, selected document version where
+  applicable, and frozen filters. Clients replay by passing the original
+  inputs, explicit cutoff and the applicable request pins back to the tool.
+- The same resolved context and input reproduce byte-identical evidence,
+  ordering, page boundaries and context. There are exactly two exceptions:
+  - `get_corpus_status.live_status` describes current inventory and limitations
+    and is explicitly labeled `replayable: false`; its `coverage` still replays.
+  - Opaque, expiring `next_cursor` token bytes may differ. Null versus non-null,
+    the logical next page and all evidence remain deterministic. Tokens live
+    at most 15 minutes and remain bound to the originating context and filters.
+    Do not include issuance time or token randomness in the evidence context.
+- A cursor used with a different context or filters returns `invalid_input`;
+  an expired cursor returns `cursor_expired`. Restart from the first page with
+  the same pins and cutoff to obtain fresh cursors over the same evidence.
+- Publication-time backfill and restatement repair must complete before an
+  affected corpus pin is exposed as replayable. Later repairs must preserve
+  versioned results or explicitly retire affected pins with `pin_unavailable`;
+  they must not silently change retained contexts.
+- How long retired versions remain available is hosted owner input 8. No
+  retention duration is implied by the 15-minute cursor lifetime.
 
 ## 7. Tools
 
@@ -312,11 +320,11 @@ JSON in a text block.
 
 | Tool | Input | Output (structured) |
 |---|---|---|
-| `resolve_company` | `query` (ticker, CIK, or name), `as_of?` | Matches with `entity_id`, `cik`, `ticker`, `name`, and coverage computed under the visibility predicate (first and last visible filing, visible forms), plus `effective_as_of` |
+| `resolve_company` | `query` (ticker, CIK, or name), `as_of?`, `corpus_version_id?` | Matches with `entity_id`, `cik`, `ticker`, `name`, and coverage computed under the visibility predicate (first and last visible filing, visible forms), plus `effective_as_of` |
 | `list_filings` | `company`, `as_of?`, `forms?`, `limit` (≤50), `cursor?`, `corpus_version_id?` | Filing metadata: `accession`, `form`, `filing_date`, `accepted_at`, `public_at`, `public_at_basis`, `timestamp_precision`, `period_end`, `document_id`, `document_version_id`, `source_url`, `content_hash`, `amends?`, plus `effective_as_of` |
 | `search_filings` | `query`, `as_of?`, `companies?`, `forms?`, `periods?`, `top_k` (≤20), `corpus_version_id?`, `index_version_id?` | Ranked passages, each with a **Citation** (§7.1) and `lanes` contributions, plus resolved pins and `effective_as_of` |
 | `read_filing` | `document_id` or `accession`, `as_of?`, `section?` (heading path or id), `cursor?`, `corpus_version_id?` | One bounded section chunk: text, its spans as Citations, `next_cursor`, and a section outline on the first page |
-| `get_citation` | `span_id` or (`document_version_id`, `start_char`, `end_char`), `as_of?` | One Citation with text, after a hash re-check. A stale, hidden or nonexistent reference returns the same `not_found`. |
+| `get_citation` | `span_id` or (`document_version_id`, `start_char`, `end_char`), `as_of?`, `corpus_version_id?` | One Citation with text, after a hash re-check. A stale, hidden or nonexistent reference returns the same `not_found`. |
 | `get_financial_facts` | `company`, `concept?`, `period?`, `as_of?`, `limit`, `cursor?`, `corpus_version_id?` | XBRL facts: `concept`, `value` (decimal string), `unit`, `scale`, `period`, `dimensions`, `reported_or_derived`, a Citation of the source span, and `restated_by`/`duplicate_of` filtered by visibility |
 | `verify_claim` | `claim`, `citations[]` (Citation refs with optional `quote`), `numeric?` (`concept?`, `value`, `unit`, `scale`, `period`; sign is derived from `value`), `as_of?`, `corpus_version_id?`, `verifier_version?` | Verification report (§7.2) |
 | `get_corpus_status` | `as_of?`, `corpus_version_id?`, `index_version_id?` | Two separate objects. `coverage`: issuer coverage, date range and timestamp-precision mix for the resolved context, computed under the visibility predicate, plus `effective_as_of`; it is replayable. `live_status`: the active and retained corpus and index versions, available verifier versions and known limitations at request time; it is exempt from replay (§6.3). |
@@ -722,14 +730,22 @@ integration.
      whole-evidence text identity.
 4. **Determinism and replay.**
    - The same resolved `evidence_context` and input give byte-identical
-     `structuredContent`. The `live_status` object of `get_corpus_status` is
-     the one exemption (§6.3): after a publish it changes, while the tool's
-     `coverage` object for the original pins does not.
+     evidence, ordering, page boundaries and context. Compare structured
+     content after excluding only `live_status` and opaque non-null
+     `next_cursor` token bytes (§6.3); assert cursor nullness separately.
+     The status tool's `coverage` for the original pins does not change.
    - Through the public tools: run a search, publish a new corpus version and
      rebuild the index, then replay with the original pins. The result is
      unchanged.
-   - Omitting pins resolves to the new versions.
-   - A retired or unknown pin returns `PIN_UNAVAILABLE`, never a silent
+   - Omitting corpus pins resolves to the new active corpus. Search also
+     resolves its omitted index; non-index contexts stay null and non-verifier
+     contexts stay `deterministic-v1` after an index/verifier inventory change.
+   - Resolver and citation inputs accept the original corpus pin. Exercise
+     both after corpus publication, not only search replay.
+   - Reissue expired cursors from the same pinned first page: token bytes may
+     change, but evidence and page boundaries must not. Reject mismatched
+     contexts and filters; issuance clocks must not leak into the context.
+   - A retired or unknown pin returns `pin_unavailable`, never a silent
      fallback.
 5. **Protocol conformance.** In-memory client tests for each tool, covering
    schemas, `structuredContent` and annotations. The legacy 2025-11-25
