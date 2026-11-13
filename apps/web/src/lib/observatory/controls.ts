@@ -6,6 +6,8 @@ import { LANES, type Lane } from "./trace-view";
 export const QUESTION_MAX = 4000;
 export const TOP_K_MIN = 1;
 export const TOP_K_MAX = 100;
+/** Server default applied when top_k is omitted (openapi CreateQuery.top_k). Display only. */
+export const TOP_K_DEFAULT = 100;
 export const FILTER_MAX_ITEMS = 20;
 export const LANE_MAX_ITEMS = LANES.length; // 4
 

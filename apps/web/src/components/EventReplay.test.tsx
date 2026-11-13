@@ -14,6 +14,14 @@ describe("EventReplay rendering", () => {
     expect(seqPositions).toEqual([...seqPositions].sort((a, b) => a - b));
   });
 
+  it("collapses the replay by default and labels events in words", () => {
+    const markup = renderToStaticMarkup(<EventReplay trace={MOCK_TRACE} />);
+    expect(markup).toContain("<details");
+    expect(markup).not.toContain("<details open");
+    expect(markup).toContain(`Show ${MOCK_TRACE.events.length} recorded events`);
+    expect(markup).toContain('title="run_started">Run started');
+  });
+
   it("shows the empty state when a trace has no persisted events", () => {
     const markup = renderToStaticMarkup(<EventReplay trace={{ ...MOCK_TRACE, events: [] }} />);
     expect(markup).toContain("No persisted events for this run.");
