@@ -9,7 +9,17 @@
   "required": ["evidence_context", "coverage_note", "citation", "hash_verified"],
   "properties": {
     "evidence_context": {
-      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1"
+      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1",
+      "properties": {
+        "index_version_id": {
+          "type": "null",
+          "description": "This tool does not use an index. It stays null even if an index is published or rebuilt."
+        },
+        "verifier_version": {
+          "const": "deterministic-v1",
+          "description": "Fixed v1 context marker for non-verification tools; never the active or latest verifier."
+        }
+      }
     },
     "coverage_note": {
       "type": "object",

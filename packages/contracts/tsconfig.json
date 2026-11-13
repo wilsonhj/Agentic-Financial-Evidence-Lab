@@ -8,6 +8,7 @@
   "include": [
     "src",
     "contracts.test.ts",
+    "mcp-contracts.test.ts",
     "generate.ts",
     "generator.test.ts",
     "extraction-candidates.test.ts"

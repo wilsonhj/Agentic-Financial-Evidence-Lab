@@ -556,6 +556,42 @@ def test_error_rules_mirror_mcp_error_schema() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("tool", ["resolve-company", "get-citation"])
+def test_replay_fixture_corpus_pin_passes_through_context_request(tool: str) -> None:
+    raw = _load("fixtures", f"mcp-{tool}-input")
+    output = _load("fixtures", f"mcp-{tool}-output")
+    expected = _context(output["evidence_context"])
+    request = i.ContextRequest(
+        request_time=datetime(2026, 11, 10, tzinfo=UTC),
+        as_of=_day(raw["as_of"]) if len(raw["as_of"]) == 10 else _instant(raw["as_of"]),
+        corpus_version_id=raw["corpus_version_id"],
+    )
+    assert request.corpus_version_id == expected.corpus_version_id
+    assert request.index_version_id is None
+    assert request.require_index is False
+    assert expected.index_version_id is None
+    assert expected.verifier_version == "deterministic-v1"
+
+
+def test_search_index_requirement_is_an_internal_context_signal() -> None:
+    now = datetime(2026, 11, 10, tzinfo=UTC)
+    assert i.ContextRequest(request_time=now).require_index is False
+    search = i.ContextRequest(request_time=now, require_index=True)
+    assert search.require_index is True
+    assert search.index_version_id is None
+    for tool in (
+        "resolve-company",
+        "list-filings",
+        "search-filings",
+        "read-filing",
+        "get-citation",
+        "get-financial-facts",
+        "verify-claim",
+        "get-corpus-status",
+    ):
+        assert "require_index" not in _load("schemas", f"mcp-{tool}-input")["properties"]
+
+
 class FakeEvidenceReadService:
     """Minimal in-memory service: one visible citation, nothing else."""
 

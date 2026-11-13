@@ -45,6 +45,98 @@ const TOOLS = [
 const fileName = (tool: string, side: "input" | "output") =>
   `mcp-${tool.replace(/_/g, "-")}-${side}`;
 
+describe("replay context (ADR-0034 Amendment 2)", () => {
+  it("every evidence tool accepts an optional corpus pin without weakening input bounds", () => {
+    for (const tool of TOOLS) {
+      const valid = validator(MCP_TOOL_SCHEMAS[tool].input);
+      const base = fixture(fileName(tool, "input"));
+      const corpus = fixture(fileName(tool, "output")).evidence_context.corpus_version_id;
+      expect(valid({ ...base, corpus_version_id: corpus }), tool).toBe(true);
+      const without = { ...base };
+      delete without.corpus_version_id;
+      expect(valid(without), `${tool} omitted corpus pin`).toBe(true);
+      for (const pin of [null, "retired", 1]) {
+        expect(valid({ ...base, corpus_version_id: pin }), `${tool} ${String(pin)}`).toBe(false);
+      }
+      expect(valid({ ...base, corpus_version_id: corpus, unexpected: true }), tool).toBe(false);
+    }
+    const valid = validator(SCHEMA_IDS.mcpGetCitationInput);
+    const corpus_version_id = fixture("mcp-get-citation-output").evidence_context.corpus_version_id;
+    expect(
+      valid({
+        document_version_id: "6d3e5c4a-8b7f-4a0c-9d9e-3f4051627384",
+        start_char: 0,
+        end_char: 1,
+        corpus_version_id,
+      }),
+    ).toBe(true);
+    expect(valid({ ...fixture("mcp-get-citation-input"), start_char: 0, corpus_version_id })).toBe(
+      false,
+    );
+  });
+
+  it("non-index tool contexts cannot drift when a new index is published", () => {
+    const index = fixture("mcp-search-filings-output").evidence_context.index_version_id;
+    for (const tool of TOOLS.filter((t) => t !== "search_filings" && t !== "get_corpus_status")) {
+      const valid = validator(MCP_TOOL_SCHEMAS[tool].output);
+      const body = fixture(fileName(tool, "output"));
+      expect(body.evidence_context.index_version_id, tool).toBeNull();
+      expect(valid(body), tool).toBe(true);
+      expect(
+        valid({ ...body, evidence_context: { ...body.evidence_context, index_version_id: index } }),
+        tool,
+      ).toBe(false);
+    }
+    const search = fixture("mcp-search-filings-output");
+    expect(
+      validator(SCHEMA_IDS.mcpSearchFilingsOutput)({
+        ...search,
+        evidence_context: { ...search.evidence_context, index_version_id: null },
+      }),
+    ).toBe(false);
+  });
+
+  it("only verify_claim can select a verifier version", () => {
+    for (const tool of TOOLS.filter((t) => t !== "verify_claim")) {
+      const valid = validator(MCP_TOOL_SCHEMAS[tool].output);
+      const body = fixture(fileName(tool, "output"));
+      expect(body.evidence_context.verifier_version, tool).toBe("deterministic-v1");
+      expect(
+        valid({
+          ...body,
+          evidence_context: { ...body.evidence_context, verifier_version: "deterministic-v2" },
+        }),
+        tool,
+      ).toBe(false);
+    }
+    const input = fixture("mcp-verify-claim-input");
+    expect(
+      validator(SCHEMA_IDS.mcpVerifyClaimInput)({ ...input, verifier_version: "deterministic-v2" }),
+    ).toBe(true);
+    const output = fixture("mcp-verify-claim-output");
+    expect(
+      validator(SCHEMA_IDS.mcpVerifyClaimOutput)({
+        ...output,
+        evidence_context: { ...output.evidence_context, verifier_version: "deterministic-v2" },
+        report: { ...output.report, verifier: "deterministic-v2" },
+      }),
+    ).toBe(true);
+  });
+
+  it("corpus status supports both no-index and explicitly pinned contexts", () => {
+    const body = fixture("mcp-get-corpus-status-output");
+    const valid = validator(SCHEMA_IDS.mcpGetCorpusStatusOutput);
+    expect(valid(body)).toBe(true);
+    expect(
+      valid({ ...body, evidence_context: { ...body.evidence_context, index_version_id: null } }),
+    ).toBe(true);
+    const input = fixture("mcp-get-corpus-status-input");
+    expect(validator(SCHEMA_IDS.mcpGetCorpusStatusInput)(input)).toBe(true);
+    delete input.index_version_id;
+    expect(validator(SCHEMA_IDS.mcpGetCorpusStatusInput)(input)).toBe(true);
+  });
+});
+
 describe("MCP tool registry", () => {
   it("names exactly the eight design-contract tools, in order, each with both schemas", () => {
     expect(Object.keys(MCP_TOOL_SCHEMAS)).toEqual([...TOOLS]);

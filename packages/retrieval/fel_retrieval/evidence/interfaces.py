@@ -21,7 +21,13 @@ Conventions the implementations must keep (design contract §6-§7):
 * **Context.** Every method takes a resolved ``EvidenceContext``. Every result
   returns that context unchanged as ``evidence_context``, with a
   ``CoverageNote``. Only ``resolve_context`` turns request inputs into a
-  context, and it never falls back from an unavailable pin.
+  context, and it never falls back from an unavailable pin. Every evidence
+  tool accepts ``corpus_version_id``, including company and citation reads.
+  Non-index tools keep ``index_version_id=None`` even when indexes change;
+  search resolves the index it actually uses. Corpus status validates and
+  echoes an explicit index pin, or keeps None when omitted. Non-verification
+  tools fix ``verifier_version`` to ``deterministic-v1``; verification uses
+  its explicit pin or ``deterministic-v1``, never an active/latest verifier.
 * **Visibility.** Strict mode shows a document only when its verified
   ``public_at`` is at or before ``effective_as_of``. ``public_at`` is the
   instant the filing became public, not its acceptance time (ADR-0034
@@ -31,8 +37,11 @@ Conventions the implementations must keep (design contract §6-§7):
   from canonical text. Financial values are decimal strings on output; a
   client-asserted numeric value is a ``Decimal``.
 * **Determinism.** Results are immutable and deterministic for a given
-  context and request. ``LiveStatus`` is the one exception and is labeled
-  ``replayable=False``.
+  context and request. ``LiveStatus`` is exempt and labeled
+  ``replayable=False``. Expiring cursor token bytes are also exempt; context,
+  evidence, ordering and page boundaries remain stable. Cursors stay bound
+  to the context and filters and expire within 15 minutes; expired tokens
+  raise ``cursor_expired`` and context mismatches raise ``invalid_input``.
 """
 
 from __future__ import annotations
@@ -207,6 +216,19 @@ class ContextRequest:
     ``as_of`` is an aware instant, a date (00:00 America/New_York) or None
     (``request_time``). ``request_time`` is supplied by the caller so that
     resolution never reads a clock of its own.
+
+    Both ``resolve_company`` and ``get_citation`` accept the corpus pin and
+    pass it here, rather than silently resolving an active corpus on replay.
+    For tools that do not use an index, the adapter leaves the index pin None.
+    Corpus status may pass an explicit index pin for validation and echoing;
+    omitting it stays None. Only ``verify_claim`` passes a verifier pin;
+    omitted verifier pins resolve to ``deterministic-v1`` for all tools.
+    Unavailable or corpus-incompatible explicit pins raise ``pin_unavailable``.
+
+    ``require_index`` is an internal adapter signal, not a client input.
+    Only search sets it True: the service resolves a compatible published
+    index when its pin is omitted. The default False preserves a null index
+    for non-index tools, including corpus status without an explicit pin.
     """
 
     request_time: datetime
@@ -216,6 +238,7 @@ class ContextRequest:
     index_version_id: str | None = None
     verifier_version: str | None = None
     filters: ContextFilters = field(default_factory=ContextFilters)
+    require_index: bool = False
 
     def __post_init__(self) -> None:
         _require_aware("request_time", self.request_time)
@@ -225,7 +248,14 @@ class ContextRequest:
 
 @dataclass(frozen=True)
 class EvidenceContext:
-    """The resolved context every result echoes (``mcp-evidence-context/v1``)."""
+    """Stable resolved context every result echoes (``mcp-evidence-context/v1``).
+
+    Non-index tools carry None for ``index_version_id``; status echoes an
+    explicit index pin or None, while search carries its resolved index.
+    Non-verification tools carry ``deterministic-v1`` as ``verifier_version``.
+    Expiring cursor bytes and live status never change this context's replay
+    guarantee.
+    """
 
     effective_as_of: datetime
     timestamp_mode: TimestampMode
@@ -769,7 +799,14 @@ class EvidenceReadService(Protocol):
     """
 
     def resolve_context(self, request: ContextRequest) -> EvidenceContext:
-        """Resolve the cutoff and pins. Raises ``pin_unavailable`` naming the pin."""
+        """Resolve cutoff/pins without active-index or latest-verifier drift.
+
+        A None index pin stays None unless ``request.require_index`` is True
+        (search only), when the service resolves a compatible published index.
+        Explicit pins are validated, including index/corpus compatibility;
+        ``pin_unavailable`` names an unavailable pin. An omitted verifier pin
+        resolves to ``deterministic-v1``.
+        """
         ...
 
     def resolve_company(
