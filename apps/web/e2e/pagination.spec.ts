@@ -39,5 +39,5 @@ test("run and persisted event histories have independent navigation", async ({ p
   await expect(page.getByRole("heading", { name: "Persisted event history" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Event history pages" })).toBeVisible();
   await page.getByRole("link", { name: "Newest first", exact: true }).click();
-  await expect(page.locator("ol li").first()).toContainText("run_completed");
+  await expect(page.locator("ol li").first()).toContainText("Run completed");
 });

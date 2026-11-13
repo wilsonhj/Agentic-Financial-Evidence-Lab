@@ -140,3 +140,8 @@ a.page-nav-link:hover {
   color: var(--color-muted);
   cursor: not-allowed;
 }
+
+/* Keep form types such as "10-Q/A" on one line in the narrow first column. */
+.filings-table-scroll .doc-table td:first-child {
+  white-space: nowrap;
+}
