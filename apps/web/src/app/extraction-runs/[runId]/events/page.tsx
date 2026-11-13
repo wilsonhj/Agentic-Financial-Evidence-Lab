@@ -6,6 +6,7 @@ import {
   ExtractionError,
   ExtractionPagination,
 } from "../../../../components/extraction/display";
+import { RunLink, Timestamp } from "../../../../components/extraction/labels";
 export const dynamic = "force-dynamic";
 export default async function EventHistoryPage({
   params,
@@ -21,29 +22,42 @@ export default async function EventHistoryPage({
     const { data: page } = await source.read(`runs/${runId}/event-history`, guards.events, query);
     return (
       <ExtractionShell title="Stored extraction events" mode={source.mode}>
-        <p>Run {runId}. This bounded page is stored history.</p>
+        <p className="extraction-lede">
+          <RunLink id={runId} />. This bounded page is stored history.
+        </p>
         {!page.items.length ? (
-          <p>No events on this page.</p>
+          <p className="extraction-empty">No events on this page.</p>
         ) : (
-          <table>
-            <caption>Persisted events in order</caption>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Type</th>
-                <th>Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {page.items.map((e) => (
-                <tr key={e.id}>
-                  <td>{e.id}</td>
-                  <td>{e.type}</td>
-                  <td>{e.occurred_at}</td>
+          <div
+            className="extraction-table-scroll"
+            role="region"
+            aria-label="Persisted events, scrollable"
+            tabIndex={0}
+          >
+            <table className="extraction-table">
+              <caption>Persisted events in order</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="extraction-num">
+                    ID
+                  </th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Time</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {page.items.map((e) => (
+                  <tr key={e.id}>
+                    <td className="extraction-num">{e.id}</td>
+                    <td className="extraction-mono">{e.type}</td>
+                    <td className="extraction-nowrap">
+                      <Timestamp value={e.occurred_at} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         <ExtractionPagination
           path={`/extraction-runs/${runId}/events`}
