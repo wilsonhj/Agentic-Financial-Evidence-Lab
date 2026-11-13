@@ -199,3 +199,71 @@ describe("EvidenceReader rendering", () => {
     expect(markup).not.toContain('aria-pressed="true"');
   });
 });
+
+describe("EvidenceReader conflict summary and history notice", () => {
+  it("summarises conflicting duplicate values above the columns with a jump control per passage", async () => {
+    const data = await readyData(DOC_10Q_ID);
+    // Only the target filing's own facts: the revenue conflict between its
+    // Statements of Operations and its MD&A.
+    const markup = renderReader(DOC_10Q_ID, {
+      ...data,
+      facts: data.facts.filter(
+        (record) => data.documentIdBySpanId[record.fact.source_span_id] === DOC_10Q_ID,
+      ),
+    });
+    // A labelled region with a heading, not a live alert.
+    expect(markup).toContain(
+      '<section class="conflict-summary" aria-labelledby="conflict-summary-heading">',
+    );
+    expect(markup).toMatch(/<h2 id="conflict-summary-heading">.*Conflicting values: Revenue<\/h2>/);
+    expect(markup).toContain("1,250,000,000 USD");
+    expect(markup).toContain("1,243,000,000 USD");
+    expect((markup.match(/<button type="button" class="conflict-jump"/g) ?? []).length).toBe(2);
+    // It precedes the three-column layout in DOM (and visual) order.
+    expect(markup.indexOf("conflict-summary")).toBeLessThan(markup.indexOf("reader-layout"));
+    // The detailed comparison stays in the fact card.
+    expect(markup).toContain("Inconsistent duplicate values");
+  });
+
+  it("renders no conflict summary when the loaded facts have no inconsistent duplicates", async () => {
+    const data = await readyData(DOC_10Q_ID);
+    const markup = renderToStaticMarkup(
+      <EvidenceReader
+        documentId={DOC_10Q_ID}
+        documents={data.documents}
+        sections={data.sections}
+        spans={data.spans}
+        facts={data.facts.filter(
+          (record) =>
+            data.documentIdBySpanId[record.fact.source_span_id] === DOC_10Q_ID &&
+            !record.fact.concept.startsWith("us-gaap:Revenue"),
+        )}
+        documentIdBySectionId={data.documentIdBySectionId}
+        documentIdBySpanId={data.documentIdBySpanId}
+        integrityFailures={data.integrityFailures}
+      />,
+    );
+    expect(markup).not.toContain("conflict-summary");
+  });
+
+  it("puts 'Load related filings' inside the related-history-incomplete notice", async () => {
+    const data = await readyData(DOC_10Q_ID);
+    const markup = renderToStaticMarkup(
+      <EvidenceReader
+        documentId={DOC_10Q_ID}
+        documents={data.documents}
+        sections={data.sections}
+        spans={data.spans}
+        facts={data.facts}
+        documentIdBySectionId={data.documentIdBySectionId}
+        documentIdBySpanId={data.documentIdBySpanId}
+        integrityFailures={data.integrityFailures}
+        historyComplete={false}
+        loadRelatedHref="/reader/x?related=1"
+      />,
+    );
+    expect(markup).toMatch(
+      /<aside class="reader-banner reader-banner-history" role="status">.*Related history incomplete\..*<a href="\/reader\/x\?related=1">Load related filings<\/a><\/aside>/,
+    );
+  });
+});

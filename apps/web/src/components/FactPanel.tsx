@@ -1,5 +1,7 @@
 "use client";
 
+import { Fragment } from "react";
+
 import type {
   DocumentMeta,
   FinancialFactRecord,
@@ -36,6 +38,22 @@ function periodLabel(period: FinancialFactRecord["fact"]["period"]): string {
   return period.type === "instant"
     ? `As of ${period.instant ?? "?"}`
     : `${period.start ?? "?"} to ${period.end ?? "?"}`;
+}
+
+/**
+ * XBRL concept names (`us-gaap:RevenueFromContractWith...`) have no natural
+ * break opportunity. Offer one after the namespace colon and at each
+ * lower-to-upper camel-case boundary so they wrap between words, not
+ * mid-word. Text content is unchanged (<wbr> adds no characters).
+ */
+function breakableConcept(concept: string): React.ReactNode {
+  const parts = concept.split(/(?<=:)|(?<=[a-z0-9])(?=[A-Z])/);
+  return parts.map((part, index) => (
+    <Fragment key={index}>
+      {index > 0 && <wbr />}
+      {part}
+    </Fragment>
+  ));
 }
 
 function locate(
@@ -99,7 +117,9 @@ function DuplicateComparison({ group, ctx }: { group: DuplicateFactGroup; ctx: F
           <tr>
             <th scope="col">Filing</th>
             <th scope="col">Section</th>
-            <th scope="col">Value</th>
+            <th scope="col" className="num">
+              Value
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -107,9 +127,9 @@ function DuplicateComparison({ group, ctx }: { group: DuplicateFactGroup; ctx: F
             const { section, document } = locate(record, ctx);
             return (
               <tr key={record.id}>
-                <td>{document?.form ?? "?"}</td>
+                <td className="nowrap">{document?.form ?? "?"}</td>
                 <td>{section?.title ?? "Unknown section"}</td>
-                <td>
+                <td className="num">
                   {formatScaledValue(record.fact)} {record.fact.unit}
                 </td>
               </tr>
@@ -147,8 +167,8 @@ function FactCard({ record, ctx }: { record: FinancialFactRecord; ctx: FactPanel
         )
       )}
       <dl>
-        <dt>Concept</dt>
-        <dd>{fact.concept}</dd>
+        <dt className="stacked">Concept</dt>
+        <dd className="stacked concept">{breakableConcept(fact.concept)}</dd>
         <dt>Normalized</dt>
         <dd>
           {formatScaledValue(fact)} {fact.unit}

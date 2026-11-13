@@ -898,7 +898,7 @@ a {
 
 @media (max-width: 64rem) {
   .reader-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1026,31 +1026,46 @@ a {
   max-width: 46rem;
 }
 
-/* Source-span highlight: color + underline + citation glyph, never color alone. */
+/* Source-span highlight: color + underline + citation glyph, never color alone.
+   The highlight lives on the inline .span-text (a <button> is always an
+   atomic inline-block, so it cannot wrap with the sentence); .span-mark is
+   the real citation <button>, rendered as the trailing glyph. */
+.span-text {
+  cursor: pointer;
+  padding: 0 0.05em;
+  background: var(--color-highlight-bg);
+  text-decoration: underline dotted var(--color-highlight-border) 2px;
+  text-underline-offset: 0.2em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.span-cite[data-pressed="true"] .span-text {
+  background: var(--color-highlight-active);
+  text-decoration-style: solid;
+  box-shadow: 0 0 0 1px var(--color-highlight-border);
+}
+
 .span-mark {
   display: inline;
   font: inherit;
   color: inherit;
-  padding: 0 0.05em;
+  line-height: inherit;
+  padding: 0 0.1em;
   margin: 0;
   border: none;
   cursor: pointer;
   background: var(--color-highlight-bg);
-  text-decoration: underline dotted var(--color-highlight-border) 2px;
-  text-underline-offset: 0.2em;
 }
 
 .span-mark[aria-pressed="true"] {
   background: var(--color-highlight-active);
-  text-decoration-style: solid;
-  box-shadow: 0 0 0 1px var(--color-highlight-border);
 }
 
 .span-mark .span-glyph {
   color: var(--color-highlight-border);
   font-size: 0.75em;
   vertical-align: super;
-  margin-left: 0.1em;
 }
 
 .evidence-panel {

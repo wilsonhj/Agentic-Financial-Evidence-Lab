@@ -54,6 +54,24 @@ describe("DocumentPane rendering", () => {
     expect(markup).toContain("Cited source span:");
   });
 
+  it("keeps the cited text inline in its sentence and names the button with it", () => {
+    const markup = renderToStaticMarkup(
+      <DocumentPane
+        sections={sections}
+        spans={spans}
+        selectedSpanId={null}
+        onSelectSpan={vi.fn()}
+      />,
+    );
+    // A <button> is always an atomic inline-block, so the visible cited text
+    // is a plain inline span (hidden from AT) and the button is labelled by it.
+    const match = /<span id="(cite-text-[^"]+)" class="span-text" aria-hidden="true">/.exec(markup);
+    expect(match).not.toBeNull();
+    expect(markup).toMatch(new RegExp(`aria-labelledby="cite-label-[^"]+ ${match![1]}"`));
+    // The cited text is not repeated inside the button.
+    expect(markup).not.toMatch(/<button[^>]*>[^<]*<span[^>]*>Cited source span: <\/span>[^<†]+/);
+  });
+
   it("marks the selected span's button aria-pressed and leaves others unpressed", () => {
     const markup = renderToStaticMarkup(
       <DocumentPane

@@ -1,0 +1,176 @@
+/* Evidence reader presentation (EvidenceReader, DocumentPane, FactPanel).
+   Colours come only from the :root tokens in globals.css so every theme
+   applies automatically. Radii: 12px cards, 8px controls. */
+
+.reader-header {
+  padding: 1.25rem 1.25rem 0;
+}
+
+.reader-header h2 {
+  margin: 0 0 0.2rem;
+  overflow-wrap: anywhere;
+}
+
+.reader-header p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.reader-related {
+  padding: 1rem 1.25rem 0;
+}
+
+/* "Related history incomplete" notice with its action. */
+.reader-banner.reader-banner-history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.reader-banner-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0.25rem 0.8rem;
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.reader-banner-action:hover {
+  text-decoration: underline;
+}
+
+/* Conflict summary: warning tokens + glyph + explicit text. */
+.conflict-summary {
+  margin: 1rem 1.25rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--color-warning-border);
+  border-left-width: 6px;
+  border-radius: 12px;
+  background: var(--color-warning-bg);
+  color: var(--color-text);
+}
+
+.conflict-summary h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  color: var(--color-warning-text);
+}
+
+.conflict-group + .conflict-group {
+  margin-top: 0.75rem;
+}
+
+.conflict-group p {
+  margin: 0 0 0.6rem;
+  font-size: 0.92rem;
+  max-width: 60rem;
+}
+
+.conflict-values {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 0.6rem;
+  max-width: 52rem;
+}
+
+.conflict-values li {
+  display: grid;
+  gap: 0.15rem;
+  align-content: start;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+.conflict-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.conflict-where {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.conflict-jump {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.35rem;
+  min-height: 32px;
+  padding: 0.25rem 0.8rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.conflict-jump:hover {
+  background: var(--color-info-bg);
+}
+
+/* Inline citations: show the focus ring on the whole cited passage when its
+   (glyph) button has keyboard focus, not only around the dagger. */
+.span-cite:has(.span-mark:focus-visible) .span-text {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Fact cards: long values sit under their label instead of in a narrow
+   second column. */
+.fact-card dl {
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+.fact-card dl > .stacked {
+  grid-column: 1 / -1;
+}
+
+.fact-card dd.stacked {
+  margin-bottom: 0.2rem;
+}
+
+.fact-card dd.concept {
+  overflow-wrap: anywhere;
+}
+
+.duplicate-compare .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.duplicate-compare .nowrap {
+  white-space: nowrap;
+}
+
+/* Single column (phones, narrow windows): the side columns stack in DOM
+   order and stop being sticky, so they can never cover the document. */
+@media (max-width: 64rem) {
+  .reader-layout .outline-nav,
+  .reader-layout .evidence-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
