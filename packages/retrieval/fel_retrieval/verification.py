@@ -10,6 +10,9 @@ supports:
   text identity (whitespace normalized), and — for arithmetic-bearing claims — the
   numeric-tuple check, so a number that does not check out is *contradictory*
   regardless of how well the surrounding words overlap.
+* ``DeterministicRules`` is the one rule implementation. ``MockCitationVerifier``
+  and ``DeterministicCitationVerifier`` (``deterministic-v1``, ADR-0034 decision
+  7) inherit it unchanged and differ only in the identity strings they stamp.
 * ``validate_numeric`` checks value, unit, period, sign and scale as five
   orthogonal booleans using exact ``Decimal`` arithmetic (spec §11.4). ``value``
   compares magnitude and ``sign`` the polarity, so a sign flip is caught even
@@ -124,7 +127,7 @@ class CitationVerifier(Protocol):
     ) -> CitationEdge: ...
 
 
-class MockCitationVerifier:
+class DeterministicRules:
     """Deterministic entailment + numeric verifier (no network).
 
     Full text support requires identity with the whole whitespace-normalized
@@ -132,11 +135,10 @@ class MockCitationVerifier:
     numeric tuple is asserted, the numeric check is decisive: missing evidence
     numeric fails closed as non-supporting (never lexical ``entailed``), and any
     failed dimension makes the edge ``contradictory`` (the number is wrong).
-    """
 
-    name = "mock-entailment"
-    model = "mock-verifier-v1"
-    version = "v1"
+    This is the single rule implementation (design contract §7.2). The named
+    verifiers below inherit ``verify`` and add only their identity strings.
+    """
 
     def verify(
         self, claim_text: str, evidence: ContextItem, *, claim_numeric: NumericTuple | None
@@ -196,6 +198,35 @@ class MockCitationVerifier:
                 )
             ),
         )
+
+
+class MockCitationVerifier(DeterministicRules):
+    """The default verifier of the retrieval pipeline and its tests.
+
+    Its identity strings are stamped on stored traces and goldens, so they never
+    change (ADR-0034 decision 7).
+    """
+
+    name = "mock-entailment"
+    model = "mock-verifier-v1"
+    version = "v1"
+
+
+# The identity a verification report and an evidence context name (design
+# contract §6.3, §7.2). A rule change needs a new version, never an edit.
+DETERMINISTIC_VERIFIER_VERSION = "deterministic-v1"
+
+
+class DeterministicCitationVerifier(DeterministicRules):
+    """The promoted verifier, ``deterministic-v1`` (ADR-0034 decision 7).
+
+    Same rules as ``MockCitationVerifier``; only the recorded identity differs.
+    It makes no model call and evaluates no semantic entailment.
+    """
+
+    name = "deterministic-entailment"
+    model = DETERMINISTIC_VERIFIER_VERSION
+    version = "v1"
 
 
 def assert_citation_integrity(
@@ -323,11 +354,14 @@ def verify_claims(
 
 
 __all__ = [
+    "DETERMINISTIC_VERIFIER_VERSION",
     "NUMERIC_CHECK_KEYS",
     "CitationEdge",
     "claim_confidence",
     "CitationIntegrityError",
     "CitationVerifier",
+    "DeterministicCitationVerifier",
+    "DeterministicRules",
     "MockCitationVerifier",
     "assert_citation_integrity",
     "classify_claim",

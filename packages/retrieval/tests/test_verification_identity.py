@@ -18,7 +18,14 @@ from decimal import Decimal
 import pytest
 
 from fel_retrieval.generation import ClaimCitation, ContextItem, GeneratedClaim, NumericTuple
-from fel_retrieval.verification import MockCitationVerifier, verify_claims
+from fel_retrieval.verification import (
+    DETERMINISTIC_VERIFIER_VERSION,
+    CitationVerifier,
+    DeterministicCitationVerifier,
+    DeterministicRules,
+    MockCitationVerifier,
+    verify_claims,
+)
 
 ALL_TRUE = {"value": True, "unit": True, "period": True, "sign": True, "scale": True}
 
@@ -136,7 +143,7 @@ def test_mock_identity_strings_are_unchanged() -> None:
     assert (mock.name, mock.model, mock.version) == ("mock-entailment", "mock-verifier-v1", "v1")
 
 
-def _trace_bytes() -> bytes:
+def _trace_bytes(verifier: CitationVerifier | None = None) -> bytes:
     """Every golden case as one claim, verified and serialized as a stored trace."""
     claims = []
     context = []
@@ -145,7 +152,7 @@ def _trace_bytes() -> bytes:
         context.append(_item(evidence, evidence_numeric, n=n))
         citation = ClaimCitation(item_id=f"item-{n}", source_span_id=f"span-{n}", quote=evidence)
         claims.append(GeneratedClaim(n, claim, "unsupported", (citation,), numeric=claim_numeric))
-    verified = verify_claims(claims, context, MockCitationVerifier())
+    verified = verify_claims(claims, context, verifier or MockCitationVerifier())
     rows = [dataclasses.asdict(claim) for claim in verified]
     return json.dumps(rows, default=str, separators=(",", ":")).encode()
 
@@ -155,3 +162,41 @@ def test_verify_claims_trace_is_byte_identical_to_the_recorded_golden() -> None:
     assert payload.count(b'"verifier":"mock-entailment"') == len(GOLDEN)
     assert payload.count(b'"model":"mock-verifier-v1","version":"v1"') == len(GOLDEN)
     assert hashlib.sha256(payload).hexdigest() == TRACE_SHA256
+
+
+# --- the promoted verifier (deterministic-v1) --------------------------------
+def test_deterministic_verifier_is_identified_as_deterministic_v1() -> None:
+    promoted = DeterministicCitationVerifier()
+    assert DETERMINISTIC_VERIFIER_VERSION == "deterministic-v1"
+    assert (promoted.name, promoted.model, promoted.version) == (
+        "deterministic-entailment",
+        "deterministic-v1",
+        "v1",
+    )
+
+
+@pytest.mark.parametrize("name", sorted(GOLDEN))
+def test_deterministic_verifier_gives_the_golden_edge_for_every_rule(name: str) -> None:
+    claim, evidence, claim_numeric, evidence_numeric, *_ = GOLDEN[name]
+    item = _item(evidence, evidence_numeric)
+    promoted = DeterministicCitationVerifier().verify(claim, item, claim_numeric=claim_numeric)
+    assert promoted == MockCitationVerifier().verify(claim, item, claim_numeric=claim_numeric)
+    assert (promoted.status, promoted.rationale) == (GOLDEN[name][4], GOLDEN[name][6])
+
+
+def test_both_verifiers_share_one_rule_implementation() -> None:
+    """Neither verifier defines rules of its own; both run ``DeterministicRules.verify``."""
+    assert MockCitationVerifier.verify is DeterministicRules.verify
+    assert DeterministicCitationVerifier.verify is DeterministicRules.verify
+    for verifier in (MockCitationVerifier, DeterministicCitationVerifier):
+        assert set(vars(verifier)) - {"__module__", "__doc__"} == {"name", "model", "version"}
+
+
+def test_promoted_trace_differs_from_the_mock_trace_only_in_identity_strings() -> None:
+    promoted = _trace_bytes(DeterministicCitationVerifier())
+    assert b"mock" not in promoted
+    as_mock = promoted.replace(
+        b'"verifier":"deterministic-entailment","model":"deterministic-v1"',
+        b'"verifier":"mock-entailment","model":"mock-verifier-v1"',
+    )
+    assert hashlib.sha256(as_mock).hexdigest() == TRACE_SHA256
