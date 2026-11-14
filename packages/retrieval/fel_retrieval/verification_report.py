@@ -24,7 +24,6 @@ context give the same report.
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -48,6 +47,7 @@ from fel_retrieval.evidence.interfaces import (
     VerifyClaimResult,
 )
 from fel_retrieval.generation import NUMERIC_SCALE_EXPONENTS, ContextItem, NumericTuple
+from fel_retrieval.hashing import content_sha256
 from fel_retrieval.verification import (
     DETERMINISTIC_VERIFIER_VERSION,
     DeterministicCitationVerifier,
@@ -130,10 +130,10 @@ def _collapse(text: str) -> str:
 
 def _hash_valid(evidence: SpanEvidence) -> bool:
     try:
-        digest = hashlib.sha256(evidence.text.encode("utf-8")).hexdigest()
+        expected = content_sha256(evidence.text)
     except UnicodeEncodeError:  # a lone surrogate has no UTF-8 form, so no valid hash
         return False
-    return evidence.text_hash == f"sha256:{digest}"
+    return evidence.text_hash == expected
 
 
 def _quote_found(quote: str, text: str) -> bool:
