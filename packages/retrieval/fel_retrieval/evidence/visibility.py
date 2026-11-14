@@ -4,8 +4,8 @@ Every evidence read of the public surface goes through the two things defined
 here, so no read can be written without them:
 
 * ``VISIBLE_VERSIONS`` is the one FROM clause that yields evidence. A row
-  exists only for a parsed version, listed in the pinned corpus version, of a
-  filing whose verified ``public_at`` is at or before the cutoff (ADR-0034
+  exists only for a parsed version, listed in the pinned and published corpus
+  version, of a filing whose verified ``public_at`` is at or before the cutoff (ADR-0034
   decision 4, Amendment 1). A reference to anything else finds no row, which
   is the same result as a reference to nothing: hidden and missing evidence
   cannot be told apart because they are not treated apart.
@@ -48,10 +48,14 @@ VISIBLE_DOCUMENT: Final = " ".join(
         "AND d.accession ~ '^[0-9]{10}-[0-9]{2}-[0-9]{6}$'",
     ]
 )
-# Aliases: cvd (corpus membership), dv (parsed version), d (visible filing).
+# Aliases: cvd (corpus membership), cv (published corpus version), dv (parsed
+# version), d (visible filing). The status test repeats the pin check of
+# ``resolve_context`` so that a context built any other way is gated here too.
 VISIBLE_VERSIONS: Final = " ".join(
     [
         "corpus_version_documents cvd",
+        "JOIN corpus_versions cv ON cv.id = cvd.corpus_version_id",
+        "AND cv.status IN ('active', 'superseded')",
         "JOIN document_versions dv ON dv.id = cvd.document_version_id",
         "AND dv.status = 'parsed' AND cvd.corpus_version_id = %(corpus)s",
         "JOIN documents d ON d.id = dv.document_id AND",

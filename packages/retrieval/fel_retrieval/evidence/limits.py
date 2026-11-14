@@ -118,7 +118,9 @@ def check_request(request: object) -> None:
         check_uuid("span_id", request.span_id)
     elif isinstance(request, i.SpanRangeRef):
         check_uuid("document_version_id", request.document_version_id)
-        if request.end_char > MAX_OFFSET:
-            raise invalid_input("end_char", f"must not exceed {MAX_OFFSET}")
+        for field in ("start_char", "end_char"):
+            offset = getattr(request, field)
+            if type(offset) is not int or offset > MAX_OFFSET:
+                raise invalid_input(field, f"must be an integer from 0 to {MAX_OFFSET}")
     else:
         raise TypeError(f"no request limits are defined for {type(request).__name__}")
