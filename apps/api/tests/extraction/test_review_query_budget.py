@@ -1,6 +1,7 @@
 """Bulk review must not issue a database round trip for every row and field."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,10 +9,23 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from app.auth import make_mock_token
-from benchmarks.extraction_load_fixture import BulkMock, seed, state, verify
+from benchmarks.extraction_load_fixture import DIGEST, BulkMock, seed, state, verify
 from fel_providers.mocks import MockSecClient
 from fel_workers.consumer import run_worker
 from fel_workers.storage import LocalDirStorageProvider, apply_worker_db_role
+from tests.extraction.test_mock_lifecycle import asserting_span_hash
+
+
+class ReviewableBulkMock(BulkMock):
+    """The same 100 proposals, each asserting the text_hash of the span it cites.
+
+    Membership-only citations are blocked by the worker and are not promoted
+    by review, so a bulk accept needs proposals with a verified citation.
+    """
+
+    def generate_structured(self, request):
+        result = super().generate_structured(request)
+        return replace(result, parsed=asserting_span_hash(result.parsed, DIGEST))
 
 
 def test_100_item_review_has_bounded_sql_round_trips(
@@ -49,7 +63,7 @@ def test_100_item_review_has_bounded_sql_round_trips(
                 MockSecClient(),
                 queue_name=queue,
                 max_iterations=1,
-                structured_llm=BulkMock(ids),
+                structured_llm=ReviewableBulkMock(ids),
             )
             == 1
         )

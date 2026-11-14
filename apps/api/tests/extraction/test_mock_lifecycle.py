@@ -34,6 +34,36 @@ class ScopedMock(MockStructuredLLMProvider):
         return replace(result, parsed=scoped(result.parsed))
 
 
+def asserting_span_hash(parsed, text_hash):
+    """Make every proposal citation assert the content address of its span."""
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("proposals"), list):
+        return parsed
+    return {
+        **parsed,
+        "proposals": [
+            {**item, "evidence": [{**edge, "text_hash": text_hash} for edge in item["evidence"]]}
+            for item in parsed["proposals"]
+        ],
+    }
+
+
+class HashAssertingMock(ScopedMock):
+    """A role that opened the span it cites: each citation asserts its text_hash.
+
+    The committed mock cites by membership only, which the worker grades
+    ``partial`` and blocks. Asserting the pinned span's content address is the
+    only citation the worker grades ``verified``.
+    """
+
+    def __init__(self, tenant, source):
+        super().__init__(tenant, source)
+        self.text_hash = source["hash"]
+
+    def generate_structured(self, request):
+        result = super().generate_structured(request)
+        return replace(result, parsed=asserting_span_hash(result.parsed, self.text_hash))
+
+
 def test_created_job_reaches_durable_waiting_review_with_bound_source_pins(
     extraction_client, extraction_tenant, extraction_url, source_fixture
 ):

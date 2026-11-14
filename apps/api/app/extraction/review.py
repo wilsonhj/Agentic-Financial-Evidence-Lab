@@ -80,9 +80,10 @@ def _locked_rows(
     # Each lateral scan retains the existing per-proposal201 sentinel. A global
     # LIMIT would let early rows hide an oversized later proposal's evidence.
     edges = conn.execute(
-        "SELECT p.id AS proposal_id,e.source_span_id,e.document_version_id,e.role "
-        "FROM unnest(%s::uuid[]) AS p(id) CROSS JOIN LATERAL ("
-        "SELECT source_span_id,document_version_id,role FROM extraction_proposal_evidence "
+        "SELECT p.id AS proposal_id,e.source_span_id,e.document_version_id,e.role,"
+        "e.citation_status FROM unnest(%s::uuid[]) AS p(id) CROSS JOIN LATERAL ("
+        "SELECT source_span_id,document_version_id,role,citation_status "
+        "FROM extraction_proposal_evidence "
         "WHERE proposal_id=p.id AND org_id=%s "
         "ORDER BY source_span_id,document_version_id,role LIMIT 201) e "
         "ORDER BY p.id,e.source_span_id,e.document_version_id,e.role",
@@ -190,6 +191,7 @@ def _apply(
                         payload=replacement["payload"],
                         evidence=replacement["evidence"],
                         validation_summary={},
+                        **{validation.REVIEWER_EVIDENCE: True},
                     )
         validation_rows = validation_peers.relevant_rows(
             validation_rows,

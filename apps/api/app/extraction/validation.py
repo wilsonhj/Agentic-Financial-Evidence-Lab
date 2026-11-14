@@ -25,6 +25,9 @@ from fel_workers.extraction.types import (
 from fel_workers.extraction.validate.pipeline import detect_conflicts, validate_proposals
 from fel_workers.extraction.validate.schema import WORKER_EXTENSION_KEYS
 
+# Row marker for evidence a reviewer supplied in an explicit edit or correction.
+REVIEWER_EVIDENCE = "reviewer_evidence"
+
 
 @dataclass
 class Evaluated:
@@ -81,19 +84,27 @@ def evaluate(
         run = runs[str(row["run_id"])]
         run_ids = row.get("source_run_ids") or [str(row["run_id"])]
         local = {span: block for rid in run_ids for span, block in scopes[rid].items()}
-        verified = []
+        # The worker's citation rule counts an edge as verified only when it
+        # carries a text_hash matching the pinned span. Supplying that hash for
+        # every edge would let this module verify what the proposal never
+        # asserted. It is supplied only for an edge already graded `verified`
+        # where it was persisted (the worker's append-only grade, or a current
+        # head's approved manifest) and for evidence a reviewer supplied in an
+        # explicit replacement. Every other edge is re-graded as it was cited.
+        reviewer_evidence = row.get(REVIEWER_EVIDENCE) is True
+        cited = []
         for edge in row["evidence"]:
             block = local.get(str(edge["source_span_id"]))
             if block is None or str(edge["document_version_id"]) != block["document_version_id"]:
                 invalid(resource)
-            verified.append(
-                {
-                    "source_span_id": block["source_span_id"],
-                    "document_version_id": block["document_version_id"],
-                    "text_hash": block["text_hash"],
-                    "role": edge["role"],
-                }
-            )
+            citation = {
+                "source_span_id": block["source_span_id"],
+                "document_version_id": block["document_version_id"],
+                "role": edge["role"],
+            }
+            if reviewer_evidence or edge.get("citation_status") == "verified":
+                citation["text_hash"] = block["text_hash"]
+            cited.append(citation)
         for assertion in row["payload"].get("evidence") or []:
             if isinstance(assertion, dict) and assertion.get("text_hash"):
                 asserted_block = local.get(str(assertion.get("source_span_id")))
@@ -106,7 +117,7 @@ def evaluate(
             invalid(resource)
         if public.get("entity_id") != str(run["entity_id"]):
             invalid(resource)
-        normalized, blockers = normalize_payload({**public, "evidence": verified})
+        normalized, blockers = normalize_payload({**public, "evidence": cited})
         if blockers:
             normalized[NORMALIZER_BLOCKERS_KEY] = [
                 *(normalized.get(NORMALIZER_BLOCKERS_KEY) or []),
@@ -121,13 +132,16 @@ def evaluate(
         carried = (row.get("validation_summary") or {}).get("blockers") or []
         # The persisted normalizer may already have changed a rejected sign.
         # Unchanged source candidates retain those findings; explicit replacements
-        # have no old summary and are independently validated above.
+        # have no old summary and are independently validated above. A proposal
+        # the worker found to have no verified citation cannot acquire one
+        # either: its evidence is append-only.
         blockers = list(draft.validation_summary["blockers"])
         for blocker in carried:
             irreversible = isinstance(blocker, str) and (
                 blocker == "dimensions_non_string"
                 or blocker.startswith("sign contradicts value:")
                 or blocker.startswith("sign must be positive/negative/zero:")
+                or blocker.startswith("no verified citation:")
             )
             if irreversible and blocker not in blockers:
                 blockers.append(blocker)
