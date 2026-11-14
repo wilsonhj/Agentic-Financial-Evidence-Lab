@@ -1515,7 +1515,7 @@ packages:
     depends_on: []
     team: contracts
     branch: agent/mcp-contract
-    status: active # Dispatched 2026-11-10 after the owner accepted ADR-0034 as drafted. Carries contract-change; the mcp dependency is authorized by ADR-0034 decision 8.
+    status: merged # PR #402 landed in merge 517553e (2026-11-14) with #401, #406 and #407. Dispatched 2026-11-10 after the owner accepted ADR-0034 as drafted; the mcp dependency is authorized by ADR-0034 decision 8.
     allowed_paths:
       - db/migrations/**
       - packages/contracts/**
@@ -1538,7 +1538,7 @@ packages:
     depends_on: [MCP-CONTRACT]
     team: contracts
     branch: agent/mcp-replay-contract
-    status: review # PR #406, authored on #402's head under the 2026-11-13 authorization (ADR-0034 Amendment 2).
+    status: merged # PR #406 landed in merge 517553e (2026-11-14). Authored on #402's head under the 2026-11-13 authorization (ADR-0034 Amendment 2).
     allowed_paths:
       - packages/contracts/**
       - packages/retrieval/fel_retrieval/evidence/interfaces.py
@@ -1555,7 +1555,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: data
     branch: agent/mcp-backfill-privileges
-    status: review # PR #407, a bounded stacked prerequisite authorized 2026-11-13 (ADR-0034 Amendment 2). #393 depends on it and on #404.
+    status: merged # PR #407 landed in merge 517553e (2026-11-14). A bounded stacked prerequisite authorized 2026-11-13 (ADR-0034 Amendment 2); #393 depends on it and on #404.
     allowed_paths:
       - db/migrations/0013_mcp_backfill_privileges.sql
       - db/migrations/tests/0013_mcp_backfill_privileges.test.sql
@@ -1653,3 +1653,61 @@ packages:
       - infra/**
       - docs/runbooks/**
       - docs/handoff/CREDENTIALS.md
+  # --- Fix packages from the 2026-11-13 repository code review ---
+  # The four findings that survived independent re-verification as the top tier
+  # (docs/research/2026-11-13-repository-code-review.md, "Verification status").
+  # Defect fixes: no canonical task covers them, so every entry carries
+  # `tasks: []`. Their allowed paths are disjoint from each other. All four are
+  # registered `blocked`; flipping any to `ready` is a dispatch decision
+  # reserved to the integration lead, within the four-package concurrency cap.
+  - id: FIX-REVIEW-CITATION-BLOCKERS
+    issue: 409
+    tasks: [] # Finding C1: review accept/merge can clear the unverified-citation blocker.
+    depends_on: []
+    team: extraction
+    branch: agent/fix-review-citation-blockers
+    status: blocked # Registered 2026-11-14; not dispatched.
+    allowed_paths:
+      - apps/api/app/extraction/**
+      - apps/api/tests/extraction/**
+  - id: FIX-NUMERIC-SIGN-PARSING
+    issue: 410
+    tasks: [] # Finding C3: parse_numeric drops the sign of non-dollar and U+2212 negatives.
+    depends_on: []
+    team: extraction
+    branch: agent/fix-numeric-sign-parsing
+    status: blocked # Registered 2026-11-14; not dispatched.
+    allowed_paths:
+      - workers/src/fel_workers/extraction/normalize/**
+      - workers/tests/extraction/test_normalize.py
+      - workers/tests/extraction/test_normalize_magnitude.py
+      - workers/tests/extraction/test_normalize_sign.py
+  - id: FIX-XBRL-DIVIDE-UNITS
+    issue: 411
+    tasks: [] # Finding C4: xbrli:divide units collapse to the last measure.
+    depends_on: []
+    team: data
+    branch: agent/fix-xbrl-divide-units
+    status: blocked # Registered 2026-11-14; not dispatched.
+    allowed_paths:
+      - workers/src/fel_workers/ingestion/parser.py
+      - workers/src/fel_workers/ingestion/xbrl.py
+      - workers/tests/test_parser_golden.py
+      - workers/tests/test_parser_golden_stress.py
+      - workers/tests/test_xbrl_normalize.py
+      - workers/tests/fixtures/**
+  - id: FIX-RUN-ERROR-REDACTION
+    issue: 412
+    tasks: [] # Finding H4: run-failure text is stored, and for retrieval returned, unredacted.
+    depends_on: []
+    team: trust
+    branch: agent/fix-run-error-redaction
+    status: blocked # Registered 2026-11-14; not dispatched.
+    allowed_paths:
+      - apps/api/app/retrieval.py
+      - apps/api/app/retrieval_run_store.py
+      - apps/api/tests/test_retrieval_api.py
+      - workers/src/fel_workers/redact.py
+      - workers/src/fel_workers/extraction/workflow.py
+      - workers/tests/test_redact.py
+      - workers/tests/extraction/test_run_error_redaction.py
