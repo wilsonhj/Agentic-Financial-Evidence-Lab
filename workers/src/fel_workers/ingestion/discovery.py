@@ -132,9 +132,10 @@ def run_discovery_job(
     """Handle a ``sec_discovery`` job: list filings, enqueue idempotent fetches.
 
     Fetch jobs are deduplicated per accession via the queue's idempotency
-    key, so re-running discovery never duplicates work. EDGAR lists filings
-    newest first; jobs are enqueued oldest first so that, on one worker, an
-    original is ingested before its amendment. That is best effort only:
+    key, so re-running discovery never duplicates work. Jobs are enqueued in
+    filing-date order, whatever order the index lists them in, so that on one
+    worker an original is ingested before its amendment. Filings of one date
+    keep EDGAR's newest-first listing reversed. That is best effort only:
     ``backfill.repair_restatement_links`` is what makes links independent of
     ingestion order.
     """
@@ -142,7 +143,7 @@ def run_discovery_job(
     forms_value = payload.get("forms")
     forms = frozenset(str(f) for f in forms_value) if isinstance(forms_value, list) else None
     refs = discover_filings(client, cik, forms=forms)
-    for ref in reversed(refs):
+    for ref in sorted(reversed(refs), key=lambda ref: ref.filed_on):
         queue.enqueue(
             conn,
             kind=JOB_KIND_SEC_FILING_FETCH,

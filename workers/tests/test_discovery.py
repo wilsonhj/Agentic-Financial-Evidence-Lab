@@ -111,17 +111,37 @@ def test_discovery_rejects_a_non_string_acceptance_time() -> None:
         discover_filings(NumericClient(), "9999997")
 
 
+class OldestFirstSecClient(AcceptanceSecClient):
+    """The same index listed oldest first, as the corpus-QA harness lists it."""
+
+    def submissions(self, cik: str) -> dict[str, object]:
+        payload = super().submissions(cik)
+        for rows in payload["filings"]["recent"].values():  # type: ignore[index]
+            rows.reverse()
+        return payload
+
+
 @requires_db
-def test_discovery_enqueues_the_oldest_filing_first(corpus_conn: psycopg.Connection) -> None:
+@pytest.mark.parametrize(
+    ("client", "claim_order"),
+    [(AcceptanceSecClient(), "12534"), (OldestFirstSecClient(), "21534")],
+    ids=["newest-first index", "oldest-first index"],
+)
+def test_discovery_enqueues_in_filing_date_order(
+    corpus_conn: psycopg.Connection, client: FixtureSecClient, claim_order: str
+) -> None:
     """EDGAR lists newest first. Claiming in that order ingests an amendment
-    before its original, which then has no restatement target (#393)."""
-    run_discovery_job(corpus_conn, AcceptanceSecClient(), {"cik": "9999997"})
+    before its original, which then has no restatement target (#393). Only
+    the two filings that share a date (1 and 2) follow the listing."""
+    run_discovery_job(corpus_conn, client, {"cik": "9999997"})
     rows = corpus_conn.execute(
         "SELECT payload FROM jobs WHERE kind = %s ORDER BY priority, created_at",
         (JOB_KIND_SEC_FILING_FETCH,),
     ).fetchall()
-    assert [row[0]["accession"][-1] for row in rows] == ["1", "2", "5", "3", "4"]
-    assert rows[0][0]["acceptance_datetime"] == "2026-05-05T12:05:11.000Z"
+    assert "".join(row[0]["accession"][-1] for row in rows) == claim_order
+    dates = [row[0]["filed_on"] for row in rows]
+    assert dates == sorted(dates)
+    assert {row[0]["acceptance_datetime"] for row in rows} >= {None, "2026-05-05T12:05:11.000Z"}
 
 
 @requires_db
