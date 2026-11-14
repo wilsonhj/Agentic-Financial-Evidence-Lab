@@ -106,6 +106,9 @@ Root `SPEC.md`, `PLAN.md`, and `TASKS.md` are pointer stubs only.
 | [Ontology research](research/ontology/README.md) | EXT-3 SaaS disclosure research draft | reference |
 | [SaaS disclosure survey](research/ontology/saas-disclosure-survey.md) | Raw survey feeding the T0301 ontology | reference |
 | [Financial evidence skills review](research/financial-evidence-skills-review.md) | External evidence-router review; adopted items live in `workers/src/fel_workers/http.py` | reference |
+| [Claude for Financial Services review](research/claude-for-financial-services-review.md) | What Anthropic's financial-services skills and vendor connectors offer this repository, and what they conflict with | reference |
+| [MCP evidence server specification](research/mcp-evidence-server-spec.md) | Read-only MCP server and Claude plugin design; §6–§7 are frozen by ADR-0034 | reference |
+| [Adoption roadmap, 2026-11-10](research/2026-11-10-adoption-roadmap.md) | Proposed path to public adoption and a parallel execution plan; superseded in part by ADR-0034 | reference |
 
 ## Implementation plans
 

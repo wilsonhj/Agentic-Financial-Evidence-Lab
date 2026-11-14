@@ -5,6 +5,12 @@ is a research deliverable for the integration lead. It does not authorize
 implementation, dispatch any package, or change the canonical ledger
 (`specs/001-financial-evidence-lab/tasks.md`), `workstreams.yaml` or any ADR.
 
+Superseded in part on 2026-11-10:
+[ADR-0034](../decisions/ADR-0034-public-read-only-evidence-surface.md) was
+accepted for bounded implementation and the MCP packages were registered in
+`workstreams.yaml` under `specs/006-mcp-evidence-server/`. Where this plan's
+MCP lanes, paths or "pending decision" wording differ, those govern.
+
 Goal it serves: the product has no users and is not publicly deployed. Build
 a fully featured app that earns real adoption, and finish the remaining work
 efficiently and in parallel.
@@ -13,10 +19,8 @@ Inputs: five read-only audits run on 2026-11-10 (ledger versus code,
 deployment readiness, web-app product state, workstream parallelism, and
 adoption research), plus direct checks listed under
 [Verification](#verification). Related proposals:
-the Claude for Financial Services review
-([PR #388](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/388))
-and the MCP evidence server specification
-([PR #389](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/389)).
+the [Claude for Financial Services review](claude-for-financial-services-review.md)
+and the [MCP evidence server specification](mcp-evidence-server-spec.md).
 
 ## 1. Finding
 
@@ -31,7 +35,7 @@ or hosted infrastructure:
 #62 ─► #64 model persistence ─► #65 model UI, #66 ─► #67 forecast ─► #68 release
 ```
 
-No package in `docs/handoff/workstreams.yaml` is `ready`. The last net-new
+No package in `docs/handoff/workstreams.yaml` was `ready` at `2f7f066`. The last net-new
 product feature merged on 2026-10-26 (#354, #350). Merges since then are
 fixes, documentation and CI.
 
@@ -107,7 +111,8 @@ No agent can do these. They gate everything else.
    provisionally ADR-0034). It amends
    [ADR-0004](../decisions/ADR-0004-public-corpus-tenancy.md) and
    [ADR-0027](../decisions/ADR-0027-deployment-modes.md) for a read-only
-   surface. It unlocks both the MCP connector and a public web reader.
+   surface. As accepted, ADR-0034 covers the MCP surface only; a public web
+   reader still needs its own decision.
 2. **Provision hosting:** Supabase (Postgres with pgvector, Storage) and
    Railway API and worker services, or name an alternative. Supply
    `FEL_SEC_USER_AGENT` and a Sentry DSN. A dedicated database also provides
@@ -117,7 +122,9 @@ No agent can do these. They gate everything else.
 4. **Product name and domain.** They must avoid the SEC and EDGAR marks.
 5. **Freeze the #324 session and BYOK contract**
    ([ADR-0026](../decisions/ADR-0026-public-workspaces-and-user-funded-inference.md)
-   is direction only).
+   is accepted as a direction; the contract in
+   [`public-auth-byok-contract.md`](public-auth-byok-contract.md) is still
+   Proposed).
 6. **Ratify or withdraw
    [ADR-0012](../decisions/ADR-0012-llm-provider-substitution.md)** and
    record the status of ADR-0029, ADR-0030 and ADR-0031.
@@ -129,7 +136,8 @@ No agent can do these. They gate everything else.
 
 ### 3.2 Release 1 code: public evidence, no login, no model calls
 
-The prerequisites are detailed in the MCP specification (PR #389, §4).
+The prerequisites are detailed in the
+[MCP specification](mcp-evidence-server-spec.md) (§4).
 
 | Work | Paths | Notes |
 |---|---|---|
@@ -206,8 +214,9 @@ that later lanes build against frozen contracts and never edit the same file:
 
 ### 5.2 Lanes
 
-Up to six lanes can run at once after the wave. Each PR is reviewed by a
-different vendor than its author, per the cross-vendor review rule.
+Up to six lanes can run at once after the wave. Each PR should be reviewed by
+a different vendor than its author (a working convention, not a committed
+rule).
 
 | Lane | Paths | Issues | Builds against | Suggested author |
 |---|---|---|---|---|
