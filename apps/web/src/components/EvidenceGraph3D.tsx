@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { EvidenceSourceId, GuidanceApproval, ReviewDecision } from "../app/desk/desk-state";
+import "../styles/lineage-graph.css";
 
 export type CameraPreset = "constellation" | "dag" | "temporal";
 export type ProvenanceLayer = "reported" | "extraction" | "calculation" | "output";
@@ -11,6 +12,8 @@ export type NodeState =
 export interface GraphNode3D {
   id: string;
   label: string;
+  /** Compact form shown on the graph when there is no room for the full label. */
+  shortLabel: string;
   sublabel: string;
   layer: ProvenanceLayer;
   x: number;
@@ -179,6 +182,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "sec-10q-nrr",
       label: "10-Q Span · NRR 108%",
+      shortLabel: "10-Q NRR",
       sublabel: "Page 34 · fixture span",
       layer: "reported",
       x: -170,
@@ -191,6 +195,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "call-turn-48",
       label: "Call Turn 48 · NRR 109%",
+      shortLabel: "Call NRR",
       sublabel: "Transcript · fixture turn",
       layer: "reported",
       x: -58,
@@ -203,6 +208,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "sec-10q-guidance",
       label: "10-Q Span · Guidance",
+      shortLabel: "10-Q Guide",
       sublabel: "Page 42 · $790–794m",
       layer: "reported",
       x: 62,
@@ -215,6 +221,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "sec-10q-actuals",
       label: "10-Q Fact · ARR $782m",
+      shortLabel: "10-Q ARR",
       sublabel: "Page 12 · XBRL us-gaap",
       layer: "reported",
       x: 174,
@@ -229,6 +236,9 @@ export function buildEpistemicGraph(props: {
       label: decisionAdmissible
         ? `C-104 Resolved (${decision.sourceId === "sec-10q-nrr" ? "108%" : "109%"})`
         : "C-104 NRR Conflict",
+      shortLabel: decisionAdmissible
+        ? `C-104 ${decision.sourceId === "sec-10q-nrr" ? "108%" : "109%"}`
+        : "C-104 NRR",
       sublabel: decisionAdmissible
         ? "Human rationale recorded"
         : decision
@@ -245,6 +255,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "gate-c109-rev",
       label: "C-109 Revenue Range",
+      shortLabel: "C-109 Rev",
       sublabel: revApproved ? "Approved ($790–794m)" : "Pending ($790–794m)",
       layer: "extraction",
       x: 24,
@@ -257,6 +268,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "gate-c109-gm",
       label: "C-109 Gross Margin",
+      shortLabel: "C-109 GM",
       sublabel: gmApproved ? "Approved (76.0–76.5%)" : "Pending (76.0–76.5%)",
       layer: "extraction",
       x: 145,
@@ -269,6 +281,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "calc-driver-arr",
       label: "OperationalDriver · ARR",
+      shortLabel: "ARR Driver",
       sublabel: "Retention + Expansion",
       layer: "calculation",
       x: -105,
@@ -281,6 +294,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "calc-jacobi-scc",
       label: "Jacobi SCC · 5 Sweeps",
+      shortLabel: "Jacobi SCC",
       sublabel: "Convergence tol <= 0.01",
       layer: "calculation",
       x: 18,
@@ -293,6 +307,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "calc-scenario",
       label: `ScenarioOverride · ${scenario}`,
+      shortLabel: `Scenario ${scenario}`,
       sublabel: scenarioDeltaByScenario[scenario] ?? "+0.0%",
       layer: "calculation",
       x: 142,
@@ -305,6 +320,7 @@ export function buildEpistemicGraph(props: {
     {
       id: "output-fy27-rev",
       label: `FY27 Revenue · ${revenueByScenario[scenario] ?? "$842.4m"}`,
+      shortLabel: `FY27 ${revenueByScenario[scenario] ?? "$842.4m"}`,
       sublabel:
         applied && decisionAdmissible
           ? "Staged in this session · fixture schematic"
@@ -418,6 +434,374 @@ export function buildEpistemicGraph(props: {
   return { nodes, edges };
 }
 
+// ---------------------------------------------------------------------------
+// Label layout
+//
+// Node labels are HTML pills laid over the canvas. Each frame they are placed
+// greedily in priority order (selected node first, then hovered/focused nodes
+// and their neighbours, then the rest): every label tries a set of candidate
+// positions around its node, then positions displaced further away (drawn
+// with a leader line back to the node), and lower-priority labels fall back
+// to their short form before they are dropped. A placed label never overlaps
+// another placed label and never leaves the canvas.
+// ---------------------------------------------------------------------------
+
+export const LABEL_HEIGHT = 20;
+/** Horizontal padding plus border on each side of a label pill (see .lg-label). */
+const LABEL_CHROME_X = 9;
+const LABEL_GAP = 3;
+const EDGE_PAD = 4;
+const CAPTION_HEIGHT = 14;
+const LABEL_FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const LABEL_FONT = `600 12px ${LABEL_FONT_FAMILY}`;
+const LABEL_FONT_SELECTED = `700 12px ${LABEL_FONT_FAMILY}`;
+const CAPTION_FONT = `600 10px ${LABEL_FONT_FAMILY}`;
+
+/** Width of a label pill whose text measures `textWidth` px. */
+export function labelBoxWidth(textWidth: number): number {
+  return Math.ceil(textWidth) + 1 + LABEL_CHROME_X * 2;
+}
+
+export type LabelSide = "right" | "below";
+export type LabelForm = "full" | "short" | "hidden";
+
+export interface LabelAnchor {
+  id: string;
+  x: number;
+  y: number;
+  r: number;
+}
+
+export interface LabelRequest {
+  anchor: LabelAnchor;
+  fullWidth: number;
+  shortWidth: number;
+  /** 0: always full text (selected node). 1: prefer full (hovered, focused, neighbours). 2: may shrink first. */
+  tier: 0 | 1 | 2;
+}
+
+export interface CaptionRequest {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface LabelPlacement {
+  id: string;
+  form: LabelForm;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** True when the label sits away from its node and needs a leader line. */
+  leader: boolean;
+  key: string;
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface Candidate {
+  key: string;
+  x: number;
+  y: number;
+  /** Touching the node: no leader line needed. */
+  near: boolean;
+  /** Within a few label rows of the node: a short leader line. */
+  close: boolean;
+}
+
+const clampTo = (value: number, lo: number, hi: number) =>
+  Math.min(Math.max(value, lo), Math.max(lo, hi));
+
+function rectsOverlap(a: Rect, b: Rect, gap: number): boolean {
+  return (
+    a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap
+  );
+}
+
+function rectPointDistance(rect: Rect, px: number, py: number): number {
+  const dx = Math.max(rect.x - px, 0, px - (rect.x + rect.w));
+  const dy = Math.max(rect.y - py, 0, py - (rect.y + rect.h));
+  return Math.hypot(dx, dy);
+}
+
+function labelCandidates(
+  anchor: LabelAnchor,
+  w: number,
+  h: number,
+  side: LabelSide,
+  width: number,
+  height: number,
+): Candidate[] {
+  const { x, y, r } = anchor;
+  const gap = 5;
+  const step = h + LABEL_GAP + 1;
+  const primary: Record<"right" | "below" | "above" | "left", [number, number]> = {
+    right: [x + r + gap, y - h / 2],
+    below: [x - w / 2, y + r + gap],
+    above: [x - w / 2, y - r - gap - h],
+    left: [x - r - gap - w, y - h / 2],
+  };
+  const order =
+    side === "right"
+      ? (["right", "below", "above", "left"] as const)
+      : (["below", "above", "right", "left"] as const);
+  const raw: [string, number, number][] = order.map((key) => [key, ...primary[key]]);
+  for (let k = 1; k <= 2; k += 1) {
+    for (const key of order) {
+      if (key !== "right" && key !== "left") continue;
+      const [px, py] = primary[key];
+      raw.push([`${key}+${k}`, px, py + k * step], [`${key}-${k}`, px, py - k * step]);
+    }
+  }
+  for (let k = 1; k <= 10; k += 1) {
+    raw.push(
+      [`below+${k}`, primary.below[0], primary.below[1] + k * step],
+      [`above+${k}`, primary.above[0], primary.above[1] - k * step],
+    );
+  }
+  const seen = new Set<string>();
+  const out: Candidate[] = [];
+  for (const [key, rx, ry] of raw) {
+    const cx = clampTo(rx, EDGE_PAD, width - EDGE_PAD - w);
+    const cy = clampTo(ry, EDGE_PAD, height - EDGE_PAD - h);
+    const signature = `${Math.round(cx)}:${Math.round(cy)}`;
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    const distance = rectPointDistance({ x: cx, y: cy, w, h }, x, y) - r;
+    out.push({ key, x: cx, y: cy, near: distance <= gap + 2, close: distance <= 3 * step });
+  }
+  return out;
+}
+
+/**
+ * Greedy label placement. `requests` must be in priority order; the first
+ * tier-0 request always gets its full label.
+ */
+export function placeLabels(options: {
+  width: number;
+  height: number;
+  side: LabelSide;
+  requests: readonly LabelRequest[];
+  obstacles: readonly LabelAnchor[];
+  captions?: readonly CaptionRequest[];
+  previous?: ReadonlyMap<string, LabelPlacement>;
+}): LabelPlacement[] {
+  const { width, height, side, requests, obstacles, captions = [], previous } = options;
+  const placed: Rect[] = [];
+  const result: LabelPlacement[] = [];
+  const hitsNode = (rect: Rect) =>
+    obstacles.some((node) => rectPointDistance(rect, node.x, node.y) < node.r + 2);
+
+  type Form = "full" | "short";
+  interface Attempt {
+    form: Form;
+    candidate: Candidate;
+    strict: boolean;
+  }
+
+  for (const request of requests) {
+    const { anchor } = request;
+    const widthOf = (form: Form) => (form === "full" ? request.fullWidth : request.shortWidth);
+    const candidates: Record<Form, Candidate[]> = {
+      full: labelCandidates(anchor, request.fullWidth, LABEL_HEIGHT, side, width, height),
+      short: labelCandidates(anchor, request.shortWidth, LABEL_HEIGHT, side, width, height),
+    };
+    const attempts: Attempt[] = [];
+    const add = (form: Form, strict: boolean, filter?: (c: Candidate) => boolean) => {
+      for (const candidate of candidates[form]) {
+        if (!filter || filter(candidate)) attempts.push({ form, candidate, strict });
+      }
+    };
+    const near = (c: Candidate) => c.near;
+    const close = (c: Candidate) => c.close && !c.near;
+    const far = (c: Candidate) => !c.close;
+    const nearOrClose = (c: Candidate) => c.close;
+    if (request.tier === 0) {
+      add("full", true);
+      add("full", false);
+    } else if (request.tier === 1) {
+      // A full label a long leader line away reads worse than a short one nearby.
+      add("full", true, nearOrClose);
+      add("short", true, nearOrClose);
+      add("full", true, far);
+      add("short", true, far);
+      add("full", false);
+      add("short", false);
+    } else {
+      add("full", true, near);
+      add("short", true, near);
+      add("full", true, close);
+      add("short", true, close);
+      add("full", true, far);
+      add("short", true, far);
+      add("full", false);
+      add("short", false);
+    }
+    const rectOf = (a: Attempt): Rect => ({
+      x: a.candidate.x,
+      y: a.candidate.y,
+      w: widthOf(a.form),
+      h: LABEL_HEIGHT,
+    });
+    const fits = (a: Attempt) => {
+      const rect = rectOf(a);
+      return (
+        !placed.some((other) => rectsOverlap(rect, other, LABEL_GAP)) &&
+        (!a.strict || !hitsNode(rect))
+      );
+    };
+
+    let chosen = attempts.find(fits);
+    // Keep last frame's spot while it is still as good, so orbiting labels
+    // do not flicker between equally valid positions.
+    const prev = previous?.get(anchor.id);
+    if (chosen && prev && prev.form === chosen.form && prev.key !== chosen.candidate.key) {
+      const best = chosen;
+      chosen =
+        attempts.find(
+          (a) =>
+            a.form === best.form &&
+            a.strict === best.strict &&
+            a.candidate.key === prev.key &&
+            fits(a),
+        ) ?? best;
+    }
+    if (!chosen) {
+      result.push({
+        id: anchor.id,
+        form: "hidden",
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+        leader: false,
+        key: "",
+      });
+      continue;
+    }
+    const rect = rectOf(chosen);
+    placed.push(rect);
+    result.push({
+      id: anchor.id,
+      form: chosen.form,
+      ...rect,
+      leader: !chosen.candidate.near,
+      key: chosen.candidate.key,
+    });
+  }
+
+  for (const caption of captions) {
+    const rect: Rect = {
+      x: clampTo(caption.x, EDGE_PAD, width - EDGE_PAD - caption.w),
+      y: clampTo(caption.y, EDGE_PAD, height - EDGE_PAD - caption.h),
+      w: caption.w,
+      h: caption.h,
+    };
+    const fitsCaption =
+      !placed.some((other) => rectsOverlap(rect, other, LABEL_GAP)) && !hitsNode(rect);
+    if (fitsCaption) placed.push(rect);
+    result.push({
+      id: caption.id,
+      form: fitsCaption ? "full" : "hidden",
+      ...rect,
+      leader: false,
+      key: "caption",
+    });
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Scene geometry
+// ---------------------------------------------------------------------------
+
+/** Layers from the top of the canvas to the bottom. */
+const DAG_ROWS: readonly ProvenanceLayer[] = ["output", "calculation", "extraction", "reported"];
+
+/** Column of each node within its layer row, ordered to keep edges from crossing. */
+const DAG_COLUMN: Readonly<Record<string, number>> = {
+  "output-fy27-rev": 0.4,
+  "calc-driver-arr": 0,
+  "calc-jacobi-scc": 0.45,
+  "calc-scenario": 0.75,
+  "gate-c104": 0.3,
+  "gate-c109-rev": 0.56,
+  "gate-c109-gm": 0.8,
+  "sec-10q-actuals": 0,
+  "sec-10q-nrr": 0.25,
+  "call-turn-48": 0.5,
+  "sec-10q-guidance": 0.75,
+};
+
+const LAYER_CAPTIONS: Readonly<Record<ProvenanceLayer, string>> = {
+  output: "L3 · REPORTED OUTPUT",
+  calculation: "L2 · DECIMAL CALC DAG",
+  extraction: "L1 · EXTRACTION & REVIEW",
+  reported: "L0 · SOURCE SPANS",
+};
+
+const LAYER_PLANE_Y: Readonly<Record<ProvenanceLayer, number>> = {
+  output: -118,
+  calculation: -44,
+  extraction: 36,
+  reported: 112,
+};
+
+/** Below this canvas width the DAG puts labels under nodes instead of beside them. */
+export const WIDE_DAG_MIN_WIDTH = 560;
+
+/** Canvas CSS height for a given CSS width. */
+export function canvasHeightFor(width: number): number {
+  return Math.round(Math.min(520, Math.max(400, width * 0.58)));
+}
+
+/** Flat layered layout used by the "Layered DAG" preset. */
+export function dagLayout(
+  nodes: readonly Pick<GraphNode3D, "id" | "layer">[],
+  width: number,
+  height: number,
+): {
+  side: LabelSide;
+  bandTop: (row: number) => number;
+  positions: Map<string, { x: number; y: number }>;
+} {
+  const side: LabelSide = width >= WIDE_DAG_MIN_WIDTH ? "right" : "below";
+  const margin = 6;
+  const band = (height - margin * 2) / DAG_ROWS.length;
+  const bandTop = (row: number) => margin + band * row;
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const node of nodes) {
+    const row = Math.max(0, DAG_ROWS.indexOf(node.layer));
+    const column = DAG_COLUMN[node.id] ?? 0.5;
+    positions.set(node.id, {
+      x: side === "right" ? 28 + column * (width - 56) : width * (0.12 + column * 0.95),
+      y: bandTop(row) + band * (side === "right" ? 0.6 : 0.45),
+    });
+  }
+  return { side, bandTop, positions };
+}
+
+function bezierPoint(a: number, b: number, c: number, d: number, t: number): number {
+  const u = 1 - t;
+  return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
+}
+
+interface HitTarget {
+  id: string;
+  sx: number;
+  sy: number;
+  r: number;
+  depth: number;
+}
+
 export function EvidenceGraph3D({
   scenario,
   source,
@@ -427,13 +811,11 @@ export function EvidenceGraph3D({
   onSelectNode,
 }: EvidenceGraph3DProps) {
   const cutoffInputId = useId();
-  const [preset, setPreset] = useState<CameraPreset>("constellation");
+  const [preset, setPreset] = useState<CameraPreset>("dag");
   const [cutoffStep, setCutoffStep] = useState<0 | 1 | 2>(2);
   const [selectedId, setSelectedId] = useState<string>("output-fy27-rev");
-  const [autoOrbit, setAutoOrbit] = useState<boolean>(true);
-  const [angles, setAngles] = useState<{ yaw: number; pitch: number }>(() =>
-    presetAngles("constellation"),
-  );
+  const [autoOrbit, setAutoOrbit] = useState<boolean>(false);
+  const [angles, setAngles] = useState<{ yaw: number; pitch: number }>(() => presetAngles("dag"));
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pulsePhaseRef = useRef<number>(0);
@@ -444,9 +826,16 @@ export function EvidenceGraph3D({
     lastX: 0,
     lastY: 0,
   });
-  const projectedRef = useRef<{ id: string; sx: number; sy: number; r: number; depth: number }[]>(
-    [],
-  );
+  const projectedRef = useRef<HitTarget[]>([]);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const labelElsRef = useRef<Map<string, HTMLElement>>(new Map());
+  const placementsRef = useRef<Map<string, LabelPlacement>>(new Map());
+  const pointerRef = useRef<{ hover: string | null; focus: string | null }>({
+    hover: null,
+    focus: null,
+  });
+  const repaintRef = useRef<() => void>(() => undefined);
+  const sizeRef = useRef<{ width: number; height: number }>({ width: 680, height: 400 });
 
   const { nodes, edges } = useMemo(
     () =>
@@ -465,6 +854,8 @@ export function EvidenceGraph3D({
     () => nodes.find((n) => n.id === selectedId) ?? nodes[nodes.length - 1]!,
     [nodes, selectedId],
   );
+  const selectedNodeId = selectedNode.id;
+  const orbiting = autoOrbit && preset === "constellation";
 
   const cutoffInfo = CUTOFF_STOPS[cutoffStep] ?? CUTOFF_STOPS[2]!;
   const blockedCount = nodes.filter((n) => n.state === "cutoff-blocked").length;
@@ -483,6 +874,8 @@ export function EvidenceGraph3D({
 
   const choosePreset = (next: CameraPreset) => {
     setPreset(next);
+    // Orbit only ever runs after the user turns it on in the 3D Orbit view.
+    setAutoOrbit(false);
     orbitYawOffsetRef.current = 0;
     setAngles(presetAngles(next));
   };
@@ -490,6 +883,17 @@ export function EvidenceGraph3D({
   const selectNode = (id: string) => {
     setSelectedId(id);
     onSelectNode?.(id);
+  };
+
+  const setPointerTarget = (kind: "hover" | "focus", id: string | null) => {
+    if (pointerRef.current[kind] === id) return;
+    pointerRef.current[kind] = id;
+    repaintRef.current();
+  };
+
+  const registerLabel = (id: string) => (el: HTMLElement | null) => {
+    if (el) labelElsRef.current.set(id, el);
+    else labelElsRef.current.delete(id);
   };
 
   useEffect(() => {
@@ -503,10 +907,54 @@ export function EvidenceGraph3D({
       typeof window !== "undefined" &&
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const flat = preset === "dag";
+    const spinning = autoOrbit && preset === "constellation";
+
+    const neighbours = new Map<string, Set<string>>();
+    const link = (a: string, b: string) => {
+      const set = neighbours.get(a) ?? new Set<string>();
+      set.add(b);
+      neighbours.set(a, set);
+    };
+    edges.forEach((edge) => {
+      link(edge.from, edge.to);
+      link(edge.to, edge.from);
+    });
+
+    const textWidths = new Map<string, number>();
+    const measure = (text: string, font: string) => {
+      const key = `${font}|${text}`;
+      let w = textWidths.get(key);
+      if (w === undefined) {
+        ctx.font = font;
+        w = ctx.measureText(text).width;
+        textWidths.set(key, w);
+      }
+      return w;
+    };
+    const written = new WeakMap<HTMLElement, string>();
+
+    const syncSize = () => {
+      const cssWidth = wrapRef.current?.clientWidth ?? 0;
+      if (cssWidth > 0) {
+        const width = Math.round(cssWidth);
+        const height = canvasHeightFor(width);
+        const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+        const backingWidth = Math.round(width * dpr);
+        const backingHeight = Math.round(height * dpr);
+        if (canvas.width !== backingWidth) canvas.width = backingWidth;
+        if (canvas.height !== backingHeight) canvas.height = backingHeight;
+        const cssHeight = `${height}px`;
+        if (canvas.style.height !== cssHeight) canvas.style.height = cssHeight;
+        return { width, height, dpr };
+      }
+      return { width: canvas.width, height: canvas.height, dpr: 1 };
+    };
 
     const renderFrame = () => {
-      const width = canvas.width;
-      const height = canvas.height;
+      const { width, height, dpr } = syncSize();
+      sizeRef.current = { width, height };
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
       // Deep space / epistemic grid background
@@ -516,83 +964,166 @@ export function EvidenceGraph3D({
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, width, height);
 
-      // Draw subtle horizontal layer planes
-      const layerY = [-118, -44, 36, 112];
-      const layerLabels = [
-        "L3 · REPORTED OUTPUT",
-        "L2 · DECIMAL CALC DAG",
-        "L1 · EXTRACTION & REVIEW",
-        "L0 · SOURCE SPANS",
-      ];
+      const captionWidth = (text: string) => Math.ceil(measure(text, CAPTION_FONT)) + 2;
+      const captions: CaptionRequest[] = [];
+      const positions = new Map<string, HitTarget>();
+      let side: LabelSide = "below";
 
-      const yaw = angles.yaw + orbitYawOffsetRef.current;
-      const pitch = angles.pitch;
-      const cosY = Math.cos(yaw);
-      const sinY = Math.sin(yaw);
-      const cosP = Math.cos(pitch);
-      const sinP = Math.sin(pitch);
-      // Sized so every node and label stays in frame at each preset pitch for
-      // any orbit yaw; the scene sits low (near L0 spans grow under positive
-      // pitch), so the projection center is above the canvas midline.
-      const fov = 320;
-      const viewerDist = 420;
-      const centerY = height * 0.42;
-
-      const project = (x: number, y: number, z: number) => {
-        const rx = x * cosY - z * sinY;
-        const rz = x * sinY + z * cosY;
-        const ry = y * cosP - rz * sinP;
-        const rz2 = y * sinP + rz * cosP;
-        const scale = fov / Math.max(120, viewerDist + rz2);
-        return {
-          sx: width / 2 + rx * scale,
-          sy: centerY + ry * scale,
-          scale,
-          depth: rz2,
+      ctx.save();
+      ctx.strokeStyle = "rgba(88, 166, 255, 0.13)";
+      ctx.lineWidth = 1;
+      if (flat) {
+        const layout = dagLayout(nodes, width, height);
+        side = layout.side;
+        DAG_ROWS.forEach((layer, row) => {
+          const top = layout.bandTop(row);
+          if (row > 0) {
+            ctx.beginPath();
+            ctx.moveTo(8, top);
+            ctx.lineTo(width - 8, top);
+            ctx.stroke();
+          }
+          captions.push({
+            id: `layer-${layer}`,
+            x: 10,
+            y: top + 5,
+            w: captionWidth(LAYER_CAPTIONS[layer]),
+            h: CAPTION_HEIGHT,
+          });
+        });
+        nodes.forEach((node) => {
+          const p = layout.positions.get(node.id)!;
+          positions.set(node.id, {
+            id: node.id,
+            sx: p.x,
+            sy: p.y,
+            r: node.layer === "output" ? 14 : 10,
+            depth: 0,
+          });
+        });
+      } else {
+        const yaw = angles.yaw + orbitYawOffsetRef.current;
+        const pitch = angles.pitch;
+        const cosY = Math.cos(yaw);
+        const sinY = Math.sin(yaw);
+        const cosP = Math.cos(pitch);
+        const sinP = Math.sin(pitch);
+        // Tuned on a 520x400 canvas so every node stays in frame at each preset
+        // pitch for any orbit yaw (labels are placed separately and clamped),
+        // then scaled uniformly to the real canvas. The scene sits low (near
+        // L0 spans grow under positive pitch), so the projection center is
+        // above the canvas midline. Narrow canvases have spare height, so the
+        // layers are spread apart a little to give labels room by their nodes.
+        const fit = Math.min(width / 520, height / 400);
+        const fitY = Math.min(height / 400, fit * 1.6);
+        const fov = 320;
+        const viewerDist = 420;
+        const centerY = height / 2 - 32 * fitY;
+        const project = (x: number, y: number, z: number) => {
+          const rx = x * cosY - z * sinY;
+          const rz = x * sinY + z * cosY;
+          const ry = y * cosP - rz * sinP;
+          const rz2 = y * sinP + rz * cosP;
+          const scale = fov / Math.max(120, viewerDist + rz2);
+          return {
+            sx: width / 2 + rx * scale * fit,
+            sy: centerY + ry * scale * fitY,
+            scale,
+            depth: rz2,
+          };
         };
-      };
-
-      // Draw 3D floor/layer rings
-      layerY.forEach((ly, idx) => {
-        ctx.save();
-        ctx.strokeStyle = "rgba(88, 166, 255, 0.13)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        const corners = [
-          project(-210, ly, -95),
-          project(210, ly, -95),
-          project(210, ly, 95),
-          project(-210, ly, 95),
-        ];
-        ctx.moveTo(corners[0]!.sx, corners[0]!.sy);
-        corners.slice(1).forEach((c) => ctx.lineTo(c.sx, c.sy));
-        ctx.closePath();
-        ctx.stroke();
-
-        ctx.fillStyle = "rgba(139, 148, 158, 0.55)";
-        ctx.font = "600 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-        ctx.fillText(layerLabels[idx] ?? "", corners[0]!.sx + 6, corners[0]!.sy - 4);
-        ctx.restore();
-      });
-
-      const nodeMap = new Map(
-        nodes.map((node) => {
+        DAG_ROWS.forEach((layer) => {
+          const ly = LAYER_PLANE_Y[layer];
+          const corners = [
+            project(-210, ly, -95),
+            project(210, ly, -95),
+            project(210, ly, 95),
+            project(-210, ly, 95),
+          ];
+          ctx.beginPath();
+          ctx.moveTo(corners[0]!.sx, corners[0]!.sy);
+          corners.slice(1).forEach((c) => ctx.lineTo(c.sx, c.sy));
+          ctx.closePath();
+          ctx.stroke();
+          captions.push({
+            id: `layer-${layer}`,
+            x: corners[0]!.sx + 6,
+            y: corners[0]!.sy - 4 - CAPTION_HEIGHT,
+            w: captionWidth(LAYER_CAPTIONS[layer]),
+            h: CAPTION_HEIGHT,
+          });
+        });
+        const radiusScale = Math.min(1.25, Math.max(0.75, fit));
+        nodes.forEach((node) => {
           const p = project(node.x, node.y, node.z);
-          return [node.id, { node, ...p }];
-        }),
+          positions.set(node.id, {
+            id: node.id,
+            sx: p.sx,
+            sy: p.sy,
+            r: Math.max(8, (node.layer === "output" ? 16 : 12) * p.scale * radiusScale),
+            depth: p.depth,
+          });
+        });
+      }
+      ctx.restore();
+
+      // Label layout, in priority order.
+      const { hover, focus } = pointerRef.current;
+      const near = (a: string | null, b: string) =>
+        a !== null && neighbours.get(a)?.has(b) === true;
+      const rank = (id: string) =>
+        id === selectedNodeId
+          ? 0
+          : id === hover
+            ? 1
+            : id === focus
+              ? 2
+              : near(selectedNodeId, id)
+                ? 3
+                : near(hover, id) || near(focus, id)
+                  ? 4
+                  : 5;
+      const ordered = [...nodes].sort(
+        (a, b) =>
+          rank(a.id) - rank(b.id) ||
+          positions.get(a.id)!.depth - positions.get(b.id)!.depth ||
+          DAG_ROWS.indexOf(a.layer) - DAG_ROWS.indexOf(b.layer),
       );
+      const requests: LabelRequest[] = ordered.map((node) => {
+        const p = positions.get(node.id)!;
+        const font = node.id === selectedNodeId ? LABEL_FONT_SELECTED : LABEL_FONT;
+        const r = rank(node.id);
+        return {
+          anchor: { id: node.id, x: p.sx, y: p.sy, r: p.r },
+          fullWidth: labelBoxWidth(measure(node.label, font)),
+          shortWidth: labelBoxWidth(measure(node.shortLabel, font)),
+          tier: r === 0 ? 0 : r < 5 ? 1 : 2,
+        };
+      });
+      const placements = placeLabels({
+        width,
+        height,
+        side,
+        requests,
+        obstacles: requests.map((req) => req.anchor),
+        captions,
+        previous: placementsRef.current,
+      });
+      placementsRef.current = new Map(placements.map((p) => [p.id, p]));
 
       // Draw edges and animated provenance pulses
       edges.forEach((edge) => {
-        const from = nodeMap.get(edge.from);
-        const to = nodeMap.get(edge.to);
+        const from = positions.get(edge.from);
+        const to = positions.get(edge.to);
         if (!from || !to) return;
 
         const style = edgePalette(edge.kind);
+        const midY = (from.sy + to.sy) / 2;
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(from.sx, from.sy);
-        ctx.lineTo(to.sx, to.sy);
+        if (flat) ctx.bezierCurveTo(from.sx, midY, to.sx, midY, to.sx, to.sy);
+        else ctx.lineTo(to.sx, to.sy);
         if (!edge.active) {
           ctx.strokeStyle = "rgba(139, 148, 158, 0.24)";
           ctx.setLineDash([4, 4]);
@@ -606,8 +1137,12 @@ export function EvidenceGraph3D({
         // Animated energy pulse along active edges
         if (edge.active) {
           const t = (pulsePhaseRef.current * 0.9) % 1;
-          const px = from.sx + (to.sx - from.sx) * t;
-          const py = from.sy + (to.sy - from.sy) * t;
+          const px = flat
+            ? bezierPoint(from.sx, from.sx, to.sx, to.sx, t)
+            : from.sx + (to.sx - from.sx) * t;
+          const py = flat
+            ? bezierPoint(from.sy, midY, midY, to.sy, t)
+            : from.sy + (to.sy - from.sy) * t;
           ctx.beginPath();
           ctx.arc(px, py, 3.4, 0, Math.PI * 2);
           ctx.fillStyle = style.pulse;
@@ -616,14 +1151,35 @@ export function EvidenceGraph3D({
         ctx.restore();
       });
 
-      // Sort nodes back-to-front (Painter's algorithm)
-      const sorted = [...nodeMap.values()].sort((a, b) => b.depth - a.depth);
-      const hitList: { id: string; sx: number; sy: number; r: number; depth: number }[] = [];
+      // Leader lines from displaced labels back to their nodes
+      ctx.save();
+      ctx.strokeStyle = "rgba(201, 209, 217, 0.7)";
+      ctx.lineWidth = 1;
+      placements.forEach((p) => {
+        const node = positions.get(p.id);
+        if (!node || !p.leader || p.form === "hidden") return;
+        const tx = clampTo(node.sx, p.x, p.x + p.w);
+        const ty = clampTo(node.sy, p.y, p.y + p.h);
+        const angle = Math.atan2(ty - node.sy, tx - node.sx);
+        ctx.beginPath();
+        ctx.moveTo(
+          node.sx + Math.cos(angle) * (node.r + 2),
+          node.sy + Math.sin(angle) * (node.r + 2),
+        );
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+      });
+      ctx.restore();
 
-      sorted.forEach(({ node, sx, sy, scale, depth }) => {
+      // Sort nodes back-to-front (Painter's algorithm)
+      const sorted = [...nodes].sort(
+        (a, b) => positions.get(b.id)!.depth - positions.get(a.id)!.depth,
+      );
+      const hitList: HitTarget[] = [];
+      sorted.forEach((node) => {
+        const { sx, sy, r: radius, depth } = positions.get(node.id)!;
         const palette = nodeColor(node.state);
-        const isSelected = node.id === selectedId;
-        const radius = Math.max(9, (node.layer === "output" ? 16 : 12) * scale);
+        const isSelected = node.id === selectedNodeId;
         hitList.push({ id: node.id, sx, sy, r: radius + 6, depth });
 
         ctx.save();
@@ -653,58 +1209,93 @@ export function EvidenceGraph3D({
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = "#0b1220";
         ctx.stroke();
-
-        ctx.font = `${isSelected ? "700" : "600"} 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
-        const textWidth = ctx.measureText(node.label).width;
-        const pillX = sx - textWidth / 2 - 6;
-        const pillY = sy + radius + 5;
-        ctx.fillStyle = isSelected ? "rgba(23, 94, 203, 0.92)" : "rgba(13, 18, 28, 0.84)";
-        ctx.fillRect(pillX, pillY, textWidth + 12, 18);
-        ctx.strokeStyle = isSelected ? "#79c0ff" : "rgba(139, 148, 158, 0.35)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(pillX, pillY, textWidth + 12, 18);
-
-        ctx.fillStyle = "#f0f6fc";
-        ctx.fillText(node.label, sx - textWidth / 2, pillY + 13);
         ctx.restore();
       });
-
       projectedRef.current = hitList;
+
+      // Move the HTML label pills; only touch the DOM when something changed.
+      placements.forEach((p) => {
+        const el = labelElsRef.current.get(p.id);
+        if (!el) return;
+        const x = Math.round(p.x);
+        const y = Math.round(p.y);
+        const signature = p.form === "hidden" ? "hidden" : `${p.form}|${x}|${y}|${p.w}`;
+        if (written.get(el) === signature) return;
+        written.set(el, signature);
+        el.dataset.form = p.form;
+        if (p.form !== "hidden") {
+          el.style.transform = `translate(${x}px, ${y}px)`;
+          el.style.width = `${p.w}px`;
+        }
+      });
 
       if (!reducedMotion) {
         pulsePhaseRef.current += 0.016;
-        if (autoOrbit && !dragRef.current.active) {
+        if (spinning && !dragRef.current.active) {
           orbitYawOffsetRef.current += 0.0028;
         }
         frameId = window.requestAnimationFrame(renderFrame);
       }
     };
 
+    // With reduced motion there is no animation loop, so repaint on demand.
+    repaintRef.current = () => {
+      if (reducedMotion) renderFrame();
+    };
+    const wrap = wrapRef.current;
+    const resizeObserver =
+      wrap && typeof ResizeObserver === "function"
+        ? new ResizeObserver(() => repaintRef.current())
+        : null;
+    if (wrap) resizeObserver?.observe(wrap);
+
     renderFrame();
     return () => {
       if (frameId) window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      repaintRef.current = () => undefined;
     };
-  }, [nodes, edges, angles, autoOrbit, selectedId]);
+  }, [nodes, edges, angles, autoOrbit, preset, selectedNodeId]);
+
+  const toCanvasPoint = (event: { clientX: number; clientY: number }) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const { width, height } = sizeRef.current;
+    return {
+      x: (event.clientX - rect.left) * (width / Math.max(1, rect.width)),
+      y: (event.clientY - rect.top) * (height / Math.max(1, rect.height)),
+    };
+  };
+
+  const hitTest = (x: number, y: number): string | null => {
+    for (const p of placementsRef.current.values()) {
+      if (p.form === "hidden" || p.key === "caption") continue;
+      if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return p.id;
+    }
+    const hits = projectedRef.current
+      .filter((item) => Math.hypot(item.sx - x, item.sy - y) <= item.r)
+      .sort((a, b) => a.depth - b.depth);
+    return hits[0]?.id ?? null;
+  };
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (dragRef.current.moved) {
       dragRef.current.moved = false;
       return;
     }
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / Math.max(1, rect.width);
-    const scaleY = canvas.height / Math.max(1, rect.height);
-    const x = (event.clientX - rect.left) * scaleX;
-    const y = (event.clientY - rect.top) * scaleY;
+    const point = toCanvasPoint(event);
+    if (!point) return;
+    const hit = hitTest(point.x, point.y);
+    if (hit) selectNode(hit);
+  };
 
-    const hits = projectedRef.current
-      .filter((item) => Math.hypot(item.sx - x, item.sy - y) <= item.r)
-      .sort((a, b) => a.depth - b.depth);
-    if (hits[0]) {
-      selectNode(hits[0].id);
-    }
+  const updateHover = (event: { clientX: number; clientY: number }) => {
+    const point = toCanvasPoint(event);
+    const hit = point ? hitTest(point.x, point.y) : null;
+    setPointerTarget("hover", hit);
+    const canvas = canvasRef.current;
+    if (canvas?.style) canvas.style.cursor = hit ? "pointer" : "";
   };
 
   return (
@@ -739,10 +1330,12 @@ export function EvidenceGraph3D({
           <button
             type="button"
             data-testid="button-viz3d-orbit"
-            aria-pressed={autoOrbit}
+            aria-pressed={orbiting}
+            disabled={preset !== "constellation"}
+            title={preset === "constellation" ? undefined : "Orbit runs in the 3D Orbit view"}
             onClick={() => setAutoOrbit((prev) => !prev)}
           >
-            {autoOrbit ? "Pause Orbit" : "Auto Orbit"}
+            {orbiting ? "Pause Orbit" : "Auto Orbit"}
           </button>
         </div>
       </div>
@@ -762,20 +1355,24 @@ export function EvidenceGraph3D({
         </span>
       </div>
 
-      <div className="viz3d-canvas-wrap">
+      <div className="viz3d-canvas-wrap" ref={wrapRef}>
         <canvas
           ref={canvasRef}
           width={680}
           height={400}
           role="img"
-          className="viz3d-canvas"
+          className={preset === "dag" ? "viz3d-canvas viz3d-canvas--flat" : "viz3d-canvas"}
           data-testid="canvas-evidence-3d"
           onClick={handleCanvasClick}
           onPointerDown={(e) => {
             dragRef.current = { active: true, moved: false, lastX: e.clientX, lastY: e.clientY };
           }}
           onPointerMove={(e) => {
-            if (!dragRef.current.active) return;
+            // The flat DAG has no camera to rotate; there the pointer only hovers.
+            if (!dragRef.current.active || preset === "dag") {
+              updateHover(e);
+              return;
+            }
             const dx = e.clientX - dragRef.current.lastX;
             const dy = e.clientY - dragRef.current.lastY;
             const moved = dragRef.current.moved || Math.hypot(dx, dy) > 4;
@@ -790,9 +1387,35 @@ export function EvidenceGraph3D({
           }}
           onPointerLeave={() => {
             dragRef.current.active = false;
+            setPointerTarget("hover", null);
           }}
           aria-label="Interactive 3D canvas of filing spans, review gates, calculation nodes, and FY27 revenue output"
         />
+        <div className="lg-labels" aria-hidden="true">
+          {DAG_ROWS.map((layer) => (
+            <span
+              key={layer}
+              ref={registerLabel(`layer-${layer}`)}
+              className="lg-caption"
+              data-lineage-label={`layer-${layer}`}
+            >
+              {LAYER_CAPTIONS[layer]}
+            </span>
+          ))}
+          {nodes.map((node) => (
+            <span
+              key={node.id}
+              ref={registerLabel(node.id)}
+              className="lg-label"
+              data-lineage-label={node.id}
+              data-state={node.state}
+              data-selected={node.id === selectedNodeId ? "" : undefined}
+            >
+              <span className="lg-label-full">{node.label}</span>
+              <span className="lg-label-short">{node.shortLabel}</span>
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="viz3d-scrubber">
@@ -826,6 +1449,10 @@ export function EvidenceGraph3D({
               className="viz3d-pill"
               aria-pressed={selectedNode.id === node.id}
               onClick={() => selectNode(node.id)}
+              onFocus={() => setPointerTarget("focus", node.id)}
+              onBlur={() => setPointerTarget("focus", null)}
+              onMouseEnter={() => setPointerTarget("hover", node.id)}
+              onMouseLeave={() => setPointerTarget("hover", null)}
             >
               <span
                 className="viz3d-dot"

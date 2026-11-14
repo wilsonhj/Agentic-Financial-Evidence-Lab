@@ -9,6 +9,7 @@ import {
   type PendingRequest,
 } from "../../lib/extraction/review-state";
 import { PayloadFields } from "./display";
+import { StatusBadge } from "./labels";
 
 export function ActionForm({
   action,
@@ -95,7 +96,7 @@ export function ActionForm({
         ? "Run request JSON (entity_id, as_of, modes, source_span_ids; optional corpus_version_id)"
         : "Rerun reason";
   return (
-    <section aria-label={`${action} extraction`}>
+    <section aria-label={`${action} extraction`} className="extraction-card extraction-action">
       <h2>
         {action === "correct"
           ? "Append correction"
@@ -105,6 +106,7 @@ export function ActionForm({
         <p>Creates a new immutable version. Prior approved values and evidence remain unchanged.</p>
       )}
       <form
+        className="extraction-form"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -115,6 +117,9 @@ export function ActionForm({
             <label htmlFor={`${action}-draft`}>{label}</label>
             <textarea
               id={`${action}-draft`}
+              className={
+                action === "rerun" ? "extraction-control" : "extraction-control extraction-code"
+              }
               rows={action === "rerun" ? 2 : 12}
               value={draft}
               required
@@ -129,6 +134,11 @@ export function ActionForm({
         )}
         <button
           type="submit"
+          className={
+            action === "cancel"
+              ? "extraction-button extraction-button-danger"
+              : "extraction-button extraction-button-primary"
+          }
           disabled={!permitted || busy || stale || (action !== "cancel" && !draft.trim())}
         >
           {action === "correct"
@@ -140,14 +150,21 @@ export function ActionForm({
                 : "Create unchanged child run"}
         </button>
       </form>
-      {!permitted && <p>Your current permissions do not allow this action.</p>}
+      {!permitted && (
+        <p className="extraction-hint">Your current permissions do not allow this action.</p>
+      )}
       {stale && (
-        <button type="button" disabled={busy} onClick={() => void refresh()}>
+        <button
+          type="button"
+          className="extraction-button"
+          disabled={busy}
+          onClick={() => void refresh()}
+        >
           Refresh current version for comparison
         </button>
       )}
       {comparison && (
-        <section>
+        <section className="extraction-compare">
           <h3>Current version {comparison.version}</h3>
           {"payload" in comparison ? (
             <>
@@ -166,10 +183,13 @@ export function ActionForm({
               </section>
             </>
           ) : (
-            <p>{comparison.status}</p>
+            <p>
+              <StatusBadge status={comparison.status} />
+            </p>
           )}
           <button
             type="button"
+            className="extraction-button extraction-button-primary"
             onClick={() => {
               setStale(false);
               setComparison(null);
@@ -182,7 +202,7 @@ export function ActionForm({
           </button>
         </section>
       )}
-      <p role="status" aria-live="polite">
+      <p role="status" aria-live="polite" className="extraction-status">
         {message}
       </p>
       {result &&

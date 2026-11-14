@@ -15,7 +15,7 @@ export default async function ApprovedPage({ params }: { params: Promise<{ recor
     ]);
     return (
       <ExtractionShell title={`${approved.data.metric_id} approved record`} mode={source.mode}>
-        <p>
+        <p className="extraction-lede">
           <Link href={`/approved-extractions/${recordId}/versions`}>
             Browse immutable version history
           </Link>

@@ -18,17 +18,17 @@ test("future and cross-version candidates render rejected, never supported", asy
 
   // The supported baseline: the in-cutoff revenue passage is labelled supported.
   const supportedRow = lanes.locator("tr", { hasText: REVENUE_RAW_SCORE });
-  await expect(supportedRow.getByText("supported", { exact: true })).toBeVisible();
+  await expect(supportedRow.getByText(/^supported$/i)).toBeVisible();
 
   // Future-dated candidate: rejected, and its row never says "supported".
   const futureRow = lanes.locator("tr", { hasText: FUTURE_RAW_SCORE });
-  await expect(futureRow.getByText("rejected", { exact: true })).toBeVisible();
-  await expect(futureRow.getByText("supported", { exact: true })).toHaveCount(0);
+  await expect(futureRow.getByText(/^rejected$/i)).toBeVisible();
+  await expect(futureRow.getByText(/^supported$/i)).toHaveCount(0);
 
   // Cross-version candidate: same guarantee.
   const crossRow = lanes.locator("tr", { hasText: CROSS_VERSION_RAW_SCORE });
-  await expect(crossRow.getByText("rejected", { exact: true })).toBeVisible();
-  await expect(crossRow.getByText("supported", { exact: true })).toHaveCount(0);
+  await expect(crossRow.getByText(/^rejected$/i)).toBeVisible();
+  await expect(crossRow.getByText(/^supported$/i)).toHaveCount(0);
 
   // Both appear in the rejection timeline with their reason codes.
   const timeline = page.locator("section", {
@@ -44,7 +44,7 @@ test("abstention is a distinct state from contradiction and from a transport err
   // Abstained run: its own typed run-state banner, not a claim contradiction.
   await page.goto(ABSTAINED_PATH);
   await expect(page.getByRole("heading", { name: "Run abstained" })).toBeVisible();
-  await expect(page.getByText("Run status:")).toContainText("abstained");
+  await expect(page.getByText("Run status:")).toContainText(/abstained/i);
   // No claims, so no contradiction badge, and it is not an error state.
   await expect(page.getByText("contradicted")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Evidence service unavailable" })).toHaveCount(0);
@@ -52,7 +52,7 @@ test("abstention is a distinct state from contradiction and from a transport err
   // Contradiction is a claim-level outcome on an otherwise succeeded run —
   // distinct from the run abstaining.
   await page.goto(RUN_PATH);
-  await expect(page.getByText("Run status:")).toContainText("succeeded");
+  await expect(page.getByText("Run status:")).toContainText(/succeeded/i);
   const claims = page.locator("section", {
     has: page.getByRole("heading", { name: "Claims and citations" }),
   });

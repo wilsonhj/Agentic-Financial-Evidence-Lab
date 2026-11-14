@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { FinancialFactRecord, NormalizedFinancialFact } from "./contracts";
 import {
+  conflictKind,
   duplicateGroupIndex,
   factIdentityKey,
   formatScaledValue,
   groupDuplicateFacts,
+  isRestatementGroup,
   scaledDecimal,
 } from "./facts";
 
@@ -132,5 +134,82 @@ describe("groupDuplicateFacts", () => {
     expect(index.get("f1")?.status).toBe("conflicting");
     expect(index.get("f2")?.status).toBe("conflicting");
     expect(index.has("f3")).toBe(false);
+  });
+});
+
+describe("restatement classification", () => {
+  const ORIGINAL = "dddddddd-0000-4000-8000-000000000001";
+  const AMENDMENT = "dddddddd-0000-4000-8000-000000000002";
+  const OTHER = "dddddddd-0000-4000-8000-000000000003";
+  const links = [{ originalId: ORIGINAL, amendmentId: AMENDMENT }];
+  const span = (n: number) => `cccccccc-0000-4000-8000-00000000000${n}`;
+
+  function groupOf(entries: [spanId: string, value: string][]) {
+    const [group] = groupDuplicateFacts(
+      entries.map(([spanId, value], index) =>
+        record(`r${index}`, { source_span_id: spanId, value }),
+      ),
+    );
+    return group!;
+  }
+
+  it("calls a difference fully explained by an amendment a restatement", () => {
+    const group = groupOf([
+      [span(1), "864"],
+      [span(2), "864"],
+      [span(3), "795"],
+    ]);
+    const docs = { [span(1)]: ORIGINAL, [span(2)]: ORIGINAL, [span(3)]: AMENDMENT };
+    expect(isRestatementGroup(group, docs, links)).toBe(true);
+    expect(conflictKind(group, docs, links)).toBe("restatement");
+  });
+
+  it("keeps two values inside one filing a conflict even when an amendment also restated it", () => {
+    const group = groupOf([
+      [span(1), "1250"],
+      [span(2), "1243"],
+      [span(3), "1260"],
+    ]);
+    const docs = { [span(1)]: ORIGINAL, [span(2)]: ORIGINAL, [span(3)]: AMENDMENT };
+    expect(isRestatementGroup(group, docs, links)).toBe(true);
+    expect(conflictKind(group, docs, links)).toBe("conflict");
+  });
+
+  it("follows a chain of successive amendments", () => {
+    const SECOND = "dddddddd-0000-4000-8000-000000000004";
+    const chain = [
+      { originalId: ORIGINAL, amendmentId: AMENDMENT },
+      { originalId: AMENDMENT, amendmentId: SECOND },
+    ];
+    const group = groupOf([
+      [span(1), "100"],
+      [span(2), "110"],
+      [span(3), "120"],
+    ]);
+    const docs = { [span(1)]: ORIGINAL, [span(2)]: AMENDMENT, [span(3)]: SECOND };
+    expect(conflictKind(group, docs, chain)).toBe("restatement");
+    // A filing outside the chain that disagrees is still a conflict.
+    const withOther = groupOf([
+      [span(1), "100"],
+      [span(2), "110"],
+      [span(4), "130"],
+    ]);
+    expect(
+      conflictKind(
+        withOther,
+        { [span(1)]: ORIGINAL, [span(2)]: AMENDMENT, [span(4)]: OTHER },
+        chain,
+      ),
+    ).toBe("conflict");
+  });
+
+  it("keeps a difference between filings no amendment links a conflict", () => {
+    const group = groupOf([
+      [span(1), "864"],
+      [span(2), "900"],
+    ]);
+    const docs = { [span(1)]: ORIGINAL, [span(2)]: OTHER };
+    expect(isRestatementGroup(group, docs, links)).toBe(false);
+    expect(conflictKind(group, docs, links)).toBe("conflict");
   });
 });

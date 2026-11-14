@@ -1,4 +1,4 @@
-export type DeskTheme = "system" | "light" | "oled";
+export type { Theme as DeskTheme } from "../../components/theme";
 export type EvidenceSourceId = "sec-10q-nrr" | "call-turn-48";
 export type GuidanceApprovalId = "C-109-revenue" | "C-109-gross-margin";
 
@@ -21,38 +21,12 @@ export interface AppliedFacts {
 
 const requiredGuidanceApprovalIds: GuidanceApprovalId[] = ["C-109-revenue", "C-109-gross-margin"];
 
-export function isValidDeskTheme(value: string | null): value is DeskTheme {
-  return value === "system" || value === "light" || value === "oled";
-}
-
-export function resolveDeskTheme(value: string | null): DeskTheme {
-  return isValidDeskTheme(value) ? value : "system";
-}
-
-type ThemeStorage = {
-  setItem(key: string, value: string): void;
-};
-
-function defaultThemeStorage(): ThemeStorage | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-export function writeStoredTheme(
-  theme: DeskTheme,
-  storage: ThemeStorage | null = defaultThemeStorage(),
-): void {
-  if (storage === null) return;
-  try {
-    storage.setItem("fel-theme", theme);
-  } catch {
-    // Storage can throw when blocked (private mode, iframe). Cookie + dataset remain.
-  }
-}
+// The appearance is site-wide now; these names are kept for existing callers.
+export {
+  isValidTheme as isValidDeskTheme,
+  resolveTheme as resolveDeskTheme,
+  writeStoredTheme,
+} from "../../components/theme";
 
 export function canSaveResolution(sourceId: EvidenceSourceId | null, rationale: string): boolean {
   return sourceId !== null && rationale.trim().length >= 24;

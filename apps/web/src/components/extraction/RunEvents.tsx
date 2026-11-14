@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Event } from "../../lib/extraction/contracts";
 import { consumeExtractionEvents } from "../../lib/extraction/sse";
+import { Timestamp } from "./labels";
 
 export function RunEvents({ runId }: { runId: string }) {
   const [events, setEvents] = useState<Event[]>([]);
@@ -28,36 +29,53 @@ export function RunEvents({ runId }: { runId: string }) {
     return () => controller.abort();
   }, [runId, attempt]);
   return (
-    <section aria-label="Live extraction events">
+    <section aria-label="Live extraction events" className="extraction-card">
       <h2>Live events</h2>
-      <p role="status" aria-live="polite">
-        {status}
+      <div className="extraction-toolbar">
+        <p role="status" aria-live="polite" className="extraction-live">
+          {status}
+        </p>
+        <button
+          type="button"
+          className="extraction-button"
+          onClick={() => setAttempt((a) => a + 1)}
+        >
+          Reconnect live events
+        </button>
+      </div>
+      <p className="extraction-hint">
+        Retains the newest 500 events in this view. Waiting for review keeps the stream open.
       </p>
-      <p>Retains the newest 500 events in this view. Waiting for review keeps the stream open.</p>
-      <button type="button" onClick={() => setAttempt((a) => a + 1)}>
-        Reconnect live events
-      </button>
-      <table>
-        <caption>Ordered event history</caption>
-        <thead>
-          <tr>
-            <th>Event ID</th>
-            <th>Event</th>
-            <th>Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((e) => (
-            <tr key={e.id}>
-              <td>{e.id}</td>
-              <td>{e.type}</td>
-              <td>
-                <time dateTime={e.occurred_at}>{e.occurred_at}</time>
-              </td>
+      <div
+        className="extraction-table-scroll"
+        role="region"
+        aria-label="Ordered event history, scrollable"
+        tabIndex={0}
+      >
+        <table className="extraction-table">
+          <caption>Ordered event history</caption>
+          <thead>
+            <tr>
+              <th scope="col" className="extraction-num">
+                Event ID
+              </th>
+              <th scope="col">Event</th>
+              <th scope="col">Time</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {events.map((e) => (
+              <tr key={e.id}>
+                <td className="extraction-num">{e.id}</td>
+                <td className="extraction-mono">{e.type}</td>
+                <td className="extraction-nowrap">
+                  <Timestamp value={e.occurred_at} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

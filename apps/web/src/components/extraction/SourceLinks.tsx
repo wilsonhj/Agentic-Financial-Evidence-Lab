@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Schemas } from "../../lib/extraction/contracts";
 import { getEvidenceSource } from "../../lib/data/server";
+import { RunLink, StatusBadge, Timestamp, humanize } from "./labels";
 
 export async function SourceLinks({
   evidence,
@@ -11,13 +12,13 @@ export async function SourceLinks({
 }) {
   if (!sources)
     return (
-      <section>
+      <section aria-label="Historical source context" className="extraction-card">
         <h2>Historical source context</h2>
         <p>
           Unknown: this historical version has no recorded validation context. No current cutoff was
           substituted.
         </p>
-        <ul>
+        <ul className="extraction-list">
           {evidence.map((e, i) => (
             <li key={i}>
               Span {e.source_span_id} · Parsed version {e.document_version_id}
@@ -41,13 +42,16 @@ export async function SourceLinks({
     }
   }
   return (
-    <section aria-label="Frozen evidence provenance">
+    <section aria-label="Frozen evidence provenance" className="extraction-card">
       <h2>Source context</h2>
-      <ul>
+      <ul className="extraction-list">
         {sources.map((s) => (
           <li key={s.run_id}>
-            <Link href={`/extraction-runs/${s.run_id}`}>Source run {s.run_id}</Link> · Cutoff{" "}
-            {s.as_of} · Corpus {s.corpus_version_id ?? "No corpus pin recorded"}
+            <RunLink id={s.run_id} prefix="Source run" /> · Cutoff <Timestamp value={s.as_of} /> ·
+            Corpus{" "}
+            <span className="extraction-mono">
+              {s.corpus_version_id ?? "No corpus pin recorded"}
+            </span>
           </li>
         ))}
       </ul>
@@ -58,7 +62,7 @@ export async function SourceLinks({
         </p>
       )}
       {!evidence.length && <p>No evidence edges recorded.</p>}
-      <ul>
+      <ul className="extraction-list">
         {evidence.map((edge, index) => {
           const reference = references.find(
             (r) => r.document_version_id === edge.document_version_id,
@@ -75,7 +79,7 @@ export async function SourceLinks({
             });
           return (
             <li key={index}>
-              {edge.role} · {edge.citation_status} ·{" "}
+              {humanize(edge.role)} · <StatusBadge status={edge.citation_status} /> ·{" "}
               {reference && query ? (
                 <Link href={`/reader/${reference.document_id}?${query}`}>
                   Read evidence span {edge.source_span_id}

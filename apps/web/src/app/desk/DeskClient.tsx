@@ -8,9 +8,7 @@ import {
   canApplyApprovedFacts,
   canSaveResolution,
   resolveVisibleClaimId,
-  writeStoredTheme,
   type AppliedFacts,
-  type DeskTheme,
   type EvidenceSourceId,
   type GuidanceApproval,
   type ReviewDecision,
@@ -45,13 +43,7 @@ const claims = [
     status: "Reported",
   },
 ] satisfies { id: ClaimId; title: string; detail: string; status: string }[];
-const themeLabels: Record<DeskTheme, string> = {
-  system: "System",
-  light: "Light",
-  oled: "OLED Black",
-};
-
-export default function DeskClient({ initialTheme }: { initialTheme: DeskTheme }) {
+export default function DeskClient() {
   const [section, setSection] = useState<Section>("coverage");
   const [claim, setClaim] = useState<ClaimId | null>("nrr");
   const [search, setSearch] = useState("");
@@ -64,9 +56,7 @@ export default function DeskClient({ initialTheme }: { initialTheme: DeskTheme }
   ]);
   const [scenario, setScenario] = useState("Base");
   const [inspector, setInspector] = useState(true);
-  const [theme, setTheme] = useState<DeskTheme>(initialTheme);
   const [appliedFacts, setAppliedFacts] = useState<AppliedFacts | null>(null);
-  const [themeOpen, setThemeOpen] = useState(false);
   const gatesReady = canApplyApprovedFacts(decision, approvals);
   const applied = appliedFacts !== null;
   const visibleClaims = useMemo(
@@ -77,10 +67,6 @@ export default function DeskClient({ initialTheme }: { initialTheme: DeskTheme }
     [search],
   );
 
-  useEffect(() => {
-    writeStoredTheme(theme);
-    document.cookie = `fel-theme=${theme}; Path=/; Max-Age=31536000; SameSite=Lax`;
-  }, [theme]);
   useEffect(() => {
     setClaim((current) =>
       resolveVisibleClaimId(
@@ -94,13 +80,9 @@ export default function DeskClient({ initialTheme }: { initialTheme: DeskTheme }
     setSection(next);
   };
   return (
-    <main className="desk-shell" data-testid="desk-shell" data-fel-theme={theme}>
+    <main id="main-content" tabIndex={-1} className="desk-shell" data-testid="desk-shell">
       <aside className="desk-sidebar" aria-label="Desk sections">
-        <div className="desk-brand">
-          <span className="brand-dot" />
-          Evidence Lab<small>Update desk</small>
-        </div>
-        <nav>
+        <nav aria-label="Update Desk sections">
           {sections.map((item) => (
             <button
               key={item.id}
@@ -147,36 +129,6 @@ export default function DeskClient({ initialTheme }: { initialTheme: DeskTheme }
           >
             i
           </button>
-          <button
-            data-testid="button-theme-menu"
-            className="icon-button"
-            onClick={() => setThemeOpen(!themeOpen)}
-            aria-expanded={themeOpen}
-            aria-label="Choose appearance"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 15.4A8.5 8.5 0 0 1 8.6 4 8.5 8.5 0 1 0 20 15.4Z" />
-            </svg>
-          </button>
-          {themeOpen && (
-            <div className="theme-popover" data-testid="theme-popover">
-              <b>Appearance</b>
-              {(["system", "light", "oled"] as DeskTheme[]).map((value) => (
-                <button
-                  data-testid={`button-theme-${value}`}
-                  key={value}
-                  onClick={() => {
-                    setTheme(value);
-                    setThemeOpen(false);
-                  }}
-                  aria-pressed={theme === value}
-                >
-                  {themeLabels[value]}
-                  {theme === value && <span>Active</span>}
-                </button>
-              ))}
-            </div>
-          )}
         </header>
         <div className={`desk-grid ${inspector ? "" : "inspector-hidden"}`}>
           <section className="desk-content">

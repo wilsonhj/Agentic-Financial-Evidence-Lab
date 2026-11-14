@@ -17,6 +17,49 @@ import {
   type PendingRequest,
 } from "../../lib/extraction/review-state";
 import { PayloadFields } from "./display";
+import { RunLink, StatusBadge, humanize } from "./labels";
+
+type SortKey = "metric" | "kind" | "run" | "state" | "confidence" | "blockers";
+type SortState = { key: SortKey; direction: "ascending" | "descending" } | null;
+
+const blockerCount = (p: Proposal) => p.validations.filter((v) => v.status !== "pass").length;
+
+/** Display-only ordering of the rows already loaded on this page. */
+function sortProposals(rows: Proposal[], sort: SortState): Proposal[] {
+  if (!sort) return rows;
+  const value = (p: Proposal): string | number | null => {
+    switch (sort.key) {
+      case "metric":
+        return p.metric_id;
+      case "kind":
+        return humanize(p.kind);
+      case "run":
+        return p.run_id;
+      case "state":
+        return humanize(p.state);
+      case "confidence": {
+        const n = p.record_confidence === null ? NaN : Number(p.record_confidence);
+        return Number.isFinite(n) ? n : null;
+      }
+      case "blockers":
+        return blockerCount(p);
+    }
+  };
+  const factor = sort.direction === "ascending" ? 1 : -1;
+  return rows
+    .map((p, index) => ({ p, index, v: value(p) }))
+    .sort((a, b) => {
+      // Uncalibrated (null) confidence always sorts last; it is never treated as zero.
+      if (a.v === null || b.v === null)
+        return a.v === b.v ? a.index - b.index : a.v === null ? 1 : -1;
+      const order =
+        typeof a.v === "number" && typeof b.v === "number"
+          ? a.v - b.v
+          : String(a.v).localeCompare(String(b.v));
+      return order * factor || a.index - b.index;
+    })
+    .map(({ p }) => p);
+}
 
 function isReviewableState(state: Proposal["state"]): boolean {
   switch (state) {
@@ -65,6 +108,7 @@ export function ReviewQueue({
   const [stale, setStale] = useState(false);
   const [compared, setCompared] = useState(false);
   const [result, setResult] = useState<Schemas["ReviewResult"] | null>(null);
+  const [sort, setSort] = useState<SortState>(null);
   const pending = useRef<PendingRequest | undefined>(undefined);
   const selected = rows.filter((p) => selectedIds.includes(p.id));
   const editable = selected.every((p) => ["proposed", "needs_review"].includes(p.state));
@@ -186,201 +230,293 @@ export function ReviewQueue({
       setBusy(false);
     }
   }
+  const sortedRows = sortProposals(rows, sort);
+  const sortHeader = (key: SortKey, label: string, numeric = false) => {
+    const active = sort?.key === key;
+    const direction = active ? sort.direction : undefined;
+    return (
+      <th scope="col" aria-sort={direction} className={numeric ? "extraction-num" : undefined}>
+        <button
+          type="button"
+          className="extraction-sort"
+          onClick={() =>
+            setSort({ key, direction: direction === "ascending" ? "descending" : "ascending" })
+          }
+        >
+          {label}
+          <span aria-hidden="true" className="extraction-sort-indicator">
+            {direction === "ascending" ? "▲" : direction === "descending" ? "▼" : "⇅"}
+          </span>
+        </button>
+      </th>
+    );
+  };
   return (
-    <section aria-label="Review proposals">
+    <section aria-label="Review proposals" className="review-queue">
       {!rows.length ? (
-        <p>No proposals on this page.</p>
+        <p className="extraction-empty">No proposals on this page.</p>
       ) : (
-        <table>
-          <caption>Proposals on this page</caption>
-          <thead>
-            <tr>
-              <th>Select</th>
-              <th>Metric</th>
-              <th>Kind</th>
-              <th>Source run</th>
-              <th>State</th>
-              <th>Confidence</th>
-              <th>Blockers</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p) => (
-              <tr key={p.id}>
-                <td>
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${p.metric_id} ${p.id}`}
-                    checked={selectedIds.includes(p.id)}
-                    disabled={busy || !["proposed", "needs_review"].includes(p.state)}
-                    onChange={(e) => {
-                      change();
-                      setGroups([]);
-                      setWinners([]);
-                      setSelectedIds(
-                        e.target.checked
-                          ? [...selectedIds, p.id]
-                          : selectedIds.filter((id) => id !== p.id),
-                      );
-                    }}
-                  />
-                </td>
-                <td>
-                  <Link href={`/extractions/${p.id}`}>{p.metric_id}</Link>
-                </td>
-                <td>{p.kind}</td>
-                <td>
-                  <Link href={`/extraction-runs/${p.run_id}`}>Run {p.run_id}</Link>
-                </td>
-                <td>
-                  {p.state} (v{p.version})
-                </td>
-                <td>{p.record_confidence ?? "Uncalibrated"}</td>
-                <td>
-                  {p.validations
-                    .filter((v) => v.status !== "pass")
-                    .map((v) => `${v.status}: ${v.code}`)
-                    .join(", ") || "No recorded blockers"}
-                </td>
+        <div
+          className="extraction-table-scroll"
+          role="region"
+          aria-label="Proposals on this page, scrollable"
+          tabIndex={0}
+        >
+          <table className="extraction-table">
+            <caption>
+              Proposals on this page
+              <span className="extraction-caption-hint"> · Sorting applies to this page only</span>
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" className="extraction-select-col">
+                  Select
+                </th>
+                {sortHeader("metric", "Metric")}
+                {sortHeader("kind", "Kind")}
+                {sortHeader("run", "Source run")}
+                {sortHeader("state", "State")}
+                {sortHeader("confidence", "Confidence", true)}
+                {sortHeader("blockers", "Blockers")}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sortedRows.map((p) => {
+                const blockers = p.validations.filter((v) => v.status !== "pass");
+                const isSelected = selectedIds.includes(p.id);
+                return (
+                  <tr key={p.id} className={isSelected ? "is-selected" : undefined}>
+                    <td className="extraction-select-col">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${p.metric_id} ${p.id}`}
+                        checked={isSelected}
+                        disabled={busy || !["proposed", "needs_review"].includes(p.state)}
+                        onChange={(e) => {
+                          change();
+                          setGroups([]);
+                          setWinners([]);
+                          setSelectedIds(
+                            e.target.checked
+                              ? [...selectedIds, p.id]
+                              : selectedIds.filter((id) => id !== p.id),
+                          );
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <Link href={`/extractions/${p.id}`} className="extraction-strong-link">
+                        {p.metric_id}
+                      </Link>
+                    </td>
+                    <td>{humanize(p.kind)}</td>
+                    <td className="extraction-nowrap">
+                      <RunLink id={p.run_id} />
+                    </td>
+                    <td className="extraction-nowrap">
+                      <StatusBadge status={p.state} />{" "}
+                      <span className="extraction-version">v{p.version}</span>
+                    </td>
+                    <td className="extraction-num">
+                      {p.record_confidence ?? (
+                        <span className="extraction-muted">Uncalibrated</span>
+                      )}
+                    </td>
+                    <td>
+                      {blockers.length ? (
+                        <ul className="extraction-badge-list">
+                          {blockers.map((v, index) => (
+                            <li key={`${v.code}-${index}`}>
+                              <StatusBadge status={v.status} label={`${v.status}: ${v.code}`} />
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="extraction-muted">No recorded blockers</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-      <p>
-        {selected.length} selected. Review is atomic: the whole selected batch succeeds or none of
-        it does.
-      </p>
-      <button type="button" onClick={() => void refresh(true)} disabled={busy || !selected.length}>
-        Load complete conflict context
-      </button>
-      {groups.map((group) => (
-        <fieldset key={group.id}>
-          <legend>
-            Conflict {group.id}: {group.status}
-          </legend>
-          <p>{group.reason_codes.join(", ")}</p>
-          <p>ETag {group.etag}</p>
-          <ul>
-            {Object.entries(group.member_versions).map(([id, version]) => (
-              <li key={id}>
-                <Link href={`/extractions/${id}`}>{id}</Link> version {version}
-                {selectedIds.includes(id) && (
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={winners.includes(id)}
-                      disabled={busy}
-                      onChange={(e) => {
-                        change();
-                        setWinners(
-                          e.target.checked ? [...winners, id] : winners.filter((w) => w !== id),
-                        );
-                      }}
-                    />
-                    Explicit winner
-                  </label>
-                )}
-              </li>
-            ))}
-          </ul>
-          {group.resolution && <p>Recorded decision: {group.resolution.reason}</p>}
-        </fieldset>
-      ))}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
+      <section
+        className={selected.length ? "review-selection-bar has-selection" : "review-selection-bar"}
+        aria-label="Selected proposals"
       >
-        <label htmlFor="review-action">Review action</label>
-        <select
-          id="review-action"
-          value={action}
-          disabled={busy}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (["accept", "edit", "reject", "merge"].includes(value)) {
-              change();
-              setAction(value as Review["action"]);
-            }
+        <div className="review-selection-head">
+          <p className="review-selection-count">
+            <strong>{selected.length} selected.</strong> Review is atomic: the whole selected batch
+            succeeds or none of it does.
+          </p>
+          <div className="review-selection-tools">
+            <button
+              type="button"
+              className="extraction-button"
+              onClick={() => void refresh(true)}
+              disabled={busy || !selected.length}
+            >
+              Load complete conflict context
+            </button>
+            <button
+              type="button"
+              className="extraction-button"
+              disabled={busy}
+              onClick={() => void refresh()}
+            >
+              Refresh comparison and permissions
+            </button>
+          </div>
+        </div>
+        {groups.map((group) => (
+          <fieldset key={group.id} className="review-conflict">
+            <legend>
+              Conflict <span className="extraction-mono">{group.id}</span>{" "}
+              <StatusBadge status={group.status} />
+            </legend>
+            <p>{group.reason_codes.join(", ")}</p>
+            <p className="extraction-muted extraction-mono">ETag {group.etag}</p>
+            <ul className="review-conflict-members">
+              {Object.entries(group.member_versions).map(([id, version]) => (
+                <li key={id}>
+                  <span>
+                    <Link href={`/extractions/${id}`} className="extraction-mono">
+                      {id}
+                    </Link>{" "}
+                    version {version}
+                  </span>
+                  {selectedIds.includes(id) && (
+                    <label className="extraction-check">
+                      <input
+                        type="checkbox"
+                        checked={winners.includes(id)}
+                        disabled={busy}
+                        onChange={(e) => {
+                          change();
+                          setWinners(
+                            e.target.checked ? [...winners, id] : winners.filter((w) => w !== id),
+                          );
+                        }}
+                      />
+                      Explicit winner
+                    </label>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {group.resolution && <p>Recorded decision: {group.resolution.reason}</p>}
+          </fieldset>
+        ))}
+        <form
+          className="review-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
           }}
         >
-          {(["accept", "edit", "reject", "merge"] as const).map((a) => (
-            <option key={a} value={a} disabled={!permissions.allowed_actions.includes(a)}>
-              {a}
-            </option>
-          ))}
-        </select>
-        <label htmlFor="review-reason">Reason</label>
-        <textarea
-          id="review-reason"
-          value={reason}
-          maxLength={2000}
-          required
-          disabled={busy}
-          onChange={(e) => {
-            change();
-            setReason(e.target.value);
-          }}
-        />
-        {(action === "edit" || action === "merge") && (
-          <>
-            <label htmlFor="review-replacement">
-              {action === "edit"
-                ? "Full replacements JSON array (extraction_id, payload, evidence)"
-                : "Explicit merge source JSON (payload_source_id)"}
-            </label>
+          <div className="extraction-field review-form-action">
+            <label htmlFor="review-action">Review action</label>
+            <select
+              id="review-action"
+              className="extraction-control"
+              value={action}
+              disabled={busy}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (["accept", "edit", "reject", "merge"].includes(value)) {
+                  change();
+                  setAction(value as Review["action"]);
+                }
+              }}
+            >
+              {(["accept", "edit", "reject", "merge"] as const).map((a) => (
+                <option key={a} value={a} disabled={!permissions.allowed_actions.includes(a)}>
+                  {humanize(a)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="extraction-field review-form-reason">
+            <label htmlFor="review-reason">Reason</label>
             <textarea
-              id="review-replacement"
-              rows={12}
-              value={patch}
+              id="review-reason"
+              className="extraction-control"
+              rows={2}
+              value={reason}
+              maxLength={2000}
               required
               disabled={busy}
               onChange={(e) => {
                 change();
-                setPatch(e.target.value);
+                setReason(e.target.value);
               }}
             />
-            <p>
-              Provide the complete strict payload and evidence for every edit. Candidate display
-              fields are never converted automatically. A merge copies the selected source; it does
-              not sum values.
+          </div>
+          {(action === "edit" || action === "merge") && (
+            <div className="extraction-field review-form-wide">
+              <label htmlFor="review-replacement">
+                {action === "edit"
+                  ? "Full replacements JSON array (extraction_id, payload, evidence)"
+                  : "Explicit merge source JSON (payload_source_id)"}
+              </label>
+              <textarea
+                id="review-replacement"
+                className="extraction-control extraction-code"
+                rows={12}
+                value={patch}
+                required
+                disabled={busy}
+                onChange={(e) => {
+                  change();
+                  setPatch(e.target.value);
+                }}
+              />
+              <p className="extraction-hint">
+                Provide the complete strict payload and evidence for every edit. Candidate display
+                fields are never converted automatically. A merge copies the selected source; it
+                does not sum values.
+              </p>
+            </div>
+          )}
+          <button
+            type="submit"
+            className="extraction-button extraction-button-primary review-form-submit"
+            disabled={
+              busy ||
+              stale ||
+              !permitted ||
+              !selected.length ||
+              selected.length > 100 ||
+              !editable ||
+              !reason.trim()
+            }
+          >
+            Submit atomic review
+          </button>
+          {!permitted && (
+            <p className="extraction-hint review-form-wide">
+              Your current permissions do not allow this action.
             </p>
-          </>
-        )}
-        <button
-          type="submit"
-          disabled={
-            busy ||
-            stale ||
-            !permitted ||
-            !selected.length ||
-            selected.length > 100 ||
-            !editable ||
-            !reason.trim()
-          }
-        >
-          Submit atomic review
-        </button>
-        {!permitted && <p>Your current permissions do not allow this action.</p>}
-      </form>
-      <button type="button" disabled={busy} onClick={() => void refresh()}>
-        Refresh comparison and permissions
-      </button>
+          )}
+        </form>
+      </section>
       {compared && (
-        <>
+        <section className="extraction-card">
           <h2>Refreshed selected versions</h2>
           {selected.map((p) => (
-            <div key={p.id}>
+            <div key={p.id} className="review-compared">
               <h3>
-                {p.id} · v{p.version} · {p.state}
+                <span className="extraction-mono">{p.id}</span> · v{p.version} ·{" "}
+                <StatusBadge status={p.state} />
               </h3>
               <PayloadFields payload={p.payload} />
             </div>
           ))}
           <button
             type="button"
+            className="extraction-button extraction-button-primary"
             onClick={() => {
               setStale(false);
               setCompared(false);
@@ -390,14 +526,15 @@ export function ReviewQueue({
           >
             Use refreshed versions
           </button>
-        </>
+        </section>
       )}
-      <p role="status" aria-live="polite">
+      <p role="status" aria-live="polite" className="extraction-status">
         {message}
       </p>
       {result && (
-        <section aria-label="Immutable review receipt">
-          <p>Review {result.review_id}</p>
+        <section aria-label="Immutable review receipt" className="extraction-card">
+          <h2>Review receipt</h2>
+          <p className="extraction-mono">Review {result.review_id}</p>
           <ul>
             {result.approved_versions.map((v) => (
               <li key={v.version_id}>

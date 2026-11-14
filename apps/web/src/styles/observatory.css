@@ -1,0 +1,330 @@
+/*
+ * Search Observatory: run-page layout, section navigation, tables and the
+ * pipeline flow diagram. Colours come only from the theme tokens in
+ * app/globals.css so every theme (light, dark, OLED) applies automatically.
+ */
+
+/* Run page: a section nav column beside the content on wide screens. */
+.obs-run-page {
+  max-width: 86rem;
+}
+
+.obs-run-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.obs-run-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.obs-run-content > .obs-actions {
+  margin-bottom: 0;
+}
+
+/* Anchor targets land with breathing room, and never under a sticky header
+   should one be introduced (--site-header-height is optional). */
+.obs-section {
+  scroll-margin-top: calc(var(--site-header-height, 0px) + 1rem);
+}
+
+.obs-section-nav {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.obs-section-nav-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.obs-section-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.35rem;
+}
+
+.obs-section-nav a {
+  display: block;
+  min-height: 24px;
+  padding: 0.2rem 0.5rem;
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.obs-section-nav a:hover {
+  background: var(--color-info-bg);
+  text-decoration: underline;
+}
+
+@media (min-width: 64rem) {
+  .obs-run-layout {
+    grid-template-columns: 12rem minmax(0, 1fr);
+    align-items: start;
+    gap: 1.5rem;
+  }
+
+  /* Sticky in its own grid column: it never overlaps (or hides) a focused
+     control in the content column. */
+  .obs-section-nav {
+    position: sticky;
+    top: calc(var(--site-header-height, 0px) + 1rem);
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+
+  .obs-section-nav ul {
+    flex-direction: column;
+  }
+}
+
+.obs-runstate {
+  margin: 0;
+}
+
+/* Identifiers and secondary raw codes. */
+.obs-id {
+  font-size: 0.85em;
+}
+
+.obs-id-full {
+  overflow-wrap: anywhere;
+}
+
+.obs-code {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  word-break: break-word;
+}
+
+.obs-status .obs-muted {
+  font-size: inherit;
+}
+
+.obs-claims-summary {
+  margin: 0 0 0.5rem;
+}
+
+.obs-timeline li,
+.obs-rejected li {
+  margin-bottom: 0.35rem;
+}
+
+.obs-timeline-detail {
+  display: block;
+}
+
+/* Tables: numeric columns right-aligned with tabular figures. */
+.doc-table .obs-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-table td.obs-num {
+  white-space: nowrap;
+}
+
+.obs-num-table caption,
+.obs-budget-grid caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.35rem;
+}
+
+/* A lane table scrolls inside its own labelled region only when it cannot
+   fit; position: relative keeps visually-hidden content inside it. */
+.obs-table-scroll {
+  position: relative;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.obs-lane-table th,
+.obs-lane-table td {
+  padding: 0.4rem 0.5rem;
+  vertical-align: top;
+}
+
+.obs-lane-table thead th {
+  font-size: 0.82rem;
+  vertical-align: bottom;
+}
+
+.obs-budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem 2rem;
+  align-items: start;
+}
+
+.obs-budget-grid tfoot th,
+.obs-budget-grid tfoot td {
+  font-weight: 600;
+  border-bottom: 0;
+}
+
+.obs-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.obs-share-track {
+  display: inline-block;
+  width: 5rem;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.obs-share-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+}
+
+/* Evidence feedback rows. */
+.obs-feedback-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.obs-feedback-name {
+  font-weight: 600;
+}
+
+.obs-feedback-list li {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.obs-feedback-list li:last-child {
+  border-bottom: 0;
+}
+
+.obs-feedback input {
+  min-width: 0;
+}
+
+.obs-run-history {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
+/* Collapsed stored replay. */
+.obs-details summary {
+  cursor: pointer;
+  min-height: 24px;
+  padding: 0.2rem 0;
+  color: var(--color-accent);
+}
+
+/* New query form helper text. */
+.obs-hint {
+  margin: -0.2rem 0 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+/* Pipeline flow diagram: token colours so it follows the active theme. */
+.obs-flow-subtitle {
+  margin: 0.15rem 0 0;
+}
+
+.obs-flow-svg {
+  color: var(--color-text);
+}
+
+.obs-flow-lane-dense {
+  --obs-lane-color: var(--color-accent);
+}
+
+.obs-flow-lane-lexical {
+  --obs-lane-color: var(--color-muted);
+}
+
+.obs-flow-lane-facts {
+  --obs-lane-color: var(--color-ok-border);
+}
+
+.obs-flow-lane-tables {
+  --obs-lane-color: var(--color-highlight-border);
+}
+
+.obs-flow-ribbon {
+  stroke: var(--obs-lane-color);
+}
+
+.obs-flow-lane-box {
+  fill: var(--obs-lane-color);
+  stroke: var(--obs-lane-color);
+}
+
+.obs-flow-box-info {
+  fill: var(--color-info-bg);
+  stroke: var(--color-info-border);
+}
+
+.obs-flow-box-ok {
+  fill: var(--color-ok-bg);
+  stroke: var(--color-ok-border);
+}
+
+.obs-flow-box-warning {
+  fill: var(--color-warning-bg);
+  stroke: var(--color-warning-border);
+}
+
+.obs-flow-box-claims {
+  fill: var(--color-surface);
+  stroke: var(--color-accent);
+}
+
+.obs-flow-path-ok {
+  stroke: var(--color-ok-border);
+}
+
+.obs-flow-path-warning {
+  stroke: var(--color-warning-border);
+}
+
+.obs-flow-text-accent {
+  fill: var(--color-accent);
+}
+
+.obs-flow-text-muted {
+  fill: var(--color-muted);
+}
+
+.obs-flow-text-ok {
+  fill: var(--color-ok-border);
+}
+
+.obs-flow-text-warning {
+  fill: var(--color-warning-text);
+}
+
+.obs-flow-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.obs-flow-scroll .obs-flow-svg {
+  min-width: 600px;
+}

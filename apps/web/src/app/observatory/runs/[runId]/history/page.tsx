@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EventList } from "../../../../../components/EventReplay";
 import { EvidenceFailureState } from "../../../../../components/EvidenceFailureState";
 import { PageNavigation } from "../../../../../components/PageNavigation";
 import { getObservatorySource } from "../../../../../lib/observatory/server";
@@ -39,14 +40,7 @@ export default async function EventHistoryPage({
         order={search.order ?? "asc"}
         label="Event history pages"
       />
-      <ol className="obs-replay">
-        {page.items.map((event) => (
-          <li key={event.seq}>
-            <span className="badge badge-info">#{event.seq}</span> <code>{event.type}</code>{" "}
-            <span className="obs-muted">{event.occurred_at}</span>
-          </li>
-        ))}
-      </ol>
+      <EventList events={page.items} />
     </main>
   );
 }

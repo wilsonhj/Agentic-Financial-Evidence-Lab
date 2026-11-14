@@ -8,6 +8,7 @@ import {
   ExtractionPagination,
 } from "../../components/extraction/display";
 import { ReviewQueue } from "../../components/extraction/ReviewQueue";
+import { humanize } from "../../components/extraction/labels";
 export const dynamic = "force-dynamic";
 export default async function ExtractionsPage({
   searchParams,
@@ -24,18 +25,29 @@ export default async function ExtractionsPage({
     ]);
     return (
       <ExtractionShell title="Extraction review" mode={source.mode}>
-        <p>
+        <p className="extraction-lede">
           Inspect evidence and deterministic validation before approving an immutable financial
           record.
         </p>
-        <form method="get">
-          <label htmlFor="queue-state">State</label>
-          <select name="state" id="queue-state" defaultValue={query.get("state") ?? "needs_review"}>
-            {["proposed", "needs_review", "accepted", "rejected", "superseded"].map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-          <button type="submit">Filter queue</button>
+        <form method="get" className="extraction-filter">
+          <div className="extraction-field">
+            <label htmlFor="queue-state">State</label>
+            <select
+              name="state"
+              id="queue-state"
+              className="extraction-control"
+              defaultValue={query.get("state") ?? "needs_review"}
+            >
+              {["proposed", "needs_review", "accepted", "rejected", "superseded"].map((s) => (
+                <option key={s} value={s}>
+                  {humanize(s)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button type="submit" className="extraction-button">
+            Filter queue
+          </button>
         </form>
         <ReviewQueue
           key={query.toString()}
@@ -48,7 +60,7 @@ export default async function ExtractionsPage({
           page={page.data}
         />
         {source.mode === "fixture" && (
-          <p>
+          <p className="extraction-footer-link">
             <Link href="/approved-extractions/eeeeeeee-0000-4000-8000-000000000007">
               Inspect synthetic immutable approval history
             </Link>

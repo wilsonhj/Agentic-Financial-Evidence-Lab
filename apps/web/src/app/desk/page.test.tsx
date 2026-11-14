@@ -1,29 +1,26 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
-
-let storedTheme: string | undefined;
-
-// Invoke the async page with a request cookie store, then render the real
-// DeskClient to verify that the server-selected theme reaches the shell.
-vi.mock("next/headers", () => ({
-  cookies: async () => ({
-    get: (name: string) =>
-      name === "fel-theme" && storedTheme !== undefined ? { value: storedTheme } : undefined,
-  }),
-}));
+import { describe, expect, it } from "vitest";
 
 import DeskPage from "./page";
 
-describe("DeskPage theme from cookie", () => {
-  it.each([
-    ["oled", "oled"],
-    ["light", "light"],
-    ["system", "system"],
-    [undefined, "system"],
-    ["chartreuse", "system"],
-  ])("renders cookie %s as shell theme %s", async (cookie, expected) => {
-    storedTheme = cookie;
-    const markup = renderToStaticMarkup(await DeskPage());
-    expect(markup).toContain(`data-testid="desk-shell" data-fel-theme="${expected}"`);
+describe("DeskPage inside the shared app shell", () => {
+  const markup = renderToStaticMarkup(<DeskPage />);
+
+  it("is the skip-link target and leaves the theme to <html>", () => {
+    expect(markup).toContain('id="main-content"');
+    expect(markup).toContain('data-testid="desk-shell"');
+    expect(markup).not.toContain("data-fel-theme");
+  });
+
+  it("does not draw its own brand or appearance control", () => {
+    expect(markup).not.toContain("desk-brand");
+    expect(markup).not.toContain("button-theme-menu");
+    expect(markup).not.toContain("Open extraction review");
+  });
+
+  it("keeps the Desk section tabs", () => {
+    for (const id of ["coverage", "research", "review", "model"]) {
+      expect(markup).toContain(`data-testid="nav-section-${id}"`);
+    }
   });
 });
