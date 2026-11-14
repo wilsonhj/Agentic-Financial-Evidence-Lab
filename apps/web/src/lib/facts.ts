@@ -1,3 +1,4 @@
+import type { AmendmentLink } from "./amendments";
 import type { FinancialFactRecord, NormalizedFinancialFact } from "./contracts";
 
 /**
@@ -113,4 +114,82 @@ export function duplicateGroupIndex(
     }
   }
   return index;
+}
+
+/** Distinct canonical values per filing (DocumentMeta.id) within one group. */
+function valuesByDocument(
+  group: DuplicateFactGroup,
+  documentIdBySpanId: Readonly<Record<string, string>>,
+): Map<string, Set<string>> {
+  const byDoc = new Map<string, Set<string>>();
+  for (const record of group.records) {
+    const docId = documentIdBySpanId[record.fact.source_span_id];
+    if (!docId) continue;
+    const values = byDoc.get(docId) ?? new Set<string>();
+    values.add(scaledDecimal(record.fact.value, record.fact.scale));
+    byDoc.set(docId, values);
+  }
+  return byDoc;
+}
+
+/**
+ * True when an amendment reports a different canonical value than the filing
+ * it amends — i.e. the fact was actually restated, not merely repeated.
+ */
+export function isRestatementGroup(
+  group: DuplicateFactGroup,
+  documentIdBySpanId: Readonly<Record<string, string>>,
+  amendmentLinks: readonly AmendmentLink[],
+): boolean {
+  const byDoc = valuesByDocument(group, documentIdBySpanId);
+  return amendmentLinks.some((link) => {
+    const original = byDoc.get(link.originalId);
+    const amended = byDoc.get(link.amendmentId);
+    if (!original || !amended) return false;
+    return [...amended].some((value) => !original.has(value));
+  });
+}
+
+/**
+ * How a conflicting group should be presented. `restatement` means every
+ * difference is explained by an amendment: each filing reports one value and
+ * an amendment changed it. Anything else — two values inside one filing, or
+ * differences between unrelated filings — stays a `conflict`, even when an
+ * amendment is also involved.
+ */
+export function conflictKind(
+  group: DuplicateFactGroup,
+  documentIdBySpanId: Readonly<Record<string, string>>,
+  amendmentLinks: readonly AmendmentLink[],
+): "restatement" | "conflict" {
+  if (!isRestatementGroup(group, documentIdBySpanId, amendmentLinks)) return "conflict";
+  const byDoc = valuesByDocument(group, documentIdBySpanId);
+  if ([...byDoc.values()].some((values) => values.size > 1)) return "conflict";
+  // Every pair of filings that disagree must belong to one amendment chain
+  // (original -> amendment 1 -> amendment 2 ...); otherwise the disagreement is
+  // not explained by a restatement. Links are successive, so connectivity is
+  // checked through the whole chain, not just direct edges.
+  const root = new Map<string, string>();
+  const find = (id: string): string => {
+    let current = id;
+    while (root.has(current) && root.get(current) !== current) current = root.get(current)!;
+    return current;
+  };
+  for (const link of amendmentLinks) {
+    const a = find(link.originalId);
+    const b = find(link.amendmentId);
+    root.set(a, a);
+    if (a !== b) root.set(b, a);
+  }
+  const docs = [...byDoc.keys()];
+  for (let i = 0; i < docs.length; i += 1) {
+    for (let j = i + 1; j < docs.length; j += 1) {
+      const a = docs[i]!;
+      const b = docs[j]!;
+      const [va] = byDoc.get(a)!;
+      const [vb] = byDoc.get(b)!;
+      if (va !== vb && find(a) !== find(b)) return "conflict";
+    }
+  }
+  return "restatement";
 }

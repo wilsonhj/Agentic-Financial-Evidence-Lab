@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useReducer } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 
 import type {
@@ -10,9 +10,17 @@ import type {
   SourceSpanRecord,
 } from "../lib/contracts";
 import type { CitationIntegrityFailure } from "../lib/citation-integrity";
+import type { AmendmentLink } from "../lib/amendments";
 import { amendmentStatusFor, linkAmendments } from "../lib/amendments";
 import { formatPeriodRange } from "../lib/document-display";
-import { duplicateGroupIndex, groupDuplicateFacts } from "../lib/facts";
+import type { DuplicateFactGroup } from "../lib/facts";
+import {
+  conflictKind,
+  duplicateGroupIndex,
+  formatScaledValue,
+  groupDuplicateFacts,
+  isRestatementGroup,
+} from "../lib/facts";
 import { buildOutline } from "../lib/outline";
 import type { NoteAnchor } from "../lib/notes";
 import { initReaderState, readerReducer } from "../lib/reader-state";
@@ -21,6 +29,7 @@ import { DocumentPane } from "./DocumentPane";
 import { FactPanel } from "./FactPanel";
 import { NotesPanel } from "./NotesPanel";
 import { OutlineNav } from "./OutlineNav";
+import "../styles/reader.css";
 
 export interface EvidenceReaderProps {
   documentId: string;
@@ -50,6 +59,11 @@ export interface EvidenceReaderProps {
   historyComplete?: boolean;
   documentVersionIdByDocumentId?: Record<string, string>;
   evidenceScope?: { as_of: string; corpus_version_id: string | null };
+  /**
+   * Link that reloads this filing with its related history. Rendered as the
+   * action of the "Related history incomplete" notice it resolves.
+   */
+  loadRelatedHref?: string | null;
 }
 
 export function EvidenceReader({
@@ -65,6 +79,7 @@ export function EvidenceReader({
   historyComplete = true,
   documentVersionIdByDocumentId = {},
   evidenceScope,
+  loadRelatedHref = null,
 }: EvidenceReaderProps) {
   const document = documents.find((doc) => doc.id === documentId);
   const ownSections = useMemo(
@@ -86,7 +101,22 @@ export function EvidenceReader({
   const amendmentLinks = useMemo(() => linkAmendments(documents), [documents]);
   const amendment = amendmentStatusFor(documentId, amendmentLinks);
 
-  const duplicateIndex = useMemo(() => duplicateGroupIndex(groupDuplicateFacts(facts)), [facts]);
+  const duplicateGroups = useMemo(() => groupDuplicateFacts(facts), [facts]);
+  const duplicateIndex = useMemo(() => duplicateGroupIndex(duplicateGroups), [duplicateGroups]);
+  // Conflicting duplicate groups that involve at least one fact of THIS
+  // filing, surfaced above the columns so the finding is not buried in a fact
+  // card. Presentation only: grouping and status come from lib/facts.
+  const conflictGroups = useMemo(
+    () =>
+      duplicateGroups.filter(
+        (group) =>
+          group.status === "conflicting" &&
+          group.records.some(
+            (record) => documentIdBySpanId[record.fact.source_span_id] === documentId,
+          ),
+      ),
+    [duplicateGroups, documentIdBySpanId, documentId],
+  );
 
   const integrityFailureBySpanId = useMemo(
     () => new Map(integrityFailures.map((failure) => [failure.spanId, failure])),
@@ -166,6 +196,29 @@ export function EvidenceReader({
     globalThis.document?.getElementById(`section-${sectionId}`)?.scrollIntoView();
   };
 
+  // "Show in document" from the conflict summary: the same select-span action
+  // a click on the citation dispatches, then scroll to and focus that span's
+  // button once it has re-rendered as pressed. A nonce (not the span id)
+  // drives the effect so re-activating an already selected span still jumps.
+  const pendingJump = useRef<string | null>(null);
+  const [jumpNonce, setJumpNonce] = useState(0);
+  const handleJumpToSpan = (spanId: string) => {
+    pendingJump.current = spanId;
+    dispatch({ type: "select-span", spanId });
+    setJumpNonce((nonce) => nonce + 1);
+  };
+  useEffect(() => {
+    const spanId = pendingJump.current;
+    if (!spanId) return;
+    pendingJump.current = null;
+    const target = [
+      ...(globalThis.document?.querySelectorAll<HTMLButtonElement>("button.span-mark") ?? []),
+    ].find((button) => button.dataset.spanIds?.split(" ").includes(spanId));
+    if (!target) return;
+    target.scrollIntoView({ block: "center" });
+    target.focus({ preventScroll: true });
+  }, [jumpNonce]);
+
   const describeAnchor = (anchor: NoteAnchor): string => {
     if (anchor.kind === "section") {
       return `Section: ${sectionsById.get(anchor.id)?.title ?? anchor.id}`;
@@ -187,19 +240,26 @@ export function EvidenceReader({
 
   return (
     <>
-      <header className="page-main" style={{ paddingBottom: 0 }}>
-        <h2 style={{ marginBottom: "0.2rem" }}>
+      <header className="reader-header">
+        <h2>
           {document.form ?? "Filing"} — {document.accession}
         </h2>
-        <p style={{ margin: 0, color: "var(--color-muted)", fontSize: "0.9rem" }}>
+        <p>
           Period {formatPeriodRange(document)} · Published {document.published_at.slice(0, 10)}
         </p>
       </header>
 
       {!historyComplete && (
-        <aside className="reader-banner" role="status">
-          Related history incomplete. Amendment and duplicate comparisons cover only the loaded
-          filings.
+        <aside className="reader-banner reader-banner-history" role="status">
+          <span>
+            Related history incomplete. Amendment and duplicate comparisons cover only the loaded
+            filings.
+          </span>
+          {loadRelatedHref && (
+            <Link className="reader-banner-action" href={loadRelatedHref}>
+              Load related filings
+            </Link>
+          )}
         </aside>
       )}
       {historyComplete && amendment.kind === "superseded" && (
@@ -232,6 +292,21 @@ export function EvidenceReader({
           in this filing failed offset or hash verification and{" "}
           {ownIntegrityFailures.length === 1 ? "is" : "are"} not highlighted or quoted.
         </aside>
+      )}
+
+      {conflictGroups.length > 0 && (
+        <ConflictSummary
+          groups={conflictGroups}
+          amendmentLinks={amendmentLinks}
+          documentId={documentId}
+          spansById={spansById}
+          sectionsById={sectionsById}
+          documentsById={documentsById}
+          documentIdBySpanId={documentIdBySpanId}
+          integrityFailureBySpanId={integrityFailureBySpanId}
+          filingHref={filingHref}
+          onJump={handleJumpToSpan}
+        />
       )}
 
       <div className="reader-layout">
@@ -268,5 +343,166 @@ export function EvidenceReader({
         </aside>
       </div>
     </>
+  );
+}
+
+interface ConflictSummaryProps {
+  groups: DuplicateFactGroup[];
+  amendmentLinks: AmendmentLink[];
+  documentId: string;
+  spansById: Map<string, SourceSpanRecord>;
+  sectionsById: Map<string, SectionRecord>;
+  documentsById: Map<string, DocumentMeta>;
+  documentIdBySpanId: Record<string, string>;
+  integrityFailureBySpanId: Map<string, CitationIntegrityFailure>;
+  filingHref: (documentId: string) => string;
+  onJump: (spanId: string) => void;
+}
+
+function joinPlainly(parts: string[]): string {
+  if (parts.length <= 1) return parts.join("");
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * Top-of-reader summary of inconsistent duplicate values. It is present at
+ * initial render, so it is a labelled region with a heading, not a live
+ * alert. Each location in this filing gets a control that activates its span
+ * exactly as clicking the citation would; the detailed comparison table stays
+ * in the fact card.
+ */
+function ConflictSummary({
+  groups,
+  amendmentLinks,
+  documentId,
+  spansById,
+  sectionsById,
+  documentsById,
+  documentIdBySpanId,
+  integrityFailureBySpanId,
+  filingHref,
+  onJump,
+}: ConflictSummaryProps) {
+  const metrics = groups.map((group) => {
+    const own =
+      group.records.find(
+        (record) => documentIdBySpanId[record.fact.source_span_id] === documentId,
+      ) ?? group.records[0];
+    return own?.fact.label ?? own?.fact.concept ?? "A reported fact";
+  });
+  // A difference fully explained by an amendment is a restatement, not an
+  // inconsistency; it is labelled the way the fact card labels it.
+  const kinds = groups.map((group) => conflictKind(group, documentIdBySpanId, amendmentLinks));
+  const conflictMetrics = metrics.filter((_, index) => kinds[index] === "conflict");
+  const restatedMetrics = metrics.filter((_, index) => kinds[index] === "restatement");
+  const onlyRestatements = conflictMetrics.length === 0;
+
+  return (
+    <section
+      className={
+        onlyRestatements ? "conflict-summary conflict-summary-restated" : "conflict-summary"
+      }
+      aria-labelledby="conflict-summary-heading"
+    >
+      <h2 id="conflict-summary-heading">
+        {onlyRestatements ? (
+          <>
+            <span aria-hidden="true">&#8505;</span> Restated by amendment:{" "}
+            {joinPlainly(restatedMetrics)}
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true">&#9888;</span> Conflicting values:{" "}
+            {joinPlainly(conflictMetrics)}
+            {restatedMetrics.length > 0 && (
+              <>; restated by amendment: {joinPlainly(restatedMetrics)}</>
+            )}
+          </>
+        )}
+      </h2>
+      {groups.map((group, groupIndex) => {
+        const locations = group.records.map((record) => {
+          const spanId = record.fact.source_span_id;
+          const span = spansById.get(spanId);
+          const section = span ? sectionsById.get(span.span.section_id) : undefined;
+          const recordDocumentId = documentIdBySpanId[spanId];
+          const recordDocument = recordDocumentId ? documentsById.get(recordDocumentId) : undefined;
+          const inThisFiling = recordDocumentId === documentId;
+          return {
+            id: record.id,
+            spanId,
+            value: `${formatScaledValue(record.fact)} ${record.fact.unit}`,
+            // Sibling filings' sections are not loaded; name the filing instead.
+            sectionTitle: section?.title ?? null,
+            form: recordDocument?.form ?? "another filing",
+            recordDocumentId,
+            inThisFiling,
+            jumpable: inThisFiling && span !== undefined && !integrityFailureBySpanId.has(spanId),
+          };
+        });
+        const whereOf = (location: (typeof locations)[number]) =>
+          [location.sectionTitle, location.inThisFiling ? null : `the ${location.form}`]
+            .filter(Boolean)
+            .join(", ") || "an unknown section";
+        const sentence = joinPlainly(
+          locations.map((location) => `${location.value} in ${whereOf(location)}`),
+        );
+        return (
+          <div className="conflict-group" key={group.key}>
+            <p>
+              {kinds[groupIndex] === "restatement" ? (
+                <>
+                  <span className="badge badge-info">Restated by amendment</span>{" "}
+                  <strong>{metrics[groupIndex]}</strong> was restated: {sentence}.
+                </>
+              ) : (
+                <>
+                  {isRestatementGroup(group, documentIdBySpanId, amendmentLinks) && (
+                    <>
+                      <span className="badge badge-info">Restated by amendment</span>{" "}
+                    </>
+                  )}
+                  <strong>{metrics[groupIndex]}</strong> is reported with{" "}
+                  {group.canonicalValues.length} different values: {sentence}.
+                </>
+              )}
+            </p>
+            <ul className="conflict-values">
+              {locations.map((location) => (
+                <li key={location.id}>
+                  <span className="conflict-value">{location.value}</span>
+                  <span className="conflict-where">
+                    {[location.sectionTitle, location.inThisFiling ? null : location.form]
+                      .filter(Boolean)
+                      .join(" · ") || "Unknown section"}
+                  </span>
+                  {location.jumpable ? (
+                    <button
+                      type="button"
+                      className="conflict-jump"
+                      onClick={() => onJump(location.spanId)}
+                    >
+                      Show in document
+                      <span className="visually-hidden">
+                        : {location.value} in {whereOf(location)}
+                      </span>
+                    </button>
+                  ) : location.inThisFiling ? (
+                    <span className="conflict-where">
+                      Citation not verified, so it is not highlighted.
+                    </span>
+                  ) : location.recordDocumentId ? (
+                    <Link className="conflict-jump" href={filingHref(location.recordDocumentId)}>
+                      Open {location.form}
+                      <span className="visually-hidden"> filing reporting {location.value}</span>
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </section>
   );
 }

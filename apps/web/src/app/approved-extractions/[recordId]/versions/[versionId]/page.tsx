@@ -18,10 +18,11 @@ export default async function VersionPage({
     );
     return (
       <ExtractionShell title="Immutable approved version" mode={source.mode}>
+        <p className="extraction-lede extraction-links">
+          <Link href={`/approved-extractions/${recordId}/versions`}>Version history</Link>
+          <Link href={`/approved-extractions/${recordId}`}>Current head and correction</Link>
+        </p>
         <ApprovedView approved={approved} />
-        <Link href={`/approved-extractions/${recordId}/versions`}>Version history</Link>
-        {" · "}
-        <Link href={`/approved-extractions/${recordId}`}>Current head and correction</Link>
       </ExtractionShell>
     );
   } catch {

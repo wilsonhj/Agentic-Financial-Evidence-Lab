@@ -84,49 +84,49 @@ export default async function ReaderPage({
     corpus_version_id: data.scope.corpus_version_id ?? "",
     ...(initialSpanId ? { span: initialSpanId } : {}),
   };
+  const historyExcluded = data.siblingPage?.scope === "excluded";
+  const relatedDocuments = data.documents.filter((doc) => doc.id !== documentId);
   return (
     <>
-      <section className="page-main" aria-label="Related filing history">
-        {data.siblingPage?.scope === "excluded" ? (
-          <Link
-            href={`/reader/${encodeURIComponent(documentId)}?${new URLSearchParams(historyParams)}`}
-          >
-            Load related filings
-          </Link>
-        ) : (
-          <PageNavigation
-            path={`/reader/${encodeURIComponent(documentId)}`}
-            params={historyParams}
-            nextCursor={data.siblingPage?.next_cursor ?? null}
-            previousCursor={data.siblingPage?.previous_cursor ?? null}
-            order={search.sibling_order ?? "asc"}
-            cursorKey="sibling_cursor"
-            orderKey="sibling_order"
-            label="Related filing pages"
-          />
-        )}
-        {data.siblingPage?.scope === "page" && (
-          <p>
-            {data.siblingPage.returned} related filings on this page.{" "}
-            {data.scope.corpus_version_id
-              ? "Corpus-pinned history."
-              : "Browsing history; pages may change between requests."}
-          </p>
-        )}
-        <ul>
-          {data.documents
-            .filter((doc) => doc.id !== documentId)
-            .map((doc) => (
-              <li key={doc.id}>
-                <Link
-                  href={`/reader/${encodeURIComponent(doc.id)}?${new URLSearchParams({ as_of: data.scope.as_of, document_version_id: data.documentVersionIdByDocumentId[doc.id]!, corpus_version_id: data.scope.corpus_version_id ?? "" })}`}
-                >
-                  {doc.form ?? "Filing"} — {doc.accession}
-                </Link>
-              </li>
-            ))}
-        </ul>
-      </section>
+      {/* With related history excluded, "Load related filings" is rendered by
+          the reader as the action of its "Related history incomplete" notice. */}
+      {(!historyExcluded || relatedDocuments.length > 0) && (
+        <section className="reader-related" aria-label="Related filing history">
+          {!historyExcluded && (
+            <PageNavigation
+              path={`/reader/${encodeURIComponent(documentId)}`}
+              params={historyParams}
+              nextCursor={data.siblingPage?.next_cursor ?? null}
+              previousCursor={data.siblingPage?.previous_cursor ?? null}
+              order={search.sibling_order ?? "asc"}
+              cursorKey="sibling_cursor"
+              orderKey="sibling_order"
+              label="Related filing pages"
+            />
+          )}
+          {data.siblingPage?.scope === "page" && (
+            <p>
+              {data.siblingPage.returned} related filings on this page.{" "}
+              {data.scope.corpus_version_id
+                ? "Corpus-pinned history."
+                : "Browsing history; pages may change between requests."}
+            </p>
+          )}
+          {relatedDocuments.length > 0 && (
+            <ul>
+              {relatedDocuments.map((doc) => (
+                <li key={doc.id}>
+                  <Link
+                    href={`/reader/${encodeURIComponent(doc.id)}?${new URLSearchParams({ as_of: data.scope.as_of, document_version_id: data.documentVersionIdByDocumentId[doc.id]!, corpus_version_id: data.scope.corpus_version_id ?? "" })}`}
+                  >
+                    {doc.form ?? "Filing"} — {doc.accession}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
       {/* No key={documentId}: EvidenceReader now keys its internal useReducer
     state by documentId (see lib/reader-state.ts) and resets on a prop
     change, so a remount is no longer needed to keep selection, outline
@@ -144,6 +144,11 @@ export default async function ReaderPage({
         historyComplete={data.siblingPage?.complete ?? true}
         evidenceScope={data.scope}
         documentVersionIdByDocumentId={data.documentVersionIdByDocumentId}
+        loadRelatedHref={
+          historyExcluded
+            ? `/reader/${encodeURIComponent(documentId)}?${new URLSearchParams(historyParams)}`
+            : null
+        }
       />
     </>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { Fragment } from "react";
+
 import type {
   DocumentMeta,
   FinancialFactRecord,
@@ -10,7 +12,7 @@ import type { AmendmentLink } from "../lib/amendments";
 import type { CitationIntegrityFailure } from "../lib/citation-integrity";
 import { describeIntegrityReason } from "../lib/citation-integrity";
 import type { DuplicateFactGroup } from "../lib/facts";
-import { formatScaledValue, scaledDecimal } from "../lib/facts";
+import { formatScaledValue, isRestatementGroup, scaledDecimal } from "../lib/facts";
 import { extractSpanText } from "../lib/spans";
 
 export interface FactPanelProps {
@@ -38,6 +40,22 @@ function periodLabel(period: FinancialFactRecord["fact"]["period"]): string {
     : `${period.start ?? "?"} to ${period.end ?? "?"}`;
 }
 
+/**
+ * XBRL concept names (`us-gaap:RevenueFromContractWith...`) have no natural
+ * break opportunity. Offer one after the namespace colon and at each
+ * lower-to-upper camel-case boundary so they wrap between words, not
+ * mid-word. Text content is unchanged (<wbr> adds no characters).
+ */
+function breakableConcept(concept: string): React.ReactNode {
+  const parts = concept.split(/(?<=:)|(?<=[a-z0-9])(?=[A-Z])/);
+  return parts.map((part, index) => (
+    <Fragment key={index}>
+      {index > 0 && <wbr />}
+      {part}
+    </Fragment>
+  ));
+}
+
 function locate(
   record: FinancialFactRecord,
   ctx: FactPanelProps,
@@ -50,29 +68,8 @@ function locate(
   return { span, section, document };
 }
 
-/**
- * True when an amendment reports a different canonical value than the filing
- * it amends — i.e. the fact was actually restated, not merely repeated.
- */
-function isRestatementGroup(group: DuplicateFactGroup, ctx: FactPanelProps): boolean {
-  const valuesByDoc = new Map<string, Set<string>>();
-  for (const record of group.records) {
-    const docId = ctx.documentIdBySpanId[record.fact.source_span_id];
-    if (!docId) continue;
-    const values = valuesByDoc.get(docId) ?? new Set<string>();
-    values.add(scaledDecimal(record.fact.value, record.fact.scale));
-    valuesByDoc.set(docId, values);
-  }
-  return ctx.amendmentLinks.some((link) => {
-    const original = valuesByDoc.get(link.originalId);
-    const amended = valuesByDoc.get(link.amendmentId);
-    if (!original || !amended) return false;
-    return [...amended].some((value) => !original.has(value));
-  });
-}
-
 function DuplicateComparison({ group, ctx }: { group: DuplicateFactGroup; ctx: FactPanelProps }) {
-  const restatement = isRestatementGroup(group, ctx);
+  const restatement = isRestatementGroup(group, ctx.documentIdBySpanId, ctx.amendmentLinks);
   const conflicting = group.status === "conflicting";
   return (
     <div className="duplicate-compare">
@@ -99,7 +96,9 @@ function DuplicateComparison({ group, ctx }: { group: DuplicateFactGroup; ctx: F
           <tr>
             <th scope="col">Filing</th>
             <th scope="col">Section</th>
-            <th scope="col">Value</th>
+            <th scope="col" className="num">
+              Value
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -107,9 +106,9 @@ function DuplicateComparison({ group, ctx }: { group: DuplicateFactGroup; ctx: F
             const { section, document } = locate(record, ctx);
             return (
               <tr key={record.id}>
-                <td>{document?.form ?? "?"}</td>
+                <td className="nowrap">{document?.form ?? "?"}</td>
                 <td>{section?.title ?? "Unknown section"}</td>
-                <td>
+                <td className="num">
                   {formatScaledValue(record.fact)} {record.fact.unit}
                 </td>
               </tr>
@@ -147,8 +146,8 @@ function FactCard({ record, ctx }: { record: FinancialFactRecord; ctx: FactPanel
         )
       )}
       <dl>
-        <dt>Concept</dt>
-        <dd>{fact.concept}</dd>
+        <dt className="stacked">Concept</dt>
+        <dd className="stacked concept">{breakableConcept(fact.concept)}</dd>
         <dt>Normalized</dt>
         <dd>
           {formatScaledValue(fact)} {fact.unit}

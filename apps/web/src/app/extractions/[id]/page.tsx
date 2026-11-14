@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { getExtractionSource } from "../../../lib/extraction/source";
 import { guards } from "../../../lib/extraction/contracts";
 import {
@@ -9,6 +8,7 @@ import {
 } from "../../../components/extraction/display";
 import { ReviewQueue } from "../../../components/extraction/ReviewQueue";
 import { SourceLinks } from "../../../components/extraction/SourceLinks";
+import { RunLink } from "../../../components/extraction/labels";
 export const dynamic = "force-dynamic";
 export default async function ProposalPage({ params }: { params: Promise<{ id: string }> }) {
   try {
@@ -21,7 +21,9 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
     const { data: run } = await source.read(`runs/${proposal.data.run_id}`, guards.run);
     return (
       <ExtractionShell title={`${proposal.data.metric_id} proposal`} mode={source.mode}>
-        <Link href={`/extraction-runs/${run.id}`}>Run {run.id}</Link>
+        <p className="extraction-lede">
+          Proposed by <RunLink id={run.id} />
+        </p>
         <ProposalStatus proposal={proposal.data} />
         <PayloadFields payload={proposal.data.payload} />
         <SourceLinks

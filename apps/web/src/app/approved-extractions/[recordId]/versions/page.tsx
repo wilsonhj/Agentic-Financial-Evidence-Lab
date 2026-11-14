@@ -7,6 +7,7 @@ import {
   ExtractionError,
   ExtractionPagination,
 } from "../../../../components/extraction/display";
+import { Timestamp } from "../../../../components/extraction/labels";
 export const dynamic = "force-dynamic";
 export default async function VersionsPage({
   params,
@@ -26,20 +27,46 @@ export default async function VersionsPage({
     );
     return (
       <ExtractionShell title="Immutable approval history" mode={source.mode}>
-        <Link href={`/approved-extractions/${recordId}`}>Current approved head and correction</Link>
+        <p className="extraction-lede">
+          <Link href={`/approved-extractions/${recordId}`}>
+            Current approved head and correction
+          </Link>
+        </p>
         {!page.items.length ? (
-          <p>No versions on this page.</p>
+          <p className="extraction-empty">No versions on this page.</p>
         ) : (
-          <ul>
-            {page.items.map((v) => (
-              <li key={v.version_id}>
-                <Link href={`/approved-extractions/${recordId}/versions/${v.version_id}`}>
-                  Version {v.version}
-                </Link>{" "}
-                · {v.created_at} · {v.approval_reason}
-              </li>
-            ))}
-          </ul>
+          <div
+            className="extraction-table-scroll"
+            role="region"
+            aria-label="Immutable versions, scrollable"
+            tabIndex={0}
+          >
+            <table className="extraction-table">
+              <caption>Immutable versions</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Version</th>
+                  <th scope="col">Approved at</th>
+                  <th scope="col">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {page.items.map((v) => (
+                  <tr key={v.version_id}>
+                    <td className="extraction-nowrap">
+                      <Link href={`/approved-extractions/${recordId}/versions/${v.version_id}`}>
+                        Version {v.version}
+                      </Link>
+                    </td>
+                    <td className="extraction-nowrap">
+                      <Timestamp value={v.created_at} />
+                    </td>
+                    <td>{v.approval_reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         <ExtractionPagination
           path={`/approved-extractions/${recordId}/versions`}
