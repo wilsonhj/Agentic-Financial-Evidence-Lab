@@ -58,6 +58,7 @@ from fel_workers.ingestion.discovery import (
     run_discovery_job,
 )
 from fel_workers.ingestion.pipeline import IngestionOutcome, ingest_filing
+from fel_workers.ingestion.publication import UNKNOWN_PUBLICATION, derive_publication
 from fel_workers.storage import apply_worker_db_role
 
 __all__ = [
@@ -171,6 +172,19 @@ def handle_sec_filing_fetch(
         # Discovery records the EDGAR filing DATE; midnight UTC is the
         # earliest conservative instant for point-in-time filtering.
         filed_at = filed_at.replace(tzinfo=UTC)
+    # Publication time (ADR-0034, #393): the SEC acceptance string is carried
+    # uninterpreted from discovery and read by exactly one function. The rule
+    # compares calendar dates, so an instant in filed_on cannot stand in for
+    # the filing date. Unusable input fails before I/O and is never echoed;
+    # an absent acceptance time is stored as unknown, never estimated.
+    publication = UNKNOWN_PUBLICATION
+    acceptance = payload.get("acceptance_datetime")
+    if acceptance is not None and acceptance != "":
+        if not isinstance(acceptance, str) or not re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}", filed_on_text
+        ):
+            raise ValueError("acceptance time needs a string and a YYYY-MM-DD filing date")
+        publication = derive_publication(acceptance, filed_at.date())
     # These are explicit producer-supplied dates, never inferred from filing
     # time or document text. An incomplete/invalid pair must fail before I/O.
     period_start = period_end = None
@@ -202,6 +216,7 @@ def handle_sec_filing_fetch(
         filed_at=filed_at,
         period_start=period_start,
         period_end=period_end,
+        publication=publication,
     )
 
 
