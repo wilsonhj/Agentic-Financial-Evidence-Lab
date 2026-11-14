@@ -149,28 +149,20 @@ def _row_versions(conn: psycopg.Connection) -> dict[str, str]:
     )
 
 
-def _seed_company_facts_snapshot(conn: psycopg.Connection) -> None:
-    """A COMPANYFACTS snapshot under listed accession E, dated between B and
-    C, with a different value for the restated revenue key. Only its form
-    marks it: every other backfill and repair check would accept it."""
+def _add_parse(conn: psycopg.Connection, document_id: Any, value: str) -> None:
+    """A parsed version of a stored document with one canonical revenue fact
+    under the key the 10-Q fixtures restate."""
     key = conn.execute(
         "SELECT fact_key FROM financial_facts WHERE concept = %s AND dimensions = '{}'::jsonb"
         " LIMIT 1",
         (REVENUE,),
     ).fetchone()
     assert key is not None
-    doc, version, section, span, fact = (str(uuid.uuid4()) for _ in range(5))
-    when = _t("2026-05-06T00:00:00Z")
-    conn.execute(
-        "INSERT INTO documents (id, entity_id, accession, form, source_url, content_hash,"
-        " storage_key, published_at, filed_at) VALUES (%s, %s, %s, 'COMPANYFACTS',"
-        " 'https://example.invalid/companyfacts', %s, 'raw/companyfacts', %s, %s)",
-        (doc, ENTITY, E, "sha256:" + "cf" * 32, when, when),
-    )
+    version, section, span, fact = (str(uuid.uuid4()) for _ in range(4))
     conn.execute(
         "INSERT INTO document_versions (id, document_id, parser_version,"
-        " normalizer_version, canonical_text_key) VALUES (%s, %s, 'p', 'n', 'text/cf')",
-        (version, doc),
+        " normalizer_version, canonical_text_key) VALUES (%s, %s, 'seeded', 'n', 'text/seeded')",
+        (version, document_id),
     )
     conn.execute(
         "INSERT INTO sections (id, document_version_id, heading, heading_path, ord,"
@@ -185,9 +177,23 @@ def _seed_company_facts_snapshot(conn: psycopg.Connection) -> None:
     conn.execute(
         "INSERT INTO financial_facts (id, entity_id, document_version_id, concept, value,"
         " unit, period_type, period_start, period_end, source_span_id, fact_key)"
-        " VALUES (%s, %s, %s, %s, '999', 'USD', 'duration', '2026-01-01', '2026-03-31', %s, %s)",
-        (fact, ENTITY, version, REVENUE, span, key[0]),
+        " VALUES (%s, %s, %s, %s, %s, 'USD', 'duration', '2026-01-01', '2026-03-31', %s, %s)",
+        (fact, ENTITY, version, REVENUE, value, span, key[0]),
     )
+
+
+def _seed_company_facts_snapshot(conn: psycopg.Connection) -> None:
+    """A COMPANYFACTS snapshot under listed accession E, dated between B and
+    C, with a different value for the restated revenue key. Only its form
+    marks it: every other backfill and repair check would accept it."""
+    document_id, when = str(uuid.uuid4()), _t("2026-05-06T00:00:00Z")
+    conn.execute(
+        "INSERT INTO documents (id, entity_id, accession, form, source_url, content_hash,"
+        " storage_key, published_at, filed_at) VALUES (%s, %s, %s, 'COMPANYFACTS',"
+        " 'https://example.invalid/companyfacts', %s, 'raw/companyfacts', %s, %s)",
+        (document_id, ENTITY, E, "sha256:" + "cf" * 32, when, when),
+    )
+    _add_parse(conn, document_id, "999")
 
 
 class _EditedIndex:
@@ -280,6 +286,21 @@ def test_restatement_links_do_not_depend_on_ingestion_order(
     settled = _row_versions(corpus_conn)
     assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
     assert _row_versions(corpus_conn) == settled
+
+
+def test_repair_keeps_a_link_to_an_older_parse_of_the_right_filing(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    """Re-parsing the original must not move the amendment's link: the edge
+    to that filing is already right, and corpus pins may expose it."""
+    _ingest(corpus_conn, sec, [A, B])
+    original = corpus_conn.execute("SELECT id FROM documents WHERE accession = %s", (A,)).fetchone()
+    assert original is not None
+    _add_parse(corpus_conn, original[0], "1249000000")  # a newer parse, still not B's value
+    before = _row_versions(corpus_conn)
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+    assert _row_versions(corpus_conn) == before
+    assert _links(corpus_conn) == [(B, A, 2)]
 
 
 def test_backfill_as_fel_worker_fills_repairs_and_never_rewrites(
