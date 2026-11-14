@@ -11,8 +11,9 @@ ADRs named below.
 **Bottom line.** The skills are reusable as Apache-2.0 *methodology*, not as
 drop-in code. The vendor connectors are callable by a self-hosted backend, but
 they conflict with the immutable-evidence and shared-corpus invariants unless
-treated as transient, user-scoped enrichment. Most skills target Excel and
-PowerPoint deliverables that `spec.md:86` excludes from the MVP.
+treated as transient, user-scoped enrichment. Most skills build DCF,
+three-statement or pitch deliverables; `spec.md:86` excludes that modelling
+from the MVP, and PowerPoint and Word are not export formats (`spec.md:414`).
 
 ## What the offering is
 
@@ -65,7 +66,7 @@ LibreOffice.
 | Citation integrity | Span-level, immutable, hashed; closed claim states with entailment | Cell-level source notes by instruction only |
 | Financial math | Deterministic Decimal engine, typed units, cycle detection | Model-authored spreadsheet formulas |
 | DCF / comps / LBO | Excluded (`spec.md:86`) | Core skills |
-| Excel/Word/PowerPoint export | Not built (T0510) | Core output |
+| Excel/Word/PowerPoint export | XLSX specified (T0510; state in the canonical ledger); Word and PowerPoint out of scope | Core output |
 | Licensed data and transcripts | Absent by policy (`spec.md:84`, `:916-917`) | Twelve connectors |
 | Portfolio monitoring | P1 (guidance-vs-actual, change detection) | Skill |
 | Evals as release gates | Yes (retrieval gate, calibration, temporal validity) | Vendor benchmark claims only |
@@ -169,10 +170,10 @@ SMB workflows.
    change and ADR.
 5. **Comps view on the ontology's comparability keys.** Comparability is
    enforced in code here, where Claude for FS leaves it to the model. New scope
-   beyond spec §3, so it needs a spec amendment and ADR.
+   beyond spec §4, so it needs a spec amendment and ADR.
 6. **Vendor-data ADR before any connector work**, covering a tenant-scoped
    `vendor_facts` table (next migration `0012_*`), a non-span citation shape in
-   `packages/contracts`, licensing and retention (spec §916–921), and source
+   `packages/contracts`, licensing and retention (`spec.md:915-921`), and source
    clocks (ADR-0031).
 
 ## Verification status
