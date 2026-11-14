@@ -25,6 +25,7 @@ date it was first committed is used and marked "(committed)".
 
 | Document | Date | Status | Summary |
 | --- | --- | --- | --- |
+| [Application load testing and load balancing](application-load-testing/README.md) | 2026-11-14 | Proposed implementation specification | Source-backed 1,000/5,000/10,000-user workload, balancing, capacity and independent verification plan (#421) |
 | [RECONCILIATION-2026-07-16.md](../archive/research/RECONCILIATION-2026-07-16.md) | 2026-07-16 | Archived audit | Recovery of the PR #74 benchmark seed and PR #75 ontology research into `main`, with remaining promotion gates |
 | [ontology/README.md](ontology/README.md) | 2026-07-16 | Research draft | Method and reconciliation status of the B2B SaaS disclosure ontology research (issue #73) |
 | [ontology/saas-disclosure-survey.md](ontology/saas-disclosure-survey.md) | 2026-07-16 | Research draft | Raw per-issuer survey of nine SaaS metric families, preserved for provenance |
