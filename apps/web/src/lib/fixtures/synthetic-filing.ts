@@ -4,6 +4,7 @@ import type {
   SectionRecord,
   SourceSpanRecord,
 } from "../contracts";
+import { codePointLength } from "../spans";
 
 /**
  * Committed synthetic filing fixture conforming to @fel/contracts shapes.
@@ -113,12 +114,13 @@ type SectionSeed = Omit<SectionRecord, "start_char" | "end_char">;
  * Lays out sections CUMULATIVELY against the canonical document text of one
  * parsed version (ingestion emission semantics: sections tile the canonical
  * text, each `content` being exactly the slice `[start_char, end_char)`).
+ * Offsets count code points, as ingestion's Python `len` does, not UTF-16 units.
  */
 function layoutSections(base: number, seeds: readonly SectionSeed[]): SectionRecord[] {
   let cursor = base;
   return seeds.map((seed) => {
     const start_char = cursor;
-    cursor += seed.content.length;
+    cursor += codePointLength(seed.content);
     return { ...seed, start_char, end_char: cursor };
   });
 }
@@ -233,7 +235,7 @@ const sectionById = new Map(fixtureSections.map((section) => [section.id, sectio
 function canonicalOffset(sectionId: string, local: number): number {
   const section = sectionById.get(sectionId);
   if (!section) throw new Error(`fixture bug: unknown section ${sectionId}`);
-  if (!Number.isInteger(local) || local < 0 || local > section.content.length) {
+  if (!Number.isInteger(local) || local < 0 || local > codePointLength(section.content)) {
     throw new Error(`fixture bug: local offset ${local} outside section ${sectionId}`);
   }
   return section.start_char + local;
