@@ -14,6 +14,7 @@ from fel_workers.ingestion.discovery import (
     JOB_KIND_SEC_FILING_FETCH,
     DiscoveryError,
     discover_filings,
+    fetch_job_payload,
     run_discovery_job,
 )
 
@@ -32,8 +33,10 @@ requires_db = pytest.mark.skipif(
 class FixtureSecClient:
     """SecClient over the committed synthetic submissions fixture."""
 
+    fixture = "sec_submissions_synthetic.json"
+
     def submissions(self, cik: str) -> dict[str, object]:
-        payload = json.loads(fixture_bytes("sec_submissions_synthetic.json"))
+        payload = json.loads(fixture_bytes(self.fixture))
         assert isinstance(payload, dict)
         return payload
 
@@ -72,6 +75,53 @@ def test_discover_filings_rejects_malformed_payload() -> None:
 
     with pytest.raises(DiscoveryError, match="filings"):
         discover_filings(BrokenClient(), "9999999")
+
+
+class AcceptanceSecClient(FixtureSecClient):
+    fixture = "sec_submissions_acceptance.json"
+
+
+def test_discovery_carries_the_raw_acceptance_time_uninterpreted() -> None:
+    """Discovery reads acceptanceDateTime (#393) but leaves its timezone to
+    the one publication function: the payload holds the SEC string as-is."""
+    refs = discover_filings(AcceptanceSecClient(), "9999997")
+    assert [ref.acceptance_datetime for ref in refs] == [
+        None,
+        "2026-05-08T22:10:45.000Z",
+        "2026-05-06T13:00:00.000Z",
+        "2026-05-05T19:40:02.000Z",
+        "2026-05-05T12:05:11.000Z",
+    ]
+    payload = fetch_job_payload(refs[1])
+    assert payload["acceptance_datetime"] == "2026-05-08T22:10:45.000Z"
+    assert payload["filed_on"] == "2026-05-11"
+    assert fetch_job_payload(refs[0])["acceptance_datetime"] is None
+    # A payload without the list (older fixtures, the mock client) is unknown.
+    assert {ref.acceptance_datetime for ref in discover_filings(FixtureSecClient(), "1")} == {None}
+
+
+def test_discovery_rejects_a_non_string_acceptance_time() -> None:
+    class NumericClient(AcceptanceSecClient):
+        def submissions(self, cik: str) -> dict[str, object]:
+            payload = super().submissions(cik)
+            payload["filings"]["recent"]["acceptanceDateTime"][1] = 20260508221045  # type: ignore[index]
+            return payload
+
+    with pytest.raises(DiscoveryError, match="acceptanceDateTime"):
+        discover_filings(NumericClient(), "9999997")
+
+
+@requires_db
+def test_discovery_enqueues_the_oldest_filing_first(corpus_conn: psycopg.Connection) -> None:
+    """EDGAR lists newest first. Claiming in that order ingests an amendment
+    before its original, which then has no restatement target (#393)."""
+    run_discovery_job(corpus_conn, AcceptanceSecClient(), {"cik": "9999997"})
+    rows = corpus_conn.execute(
+        "SELECT payload FROM jobs WHERE kind = %s ORDER BY priority, created_at",
+        (JOB_KIND_SEC_FILING_FETCH,),
+    ).fetchall()
+    assert [row[0]["accession"][-1] for row in rows] == ["1", "2", "5", "3", "4"]
+    assert rows[0][0]["acceptance_datetime"] == "2026-05-05T12:05:11.000Z"
 
 
 @requires_db
