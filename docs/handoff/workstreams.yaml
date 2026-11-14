@@ -1504,9 +1504,11 @@ packages:
       - .github/workflows/reader-prod-smoke.yml # Existing named shared-path exception in #108 accepted addendum.
   # --- MCP evidence server (specs/006-mcp-evidence-server; ADR-0034 accepted 2026-11-10) ---
   # New scope outside the MVP release gates: no canonical task covers it, so
-  # every entry carries `tasks: []`. MCP-CONTRACT is active; the eight after it
-  # wait on its merge. Flipping any of them is a dispatch decision reserved to
-  # the integration lead.
+  # every entry carries `tasks: []`. MCP-CONTRACT (#392) is the contract package;
+  # MCP-REPLAY-CONTRACT (#404) and MCP-BACKFILL-PRIVILEGES (#405) are bounded
+  # corrections to it under ADR-0034 Amendment 2. The eight lanes after those
+  # depend on MCP-CONTRACT and #404, and #393 also on #405. Flipping any entry
+  # is a dispatch decision reserved to the integration lead.
   - id: MCP-CONTRACT
     issue: 392
     tasks: [] # New scope; milestone tasks MCP-101..107 in specs/006-mcp-evidence-server/tasks.md.
@@ -1536,7 +1538,7 @@ packages:
     depends_on: [MCP-CONTRACT]
     team: contracts
     branch: agent/mcp-replay-contract
-    status: review # Draft PR #406; authoring on #402 was authorized 2026-11-13. Different-vendor and lead review outstanding; runtime dispatch waits for merge.
+    status: review # PR #406, authored on #402's head under the 2026-11-13 authorization (ADR-0034 Amendment 2).
     allowed_paths:
       - packages/contracts/**
       - packages/retrieval/fel_retrieval/evidence/interfaces.py
@@ -1553,7 +1555,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: data
     branch: agent/mcp-backfill-privileges
-    status: review # Draft PR #407; bounded stacked prerequisite authorized 2026-11-13. Different-vendor/lead review and #404 merge required before #393 dispatch.
+    status: review # PR #407, a bounded stacked prerequisite authorized 2026-11-13 (ADR-0034 Amendment 2). #393 depends on it and on #404.
     allowed_paths:
       - db/migrations/0013_mcp_backfill_privileges.sql
       - db/migrations/tests/0013_mcp_backfill_privileges.test.sql

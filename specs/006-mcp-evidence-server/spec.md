@@ -1,6 +1,6 @@
 # MCP Evidence Server — Public Read-Only Evidence Surface
 
-**Status:** Accepted with ADR-0034 on 2026-11-10. Contract implementation is proposed in #402, with corrections in #404/#405. Runtime completion is not claimed. Hosted work stays blocked on the open owner inputs.
+**Status:** Accepted with ADR-0034 on 2026-11-10. The contract package is #392 (PR #402), with corrections in #404 and #405. Runtime completion is not claimed. Hosted work stays blocked on the open owner inputs.
 **Version:** 0.1.0
 **Date:** 2026-11-10
 **Parent specification:** `specs/001-financial-evidence-lab/spec.md` v1.2 (governs on conflict)
