@@ -104,9 +104,11 @@ def validate_numeric(claim: NumericTuple, evidence: NumericTuple) -> dict[str, b
     Five orthogonal booleans (spec §11.4): ``value`` (magnitude), ``unit``,
     ``period``, ``sign`` (polarity) and ``scale``. Magnitude and scale are
     compared exactly with ``Decimal`` so no float rounding can mask a mismatch.
+    ``copy_abs`` is exact; ``abs()`` rounds to the ambient context precision,
+    which would call two magnitudes equal past its 28th digit.
     """
     return {
-        "value": abs(claim.value) == abs(evidence.value),
+        "value": claim.value.copy_abs() == evidence.value.copy_abs(),
         "unit": claim.unit == evidence.unit,
         "period": claim.period == evidence.period,
         "sign": claim.sign == evidence.sign,

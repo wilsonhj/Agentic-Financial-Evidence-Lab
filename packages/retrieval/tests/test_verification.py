@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
 
@@ -71,6 +71,22 @@ def test_numeric_uses_exact_decimal() -> None:
     claim = _num("0.3")
     evidence = NumericTuple(Decimal("0.1") + Decimal("0.2"), "USD", "FY2025", 6)
     assert validate_numeric(claim, evidence)["value"] is True
+
+
+def test_numeric_value_is_exact_at_the_contract_maximum_of_34_digits() -> None:
+    """``abs()`` rounds to the ambient context (28 digits by default), which made
+    two magnitudes that differ in the 34th digit compare equal (#396)."""
+    claim = _num("1234567890123456789012345678901234")
+    evidence = _num("1234567890123456789012345678901235")
+    assert validate_numeric(claim, evidence)["value"] is False
+    assert validate_numeric(claim, _num("-1234567890123456789012345678901234"))["value"] is True
+
+
+def test_numeric_value_does_not_depend_on_the_ambient_decimal_context() -> None:
+    with localcontext() as context:
+        context.prec = 5
+        assert validate_numeric(_num("123456"), _num("123457"))["value"] is False
+        assert validate_numeric(_num("-123456"), _num("123456"))["value"] is True
 
 
 # --- integrity (dangling / cross-version) ----------------------------------
