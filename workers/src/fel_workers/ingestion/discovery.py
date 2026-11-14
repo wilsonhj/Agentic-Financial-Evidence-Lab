@@ -122,6 +122,15 @@ def fetch_job_payload(ref: FilingRef) -> dict[str, object]:
     }
 
 
+def _enqueue_order(ref: FilingRef) -> tuple[date, bool, str, str]:
+    return (
+        ref.filed_on,
+        ref.acceptance_datetime is None,
+        ref.acceptance_datetime or "",
+        ref.accession,
+    )
+
+
 def run_discovery_job(
     conn: psycopg.Connection[Any],
     client: SecClient,
@@ -132,18 +141,19 @@ def run_discovery_job(
     """Handle a ``sec_discovery`` job: list filings, enqueue idempotent fetches.
 
     Fetch jobs are deduplicated per accession via the queue's idempotency
-    key, so re-running discovery never duplicates work. Jobs are enqueued in
-    filing-date order, whatever order the index lists them in, so that on one
-    worker an original is ingested before its amendment. Filings of one date
-    keep EDGAR's newest-first listing reversed. That is best effort only:
-    ``backfill.repair_restatement_links`` is what makes links independent of
-    ingestion order.
+    key, so re-running discovery never duplicates work. Jobs are enqueued
+    in (filing date, acceptance time, accession) order, whatever order the
+    index lists them in, so that on one worker an original is ingested before
+    its amendment. Acceptance times are compared as the SEC strings, without
+    interpreting them, and a filing without one comes last on its date. That
+    is best effort only: ``backfill.repair_restatement_links`` is what makes
+    links independent of ingestion order.
     """
     cik = str(payload.get("cik", ""))
     forms_value = payload.get("forms")
     forms = frozenset(str(f) for f in forms_value) if isinstance(forms_value, list) else None
     refs = discover_filings(client, cik, forms=forms)
-    for ref in sorted(reversed(refs), key=lambda ref: ref.filed_on):
+    for ref in sorted(refs, key=_enqueue_order):
         queue.enqueue(
             conn,
             kind=JOB_KIND_SEC_FILING_FETCH,

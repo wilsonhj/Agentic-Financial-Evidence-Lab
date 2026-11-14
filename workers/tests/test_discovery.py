@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import pathlib
 from datetime import date, datetime
+from typing import Any
 
 import psycopg
 import pytest
@@ -121,24 +123,58 @@ class OldestFirstSecClient(AcceptanceSecClient):
         return payload
 
 
+class PermutedSecClient(AcceptanceSecClient):
+    """The same index with its entries listed in a given order."""
+
+    def __init__(self, order: tuple[int, ...]) -> None:
+        self.order = order
+
+    def submissions(self, cik: str) -> dict[str, object]:
+        payload = super().submissions(cik)
+        recent: Any = payload["filings"]
+        recent["recent"] = {
+            name: [rows[i] for i in self.order] for name, rows in recent["recent"].items()
+        }
+        return payload
+
+
+def test_enqueue_order_does_not_depend_on_the_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Database-free: every listing order of the five filings enqueues them in
+    (filing date, acceptance time, accession) order. 1 and 2 share a date and
+    are ordered by acceptance; 4 has no acceptance time and is alone on its date."""
+    from fel_workers.ingestion import discovery
+
+    enqueued: list[str] = []
+
+    def record(conn: object, **job: Any) -> str:
+        enqueued.append(job["payload"]["accession"][-1])
+        return "job"
+
+    monkeypatch.setattr(discovery.queue, "enqueue", record)
+    for order in itertools.permutations(range(5)):
+        enqueued.clear()
+        run_discovery_job(None, PermutedSecClient(order), {"cik": "9999997"})  # type: ignore[arg-type]
+        assert "".join(enqueued) == "12534", order
+
+
 @requires_db
 @pytest.mark.parametrize(
-    ("client", "claim_order"),
-    [(AcceptanceSecClient(), "12534"), (OldestFirstSecClient(), "21534")],
+    "client",
+    [AcceptanceSecClient(), OldestFirstSecClient()],
     ids=["newest-first index", "oldest-first index"],
 )
 def test_discovery_enqueues_in_filing_date_order(
-    corpus_conn: psycopg.Connection, client: FixtureSecClient, claim_order: str
+    corpus_conn: psycopg.Connection, client: FixtureSecClient
 ) -> None:
     """EDGAR lists newest first. Claiming in that order ingests an amendment
-    before its original, which then has no restatement target (#393). Only
-    the two filings that share a date (1 and 2) follow the listing."""
+    before its original, which then has no restatement target (#393). The
+    claim order is the same whatever order the index lists them in."""
     run_discovery_job(corpus_conn, client, {"cik": "9999997"})
     rows = corpus_conn.execute(
         "SELECT payload FROM jobs WHERE kind = %s ORDER BY priority, created_at",
         (JOB_KIND_SEC_FILING_FETCH,),
     ).fetchall()
-    assert "".join(row[0]["accession"][-1] for row in rows) == claim_order
+    assert "".join(row[0]["accession"][-1] for row in rows) == "12534"
     dates = [row[0]["filed_on"] for row in rows]
     assert dates == sorted(dates)
     assert {row[0]["acceptance_datetime"] for row in rows} >= {None, "2026-05-05T12:05:11.000Z"}
