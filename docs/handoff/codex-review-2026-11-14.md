@@ -74,7 +74,7 @@ All six branches are based on `main` at `33c6a63`. None is merged.
 
 | PR | Branch | Head | Issue | Package | Changed vs `main` | Required checks at head |
 | --- | --- | --- | --- | --- | --- | --- |
-| [#413](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/413) | `claude/jolly-pascal-d8qn36` | `41f67f2` | none | ledger reconciliation | 1 file, +68/−7 | all green |
+| [#413](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/413) | `claude/jolly-pascal-d8qn36` | the branch that carries this brief; read its current head | none | ledger reconciliation | `workstreams.yaml` +68/−7, plus this brief and its README link | all green at `41f67f2`, before this brief |
 | [#414](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/414) | `agent/mcp-verifier` | `7ca06ef` | #396 | `MCP-VERIFIER` | 5 files, +1052/−7 | all green |
 | [#415](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/415) | `agent/fix-review-citation-blockers` | `5122fc8` | #409 | `FIX-REVIEW-CITATION-BLOCKERS` | 9 files, +525/−37 | **Python red** (2 tests); extraction acceptance red (not required) |
 | [#416](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/416) | `agent/mcp-evidence-read` | `b251a01` | #395 (part 1) | `MCP-EVIDENCE-READ` | 9 files, +1633 | all green |
