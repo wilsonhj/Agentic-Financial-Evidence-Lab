@@ -1,0 +1,90 @@
+{
+  "evidence_context": {
+    "effective_as_of": "2024-03-07T14:30:00Z",
+    "timestamp_mode": "strict",
+    "temporal_guarantee": "strict",
+    "corpus_version_id": "a07c9a8e-2f1d-4e4a-9b3c-738495a6b7c8",
+    "index_version_id": "b18dab9f-3a2e-4f5b-8c4d-8495a6b7c8d9",
+    "parser_version": "edgar-html-v3",
+    "verifier_version": "deterministic-v1",
+    "document_version_id": null,
+    "filters": {}
+  },
+  "coverage_note": {
+    "text": "Searched 10-K filings of Salesforce, Inc. (CIK 0001108524) accepted from 2023-03-08T21:05:12Z to 2024-03-06T21:14:09Z, visible at 2024-03-07T14:30:00Z.",
+    "issuers": ["0001108524"],
+    "forms": ["10-K"],
+    "date_range": {
+      "from": "2023-03-08T21:05:12Z",
+      "to": "2024-03-06T21:14:09Z"
+    }
+  },
+  "coverage": {
+    "effective_as_of": "2024-03-07T14:30:00Z",
+    "issuers": [
+      {
+        "company": {
+          "entity_id": "4b1c3a2e-6f5d-4e8a-9b7c-1d2e3f405162",
+          "cik": "0001108524",
+          "ticker": "CRM",
+          "name": "Salesforce, Inc."
+        },
+        "visible_filing_count": 2,
+        "first_filing_date": "2023-03-08",
+        "last_filing_date": "2024-03-06"
+      }
+    ],
+    "date_range": {
+      "from": "2023-03-08T21:05:12Z",
+      "to": "2024-03-06T21:14:09Z"
+    },
+    "timestamp_precision_mix": {
+      "second": 2,
+      "date": 0
+    }
+  },
+  "live_status": {
+    "replayable": false,
+    "observed_at": "2026-11-10T18:00:00Z",
+    "active_corpus_version_id": "a07c9a8e-2f1d-4e4a-9b3c-738495a6b7c8",
+    "retained_corpus_versions": [
+      {
+        "id": "a07c9a8e-2f1d-4e4a-9b3c-738495a6b7c8",
+        "status": "active",
+        "published_at": "2026-11-01T00:00:00Z"
+      }
+    ],
+    "active_index_version_id": "b18dab9f-3a2e-4f5b-8c4d-8495a6b7c8d9",
+    "retained_index_versions": [
+      {
+        "id": "b18dab9f-3a2e-4f5b-8c4d-8495a6b7c8d9",
+        "corpus_version_id": "a07c9a8e-2f1d-4e4a-9b3c-738495a6b7c8",
+        "status": "ready",
+        "published_at": "2026-11-01T01:00:00Z"
+      }
+    ],
+    "verifier_versions": ["deterministic-v1"],
+    "known_limitations": [
+      {
+        "code": "public_at_next_session_open_is_earliest",
+        "text": "For filings accepted after hours (basis next_session_open), public_at is 06:00 ET on the filing date, when EDGAR opens. The SEC does not state the exact dissemination second, so this is the earliest the filing could have been public."
+      },
+      {
+        "code": "intraday_dissemination_delay_assumed_zero",
+        "text": "The SEC does not state the delay between acceptance and dissemination during the day. For basis acceptance, public_at equals accepted_at and the delay is treated as zero."
+      },
+      {
+        "code": "acceptance_timezone_unconfirmed",
+        "text": "The timezone of the SEC acceptanceDateTime field has not been confirmed against a live filing (ADR-0034 owner input 4)."
+      },
+      {
+        "code": "company_facts_excluded",
+        "text": "Company-facts snapshots are excluded; facts come only from filing-native XBRL."
+      },
+      {
+        "code": "semantic_entailment_not_evaluated",
+        "text": "Semantic entailment is not evaluated."
+      }
+    ]
+  }
+}

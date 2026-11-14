@@ -1,0 +1,28 @@
+{
+  "span_id": "7e4f6d5b-9c8a-4b1d-8e0f-405162738495",
+  "accession": "0001108524-24-000012",
+  "form": "10-K",
+  "company": {
+    "entity_id": "4b1c3a2e-6f5d-4e8a-9b7c-1d2e3f405162",
+    "cik": "0001108524",
+    "ticker": "CRM",
+    "name": "Salesforce, Inc."
+  },
+  "document_id": "5c2d4b3f-7a6e-4f9b-8c8d-2e3f40516273",
+  "document_version_id": "6d3e5c4a-8b7f-4a0c-9d9e-3f4051627384",
+  "parser_version": "edgar-html-v3",
+  "section_path": ["Part II", "Item 7. Management's Discussion and Analysis"],
+  "start_char": 120345,
+  "end_char": 120414,
+  "offset_unit": "unicode_code_point",
+  "text": "Total revenues were $34.9 billion, an increase of 11% year-over-year.",
+  "text_hash": "sha256:158bdc5e911280b52d0d49c1a0d54adaec9b1c281798cedc44b07696c7ad008a",
+  "document_content_hash": "sha256:3f6c1e0b9a8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/1108524/000110852424000012/crm-20240131.htm",
+  "filing_date": "2024-03-06",
+  "accepted_at": "2024-03-06T21:14:09Z",
+  "public_at": "2024-03-06T21:14:09Z",
+  "public_at_basis": "acceptance",
+  "timestamp_precision": "second",
+  "untrusted_source_text": true
+}

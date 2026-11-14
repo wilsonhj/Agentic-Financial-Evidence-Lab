@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.fel.dev/schemas/mcp-error/v1",
+  "x-fel-version": "1.0.0",
+  "title": "McpError",
+  "description": "Structured tool-execution error returned with isError: true (design contract §7.5). JSON-RPC protocol errors stay JSON-RPC errors. not_found is deliberately uninformative: one fixed message and recovery text, no field and no retry hint, identical for missing and hidden evidence. Messages never contain filing text or facts about hidden documents.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable", "recovery"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "not_found",
+            "invalid_input",
+            "cursor_expired",
+            "pin_unavailable",
+            "rate_limited",
+            "overloaded",
+            "deadline_exceeded",
+            "unavailable",
+            "integrity_error"
+          ],
+          "x-fel-open-enum": false
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "invalid_input: the offending input field (JSON pointer or dotted path) and constraint in message. pin_unavailable: the pin name."
+        },
+        "recovery": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "not_found"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": false
+              },
+              "message": {
+                "const": "No visible evidence matches this reference."
+              },
+              "recovery": {
+                "const": "Check the identifier, or search within the current context."
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["field"]
+                },
+                {
+                  "required": ["retry_after_seconds"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "invalid_input"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": false
+              }
+            },
+            "required": ["field"],
+            "not": {
+              "required": ["retry_after_seconds"]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "cursor_expired"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": false
+              }
+            },
+            "not": {
+              "required": ["retry_after_seconds"]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "pin_unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": false
+              }
+            },
+            "required": ["field"],
+            "not": {
+              "required": ["retry_after_seconds"]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "rate_limited"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": true
+              }
+            },
+            "required": ["retry_after_seconds"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "overloaded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": true
+              }
+            },
+            "required": ["retry_after_seconds"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "deadline_exceeded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": true
+              }
+            },
+            "required": ["retry_after_seconds"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "integrity_error"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retryable": {
+                "const": false
+              }
+            },
+            "not": {
+              "required": ["retry_after_seconds"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

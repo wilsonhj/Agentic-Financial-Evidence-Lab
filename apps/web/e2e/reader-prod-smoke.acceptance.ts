@@ -80,10 +80,10 @@ test("real ingestion yields stable reader selections and terminal amendment auth
       (item: { id: string }) => item.id === target.section,
     );
     expect(section.start_char).toBeGreaterThan(0);
-    const quote = section.content.slice(
-      target.start_char - section.start_char,
-      target.end_char - section.start_char,
-    );
+    // Canonical offsets count code points; Array.from splits by code point.
+    const quote = Array.from(section.content as string)
+      .slice(target.start_char - section.start_char, target.end_char - section.start_char)
+      .join("");
     expect(quote).toBe(target.quote);
     expect(`sha256:${createHash("sha256").update(quote).digest("hex")}`).toBe(target.text_hash);
   }

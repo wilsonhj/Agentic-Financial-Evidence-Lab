@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.fel.dev/schemas/mcp-search-filings-input/v1",
+  "x-fel-version": "1.0.0",
+  "title": "McpSearchFilingsInput",
+  "description": "Input of search_filings: keyword search over the lexical, facts and tables lanes with rank fusion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query", "top_k"],
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "as_of": {
+      "description": "Point-in-time cutoff (design contract §6.1). An ISO-8601 instant with an explicit offset, or a date meaning 00:00 America/New_York on that date. Naive datetimes are rejected. Must not precede 1994-01-01 or follow the request time; the server enforces the upper bound. Omitted means the request time. The instant used is echoed as evidence_context.effective_as_of.",
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(199[4-9]|[2-9][0-9]{3})-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(199[4-9]|[2-9][0-9]{3})-[0-9]{2}-[0-9]{2}$"
+        }
+      ]
+    },
+    "timestamp_mode": {
+      "type": "string",
+      "enum": ["strict", "approximate"],
+      "default": "strict",
+      "description": "strict (the default and the only hosted mode) shows a document only when its verified public_at (the instant it became public) is at or before the cutoff. approximate is self-hosted only and carries no temporal guarantee (design contract §6.2)."
+    },
+    "companies": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "Company identifier: entity_id, ten-digit CIK, ticker or name."
+      }
+    },
+    "forms": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9 ./-]*$"
+      }
+    },
+    "periods": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+      }
+    },
+    "top_k": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "corpus_version_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Corpus version to read. Omitted resolves to the active version; an unknown, unpublished or retired pin returns pin_unavailable, never a fallback."
+    },
+    "index_version_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Retrieval index version to search. Omitted resolves to the active version; an unknown, unpublished or retired pin returns pin_unavailable, never a fallback."
+    }
+  }
+}
