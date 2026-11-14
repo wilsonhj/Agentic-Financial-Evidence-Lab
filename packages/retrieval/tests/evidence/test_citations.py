@@ -146,6 +146,8 @@ def test_the_query_is_bound_to_the_cutoff_and_corpus_on_the_read_role(read: Any)
     assert statements[span_sql]["as_of"] == AS_OF
     assert statements[span_sql]["corpus"] == CORPUS
     assert read.conn.sql.index("SET LOCAL ROLE fel_public_read") < read.conn.sql.index(span_sql)
+    # The third argument of set_config makes the timeout transaction-local.
+    assert "SELECT set_config('statement_timeout', %s, true)" in read.conn.sql
 
 
 def test_hidden_and_missing_references_are_one_code_path_and_one_error(read: Any) -> None:
@@ -157,6 +159,8 @@ def test_hidden_and_missing_references_are_one_code_path_and_one_error(read: Any
         read()  # a visible row whose issuer is outside the served cohort
     for raised in (no_row, not_served):
         assert vars(raised.value) == vars(i.EvidenceReadError.not_found())
+    # An unserved issuer costs no more database work than a missing reference.
+    assert read.conn.sql == statements_without_a_row
     assert not any("min(d.public_at)" in sql for sql in statements_without_a_row)
     assert read.texts.reads == 0  # canonical text is never read for an unresolved reference
 
@@ -186,6 +190,8 @@ def test_a_range_reference_selects_by_version_and_offsets(read: Any) -> None:
 def test_integrity_failures_fail_closed(read: Any) -> None:
     with _raises("integrity_error"):
         read(text_hash=content_sha256("A"))  # stored hash is for other text
+    with _raises("integrity_error"):
+        read(403, 403, text_hash=content_sha256("A"))  # an empty span is hashed too
     with _raises("integrity_error"):
         read(403, 404, text_hash=content_sha256(""))  # offsets run past the text
     with _raises("integrity_error"):

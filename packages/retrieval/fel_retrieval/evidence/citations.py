@@ -47,7 +47,7 @@ _SPAN_SELECT: Final = " ".join(
         "FROM",
         VISIBLE_VERSIONS,
         "JOIN source_spans ss ON ss.document_version_id = dv.id",
-        "JOIN sections s ON s.id = ss.section_id",
+        "JOIN sections s ON s.id = ss.section_id AND s.document_version_id = dv.id",
     ]
 )
 # LIMIT 2: a second row means the reference is ambiguous, which fails closed.

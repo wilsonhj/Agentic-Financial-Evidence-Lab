@@ -154,6 +154,49 @@ def test_scope_is_the_pinned_corpus_and_the_served_cohort(
     assert _read(pg_conn, evidence_helpers, filing, CUTOFF, companies={}) == NOT_FOUND
 
 
+def test_an_unpublished_corpus_is_gated_at_read_time(pg_conn: Any, evidence_helpers: Any) -> None:
+    # A context built by hand skips resolve_context; the read must still refuse a draft.
+    draft = evidence_helpers.new_corpus(pg_conn, "draft")
+    filing = evidence_helpers.seed_filing(
+        pg_conn, draft, public_at=CUTOFF, published_at=CUTOFF - HOUR
+    )
+    assert _read(pg_conn, evidence_helpers, filing, CUTOFF) == NOT_FOUND
+    pg_conn.execute(
+        "UPDATE corpus_versions SET status = 'superseded', published_at = now() WHERE id = %s",
+        (draft,),
+    )
+    assert _read(pg_conn, evidence_helpers, filing, CUTOFF).text == "B"
+
+
+def test_a_span_filed_under_another_versions_section_is_not_served(
+    pg_conn: Any, evidence_helpers: Any
+) -> None:
+    corpus = evidence_helpers.new_corpus(pg_conn)
+    seed = {"public_at": CUTOFF, "published_at": CUTOFF - HOUR}
+    filing = evidence_helpers.seed_filing(pg_conn, corpus, **seed)
+    other = evidence_helpers.seed_filing(pg_conn, corpus, **seed)
+    sections = "SELECT id FROM sections WHERE document_version_id = %s"
+    own = pg_conn.execute(sections, (filing.document_version_id,)).fetchone()[0]
+    foreign = pg_conn.execute(sections, (other.document_version_id,)).fetchone()[0]
+    span_ids = {}
+    for name, section_id, offsets in (("own", own, (400, 403)), ("foreign", foreign, (400, 402))):
+        span_ids[name] = str(uuid.uuid4())
+        pg_conn.execute(
+            "INSERT INTO source_spans (id, document_version_id, section_id, start_char, "
+            "end_char, text_hash) VALUES (%s, %s, %s, %s, %s, %s)",
+            (
+                span_ids[name],
+                filing.document_version_id,
+                section_id,
+                *offsets,
+                content_sha256(evidence_helpers.CANONICAL_TEXT[slice(*offsets)]),
+            ),
+        )
+    read = {name: i.SpanIdRef(span_id) for name, span_id in span_ids.items()}
+    assert _read(pg_conn, evidence_helpers, filing, CUTOFF, ref=read["own"]).text == "A\U0001f600B"
+    assert _read(pg_conn, evidence_helpers, filing, CUTOFF, ref=read["foreign"]) == NOT_FOUND
+
+
 def test_references_and_coverage_on_postgres(pg_conn: Any, evidence_helpers: Any) -> None:
     corpus = evidence_helpers.new_corpus(pg_conn)
     entity = str(uuid.uuid4())
@@ -204,6 +247,8 @@ def test_references_and_coverage_on_postgres(pg_conn: Any, evidence_helpers: Any
 
 def test_reads_run_on_the_public_read_role_with_a_statement_timeout(pg_conn: Any) -> None:
     session_user = pg_conn.execute("SELECT current_user").fetchone()[0]
+    session_timeout = pg_conn.execute("SHOW statement_timeout").fetchone()[0]
+    assert session_timeout != f"{STATEMENT_TIMEOUT_MS // 1000}s"
     with public_read_session(pg_conn):
         settings = pg_conn.execute(
             "SELECT current_user::text, current_setting('statement_timeout'), "
@@ -217,6 +262,8 @@ def test_reads_run_on_the_public_read_role_with_a_statement_timeout(pg_conn: Any
         )
         assert pg_conn.execute("SELECT count(*) FROM documents").fetchone() is not None
     assert pg_conn.execute("SELECT current_user").fetchone()[0] == session_user
+    # Transaction-local: a pooled connection does not keep the timeout.
+    assert pg_conn.execute("SHOW statement_timeout").fetchone()[0] == session_timeout
 
     for denied in (
         "SELECT 1 FROM ingestion_runs",

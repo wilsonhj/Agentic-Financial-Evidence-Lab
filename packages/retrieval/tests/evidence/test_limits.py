@@ -62,6 +62,10 @@ ONE_PAST_THE_LIMIT: list[tuple[Any, str]] = [
     (i.SpanIdRef("7e4f6d5b9c8a4b1d8e0f405162738495"), "span_id"),
     (i.SpanRangeRef("nope", 0, 1), "document_version_id"),
     (i.SpanRangeRef(ID, 0, 2**31), "end_char"),
+    (i.SpanRangeRef(ID, 0, 1.0), "end_char"),
+    (i.SpanRangeRef(ID, False, 1), "start_char"),
+    (i.SpanRangeRef(ID, 0, True), "end_char"),
+    (i.SpanIdRef(ID + "0"), "span_id"),  # a valid UUID followed by anything is not one
 ]
 
 
