@@ -288,6 +288,24 @@ def test_restatement_links_do_not_depend_on_ingestion_order(
     assert _row_versions(corpus_conn) == settled
 
 
+@pytest.mark.parametrize("resolved", [A, B], ids=["original resolved", "amendment resolved"])
+@pytest.mark.parametrize("order", [(A, B), (B, A)], ids=["original first", "amendment first"])
+def test_same_day_pair_with_one_side_unresolved_never_links(
+    corpus_conn: psycopg.Connection,
+    sec: FixtureSecClient,
+    resolved: str,
+    order: tuple[str, str],
+) -> None:
+    """A missing public_at is unknown, not midnight. Sorting it at midnight
+    made a resolved original restate its unresolved same-day amendment."""
+    for accession in order:
+        _ingest(corpus_conn, sec, [accession], legacy=accession != resolved)
+    assert _publication(corpus_conn)[resolved] == KNOWN[resolved]
+    assert _links(corpus_conn) == []
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+    assert _links(corpus_conn) == []
+
+
 def test_repair_keeps_a_link_to_an_older_parse_of_the_right_filing(
     corpus_conn: psycopg.Connection, sec: FixtureSecClient
 ) -> None:
