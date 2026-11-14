@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { sha256Hex, verifySpanIntegrity } from "./citation-integrity";
 import type { SectionRecord, SourceSpanRecord } from "./contracts";
-import { extractSpanText, segmentSection } from "./spans";
+import { codePointLength, extractSpanText, segmentSection } from "./spans";
 
 // The worker's Python parser counts canonical text in Unicode code points.
 const section: SectionRecord = {
@@ -135,5 +135,14 @@ describe("canonical Unicode offsets", () => {
     const segments = segmentSection(section, [outside]);
     expect(segments.map((segment) => segment.text).join("")).toBe(section.content);
     expect(segments.every((segment) => segment.spanIds.length === 0)).toBe(true);
+  });
+
+  it("counts code points as canonical offsets do (Python len)", () => {
+    expect(codePointLength("")).toBe(0);
+    expect(codePointLength("abc")).toBe(3);
+    expect(codePointLength("A😀B")).toBe(3);
+    expect(codePointLength("🇺🇸")).toBe(2);
+    expect(codePointLength("e\u0301")).toBe(2);
+    expect(codePointLength("\uD800x")).toBe(2);
   });
 });
