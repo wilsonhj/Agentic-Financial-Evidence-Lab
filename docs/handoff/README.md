@@ -49,6 +49,8 @@ Dated briefs are dispatch context, not sources of truth; the
   tracking issue for the documentation drift remediation (slices S1–S4).
 - [`STATUS.md`](STATUS.md) — open integration-lead items, dependency order
   and blockers, as of its newest dated section.
+- [`codex-review-2026-11-14.md`](codex-review-2026-11-14.md) — brief for an
+  external Codex reviewer covering draft PRs #413–#418, written 2026-11-14.
 
 Historical records (archived under [`docs/archive/`](../archive/README.md)):
 
