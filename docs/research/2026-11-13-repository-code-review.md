@@ -20,14 +20,21 @@ Source references verified against commit `2f7f066`.
 
 Read-only adversarial review of `main` for an external agent team. This note
 **authorizes no code change** and does not edit Spec Kit task checkboxes,
-`workstreams.yaml`, or ADR status. Every finding below was re-checked against
-the cited files at `2f7f066`. Prefer the source of truth order in
+`workstreams.yaml`, or ADR status. Prefer the source of truth order in
 [`docs/handoff/README.md`](../handoff/README.md#source-of-truth) if GitHub or
 handoff state has moved since this snapshot.
+
+The Critical and High findings were independently re-verified against
+`2f7f066` after the first draft; the outcome is in
+[Verification status](#verification-status), and each finding carries a
+**Verified** line where the first draft was corrected. The Medium and Low
+tables and the missing-tests list were **not** re-verified: treat each row
+there as a lead to reproduce, not as an established defect.
 
 ## Contents
 
 - [How to use this note](#how-to-use-this-note)
+- [Verification status](#verification-status)
 - [Suggested fix packages](#suggested-fix-packages)
 - [Critical findings](#critical-findings)
 - [High findings](#high-findings)
@@ -52,6 +59,36 @@ Severity here means: **Critical** = integrity / tenancy / governance bypass
 with a concrete exploit path; **High** = serious security, cost, temporal, or
 data-fidelity defect; **Medium** = real bug or bypass with narrower blast
 radius; **Low** = hygiene or latent footgun.
+
+## Verification status
+
+Re-verification read the cited code at `2f7f066` and looked for a guard
+elsewhere before accepting an impact. "Reproduced" means the behaviour was
+executed, not only read. The **Severity** column is the verified one and
+governs where it differs from the section a finding sits in; IDs are kept
+stable so existing references still resolve.
+
+| ID | Verdict | Severity | Correction to the first draft |
+| --- | --- | --- | --- |
+| C1 | Confirmed (traced) | Critical | none |
+| C2 | Overstated | High | The API already enforces entity, cutoff, `parsed` and corpus membership before it enqueues; the worker gap is missing defence in depth |
+| C3 | Confirmed (reproduced) | Critical | none |
+| C4 | Confirmed (traced) | Critical | none |
+| C5 | Partly | High | Pinning the scripts alone fixes nothing; the named matcher gaps were wrong |
+| H1 | Confirmed | High | A per-run cost cap exists; the org ceiling and metering are what is missing |
+| H2 | Confirmed | High | Corpus tables have no RLS: excess privilege and pool pressure, not a tenant leak |
+| H3 | Confirmed | High | App roles already cannot `UPDATE`/`DELETE` the audit and usage tables |
+| H4 | Confirmed (reproduced) | High | Retrieval failure text is returned by the API; extraction failure text is only at rest |
+| H5 | Partly | High | (a), (b) confirmed; (c) small impact; the rerun half of (d) is by design |
+| H6 | Intended behaviour | Design risk | The frozen deployment-guard contract exempts `reader-smoke` from the loopback rule |
+| H7 | Partly | Medium / High | Heartbeat fail-open is documented and fenced; the gzip overshoot is real but bounded |
+| H8 | Mostly confirmed | High | `scale` does not exhaust memory; it raises an uncaught `decimal.Overflow` |
+| H9 | Confirmed (reproduced) | Medium | Nothing canonicalizes an `EvaluationResult` today |
+| H10 | Confirmed | High | Three sub-claims corrected, including one wrong package |
+| H11 | Confirmed | High | Telemetry is off by default; only single-document reads fail open |
+| H12 | Partly | Medium | `path_guard` fail-open is documented; its case bypass is mostly closed |
+
+Verified priority for fix work: C1, C3, C4 and the retrieval half of H4.
 
 ## Suggested fix packages
 
@@ -132,10 +169,19 @@ join to `documents.published_at`, `documents.entity_id`,
 `input_manifest.source_span_ids`. `workers/src/fel_workers/extraction/assemble.py`
 (manifest membership) has zero callers.
 
-**Impact:** A durable job can cite a real span from another entity, a future
-filing, a quarantined version, or outside the run manifest by omitting or
-backdating `published_at`. Naive vs aware datetime comparison can also raise
-unhandled `TypeError`.
+**Impact:** A durable job whose payload did not come from the API can cite a
+real span from another entity, a future filing, or outside the run manifest by
+omitting or backdating `published_at`.
+
+**Verified:** Overstated; High, not Critical. The API is the only producer of
+these jobs and `verify_spans` already requires `d.entity_id`,
+`d.published_at <= cutoff`, `v.status = 'parsed'` and
+`corpus_version_documents` membership for every selected span
+(`apps/api/app/extraction/evidence.py` lines 59–61, called from
+`runs.py` line 125) before the job row is written. Exploiting the worker gap
+therefore needs direct write access to `jobs`. The worker re-check is still
+worth adding as a second layer, because the worker is what persists the
+citation. The naive-versus-aware `TypeError` was not reproduced.
 
 **Finish line:** Durable Postgres tests that omit `published_at`, supply a
 backdated payload timestamp for a future document, cite another `entity_id`,
@@ -187,16 +233,34 @@ per-share unit.
 empty stdout path hits `exit 0` (lines 95–97). Diff uses a single
 `git merge-base` (line 87), which is insufficient when `$BASE_SHA` and
 `$HEAD_SHA` share multiple best ancestors after merge-heavy histories.
-Lockfiles / toolchain / `.gitleaksignore` / `scripts/runtime/build.*` are also
-outside the matcher while appearing in handoff `shared_paths` guidance.
+The matcher also covers fewer paths than `docs/handoff/workstreams.yaml`
+`shared_paths` lists.
 
 **Impact:** Unlabeled shared-path edits or silent shared-file reverts can pass
 the required check.
 
-**Finish line:** Run listing scripts from `$BASE_SHA` (or otherwise pin trust);
-fail or union-diff across `git merge-base --all` / `merge-tree`; add regression
-fixtures for script self-edit and multi-merge-base revert; align matcher with
-the lead’s shared-path table.
+**Verified:** Partly; High, not Critical. The single merge-base and the
+PR-tree script execution are both real. Two corrections:
+
+- Running the listing scripts from `$BASE_SHA` does not close the trust gap on
+  its own. The workflow triggers on `pull_request`, so the workflow file is
+  itself read from the PR: a PR that can edit the scripts can edit
+  `shared-paths.yml`. A real fix needs a trigger that takes the workflow from
+  the base branch, with the PR tree treated as data only. `.github/CODEOWNERS`
+  also routes every path to the integration lead, which bounds the impact
+  where review is enforced.
+- `.gitleaksignore` and `scripts/runtime/build.*` are on no shared-path list.
+  The actual drift is that `workstreams.yaml` `shared_paths` names
+  `.agents/**`, `tsconfig.json`, `tsconfig.base.json`, `vitest.config.ts`,
+  `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`,
+  `.gitignore`, `.node-version`, `.python-version` and `requirements-dev.txt`,
+  while `AGENTS.md` "Shared paths" and the workflow matcher (which tracks
+  `AGENTS.md`) do not. Which list governs is an integration-lead decision.
+
+**Finish line:** Take the workflow and its scripts from the base branch; fail
+or union-diff across `git merge-base --all` / `merge-tree`; add regression
+fixtures for script self-edit and multi-merge-base revert; reconcile the
+matcher, `AGENTS.md` and `workstreams.yaml` to one shared-path list.
 
 ## High findings
 
@@ -213,6 +277,10 @@ Extraction run create/rerun check roles but omit `rate_limit` /
 **Impact:** A `viewer` can burn org query budget and write feedback; callers at
 cost limits can still enqueue extraction.
 
+**Verified:** Confirmed. Each extraction run still carries a per-run cap
+(`max_cost_usd` at most 2.00, `workers/src/fel_workers/extraction/budget.py`);
+what is missing is the org-level ceiling, the rate limit and usage metering.
+
 ### H2. Lane reads use owner DB role and unpooled connections
 
 **Package:** R5
@@ -223,6 +291,10 @@ while the tenant connection stays checked out across lanes and generation.
 
 **Impact:** Least-privilege bypass on corpus SQL; connection / pool exhaustion
 under burst.
+
+**Verified:** Confirmed. The corpus tables carry no RLS, so this is excess
+privilege on the login role plus one unpooled connection per lane; it is not a
+tenant-data leak path.
 
 ### H3. Over-broad `fel_app` grants and non-FORCE RLS
 
@@ -238,6 +310,12 @@ append-only triggers.
 session is `fel_app` with attacker-controlled claims; owner connections that
 forget `SET ROLE` skip RLS.
 
+**Verified:** Confirmed; migrations `0002`–`0011` correct none of it. Two
+limits: `fel_app` holds only `SELECT, INSERT` on `audit_events` and
+`usage_events`, so the missing append-only triggers matter only against the
+owner role; and `UPDATE` on `organizations` / `memberships` is still confined
+to the caller's own org by RLS.
+
 ### H4. Unredacted exception text on terminal run failures
 
 **Package:** R7
@@ -250,6 +328,14 @@ miss several token key names and list-string values.
 
 **Impact:** Secrets and filing text can land in tenant-readable run/error
 tables.
+
+**Verified:** Confirmed, and the two paths differ. Retrieval is the worse one:
+the `run_failed` event payload holds `str(exc)` and the event-history and
+trace reads (`apps/api/app/retrieval_reads.py`) return it verbatim to any org
+member. Extraction error text is stored raw but never returned: the API
+replaces it with a fixed message (`serializers.safe_error`). Reproduced
+against `redact.py`: `postgres://user:pass@host/db` passes through unchanged,
+and `Authorization: Token abc123` keeps the token.
 
 ### H5. Temporal / quarantine leaks in ingestion and corpus API
 
@@ -265,9 +351,20 @@ tables.
 - Retrieval create lacks `FOR SHARE` on workspaces; reruns reuse plan
   `effective_as_of` after workspace cutoff tightening.
 
+**Verified:** The first two bullets are confirmed; both filings of a same-day
+amendment are also stamped at midnight, so the strict `<` excludes the
+original. Third bullet: the code facts are right but the missing `parsed`
+check is unreachable (versions are only ever inserted as `parsed`; quarantine
+goes to `ingestion_quarantine`), and a span body holds offsets and a hash, not
+text, so the impact is small. Fourth bullet: the missing `FOR SHARE` is a
+narrow race; a rerun reusing the original plan's cutoff is by design
+(ADR-0006: an unchanged rerun is pinned to the original immutable plan) and
+is a policy question, not a defect.
+
 ### H6. `reader-smoke` allows mock auth against remote DBs for all routes
 
-**Package:** R5 (or dedicated auth/deployment package)
+**Package:** none until the integration lead decides; a change here amends a
+frozen contract
 
 `deployment.py` permits `reader-smoke` + `auth_mode=mock` without the
 loopback DB restriction used by `synthetic-http`, while mutating routes stay
@@ -275,6 +372,13 @@ mounted.
 
 **Impact:** Forged `Bearer mock.*` against a reachable smoke API mutates remote
 tenant data.
+
+**Verified:** Intended behaviour, recorded here as a design risk.
+[`deployment-guard-contract.md`](deployment-guard-contract.md) states that
+`reader-smoke` has no extra loopback requirement for the separately authorized
+hosted reader target. A forged token must also name an `(org_id, sub)` pair
+that has a real membership row, and the target must be the marker-proven smoke
+target.
 
 ### H7. Heartbeat DB failure fails open; gzip bomb before size check
 
@@ -285,6 +389,14 @@ Heartbeat thread exits on DB errors without setting `lease_lost`
 `http.py` `_read_bounded` uses `iter_bytes()` so zlib can expand a chunk before
 the byte cap runs.
 
+**Verified:** Partly. The heartbeat behaviour is deliberate (its docstring:
+a connection failure is not proof of loss) and the terminal write is fenced,
+so the consequence is a second worker running the same job concurrently —
+duplicate work, not a corrupted result. The gzip overshoot is confirmed but
+bounded: one raw read is inflated before the cap is checked, roughly 1000× a
+single chunk, not unbounded. The `Content-Length` pre-check is skipped when
+`content-encoding` is present.
+
 ### H8. Parser / XBRL fidelity defects
 
 **Package:** R3
@@ -293,7 +405,17 @@ Inline facts inside headings attach to the previous section while offsets fall
 in the next (`parser.py` heading/`ix:nonfraction` ordering) → reader
 `span_outside_section`. `company_facts` emits overlapping root+child sections.
 `typedMember` ignored; `ix:exclude` not stripped; `sign="-"` plus parentheses
-double-negates (`xbrl.py` lines 225–239); unbounded `scale` can explode memory.
+double-negates (`xbrl.py` lines 225–239); unbounded `scale` crashes the job.
+
+**Verified:** Mostly confirmed. The heading, `typedMember` and `ix:exclude`
+defects are as stated. The `company_facts` overlap is real but no consumer was
+found that breaks on it. The double negation only fires on non-conformant
+text, since conformant iXBRL puts the parentheses outside the element. The
+first draft's memory claim for `scale` was wrong: `Decimal` bounds the
+exponent. The actual defect is that a `scale` just above the context's `Emax`
+raises `decimal.Overflow`, which is not an `InvalidOperation`, so it escapes
+the handler at `xbrl.py` line 248 and fails the job instead of quarantining
+the fact.
 
 ### H9. Calculation engine cannot canonicalize evaluation results
 
@@ -304,19 +426,36 @@ double-negates (`xbrl.py` lines 225–239); unbounded `scale` can explode memory
 `require_decimal` does not enforce `±_MAX_EXPONENT`; non-iterative products can
 yield unhashable exponents; `CALC_CONTEXT` is a mutable global.
 
+**Verified:** Confirmed and reproduced: `canonical_json(evaluate(...))` raises
+`CanonicalizationError: cannot canonicalize mappingproxy`. Nothing in the
+repository canonicalizes an `EvaluationResult` today (`evaluation_id` hashes a
+plain dict), so this is an inconsistency in the exported API with no live
+failure; Medium. `canonical.py` does enforce the exponent bound at hash time.
+
 ### H10. Retrieval/provider/contract seams
 
 **Package:** R11
 
 - Schema-valid `numeric.scale` outside `{0,3,6,9}` raises raw `ValueError` past
   `GenerationContractError`, dropping usage (`generation.py`).
-- `OpenAIStructuredProvider._usage` requires `input_tokens_details`; missing
-  field zeros usage on a billed 200; `_json` uses binary floats; cost scale can
-  exceed `numeric(12,6)` / trace schema.
-- `embed_drafts` is unbatched and allows empty spans.
-- `build_comparability_key` delimiter injection and `.strip()` on non-strings.
+- `OpenAIStructuredProvider._usage` requires `input_tokens_details`; a missing
+  field rejects the whole billed 200 as `invalid_response` and drops its
+  usage; `_json` uses binary floats; cost scale can exceed `numeric(12,6)` /
+  trace schema.
+- `embed_drafts` is unbatched and does not reject empty spans itself.
+- `build_comparability_key` (`packages/ontology/fel_ontology/comparability.py`)
+  delimiter injection.
 - Generated guidance TypeScript makes `shape` optional; OpenAPI vs JSON Schema
   `JobEnvelope` disagree on `payload`/`error`.
+
+**Verified:** The `scale`, `_usage`, `embed_drafts` and comparability-key
+bullets were checked; the last bullet and the `_json` / cost-scale clauses
+were not. Corrections are folded into the bullets above. Two mitigations:
+`OpenAIEmbeddingProvider.embed` fails closed on more than 64 texts or an empty
+text, so an oversized index build errors rather than embedding bad data; and
+the only caller of `build_comparability_key` passes `str(v)`, so the
+`.strip()`-on-non-string claim of the first draft does not hold. The
+comparability key lives in `packages/ontology/**`, outside R11's likely paths.
 
 ### H11. Web trust-boundary defects
 
@@ -330,6 +469,14 @@ yield unhashable exponents; `CALC_CONTEXT` is a mutable global.
 - Feedback idempotency key omits `reason`.
 - Same-`documentId` version / span navigation does not reset reader state;
   stale `activeId` makes OutlineNav all `tabIndex=-1`.
+
+**Verified:** The telemetry matcher and buffering, the `Date.parse` fail-open
+and the feedback idempotency key were checked and confirmed; the CSRF,
+redaction, workspace-binding and reader-state bullets were not. Limits:
+`/api/telemetry` returns 404 unless `FEL_WEB_TELEMETRY=1`, and `proxy.ts` only
+asserts deployment mode, so the matcher would add no authentication. The
+`as_of` fail-open is confined to `getDocument` and the fixture `getReader`;
+the list and sibling filters fail closed.
 
 ### H12. CI / evals / agent tooling
 
@@ -346,6 +493,14 @@ yield unhashable exponents; `CALC_CONTEXT` is a mutable global.
   is case-sensitive.
 - `corpus_qa_render.py` `_blockquote` splits only on `\n`, enabling `\r`
   Markdown breakout.
+
+**Verified:** The `advisories.yml`, allowlist date, `retrieval_gate.py`
+`entity_id` and `path_guard.py` bullets were checked; the gate's exit-0 case,
+`reader-prod-smoke.yml` and `corpus_qa_render.py` were not. `path_guard.py`
+documents itself as not a security boundary, so its out-of-repo and fail-open
+behaviour is by design, and its `canonical_case()` step rewrites existing
+path components to their on-disk spelling, which closes the case bypass on
+case-insensitive filesystems.
 
 ## Medium findings
 
