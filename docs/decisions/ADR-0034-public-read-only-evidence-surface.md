@@ -64,8 +64,8 @@ day.
    Acceptance is not publication. EDGAR accepts most submissions that begin
    after 17:30 ET the same evening, gives them the next business day's
    filing date, and does not disseminate them until that day. Migration
-   `0012` therefore adds three columns to `documents`: `accepted_at`,
-   `public_at` and `public_at_basis`, plus `timestamp_precision`.
+   `0012` therefore adds four columns to `documents`: `accepted_at`,
+   `public_at`, `public_at_basis` and `timestamp_precision`.
    - **One rule, in one tested ingestion function.** If the filing date is
      later than the US Eastern calendar date of acceptance, the filing became
      public when EDGAR opened on the filing date: `public_at` is 06:00
@@ -103,8 +103,8 @@ day.
 8. **Contracts and dependency.** New schemas `mcp-citation/v1`,
    `mcp-evidence-context/v1`, `mcp-verification-report/v1` and `mcp-error/v1`,
    plus input and output schemas for each tool. OpenAPI takes an additive
-   minor bump to 0.10.0 for optional `accepted_at` and `timestamp_precision`
-   on document metadata. The `mcp` Python SDK 2.x is added and pinned.
+   minor bump to 0.10.0 for optional `accepted_at`, `public_at`,
+   `public_at_basis` and `timestamp_precision` on document metadata. The `mcp` Python SDK 2.x is added and pinned.
    Package #392 carries all of it under `contract-change`.
 
 9. **Scope and ledger.** This is new scope outside the MVP release gates of
