@@ -25,6 +25,7 @@ date it was first committed is used and marked "(committed)".
 
 | Document | Date | Status | Summary |
 | --- | --- | --- | --- |
+| [Production readiness research and proposal](production-readiness/README.md) | 2026-11-14 | Proposed for external review | Source-backed production, SOC 2, security evidence, logging, container and scaling design with independently verifiable parallel work packages (#419) |
 | [RECONCILIATION-2026-07-16.md](../archive/research/RECONCILIATION-2026-07-16.md) | 2026-07-16 | Archived audit | Recovery of the PR #74 benchmark seed and PR #75 ontology research into `main`, with remaining promotion gates |
 | [ontology/README.md](ontology/README.md) | 2026-07-16 | Research draft | Method and reconciliation status of the B2B SaaS disclosure ontology research (issue #73) |
 | [ontology/saas-disclosure-survey.md](ontology/saas-disclosure-survey.md) | 2026-07-16 | Research draft | Raw per-issuer survey of nine SaaS metric families, preserved for provenance |
