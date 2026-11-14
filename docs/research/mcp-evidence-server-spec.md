@@ -1,17 +1,18 @@
 # MCP evidence server and Claude plugin
 
-Status: **Proposed specification.** This is a research deliverable written on
-2026-11-10 against `main` at `2f7f066`. It does not authorize implementation.
-Promotion requires a new ADR (provisionally ADR-0034) and a subordinate package
-at `specs/006-mcp-evidence-server/`. Both are shared paths under `AGENTS.md`,
-so they need the `contract-change` label and integration-lead review. Claims
-about third-party protocols and services were gathered by research agents on
-the same date. Items marked **(unverified)** were not confirmed against a
-primary source.
+Status: **Design contract.** This began as a research deliverable written on
+2026-11-10 against `main` at `2f7f066`.
+[ADR-0034](../decisions/ADR-0034-public-read-only-evidence-surface.md),
+accepted the same day for bounded implementation, freezes §6 and §7 as the
+design contract for the package at `specs/006-mcp-evidence-server/`. The rest
+is research context and authorizes nothing by itself; where it differs from
+ADR-0034, the ADR governs. Claims about third-party protocols and services
+were gathered by research agents on the same date. Items marked
+**(unverified)** were not confirmed against a primary source.
 
-This document may merge as non-authorizing research. Its auth, deployment,
-timestamp and operating-budget decisions are explicit ADR-0034 prerequisites
-(§4, §11, §14). Nothing here implies those gates are already satisfied.
+The auth, deployment, timestamp and operating-budget questions raised here
+(§4, §11, §14) are decided or explicitly left open by ADR-0034. The hosted
+pilot's gates are not satisfied by this document.
 
 Related: the Claude for Financial Services review
 (`claude-for-financial-services-review.md`, proposed in
