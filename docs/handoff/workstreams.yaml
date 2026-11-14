@@ -1515,7 +1515,7 @@ packages:
     depends_on: []
     team: contracts
     branch: agent/mcp-contract
-    status: active # Dispatched 2026-11-10 after the owner accepted ADR-0034 as drafted. Carries contract-change; the mcp dependency is authorized by ADR-0034 decision 8.
+    status: merged # PR #402 landed in merge 517553e (2026-11-14) with #401, #406 and #407. Dispatched 2026-11-10 after the owner accepted ADR-0034 as drafted; the mcp dependency is authorized by ADR-0034 decision 8.
     allowed_paths:
       - db/migrations/**
       - packages/contracts/**
@@ -1538,7 +1538,7 @@ packages:
     depends_on: [MCP-CONTRACT]
     team: contracts
     branch: agent/mcp-replay-contract
-    status: review # PR #406, authored on #402's head under the 2026-11-13 authorization (ADR-0034 Amendment 2).
+    status: merged # PR #406 landed in merge 517553e (2026-11-14). Authored on #402's head under the 2026-11-13 authorization (ADR-0034 Amendment 2).
     allowed_paths:
       - packages/contracts/**
       - packages/retrieval/fel_retrieval/evidence/interfaces.py
@@ -1555,7 +1555,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: data
     branch: agent/mcp-backfill-privileges
-    status: review # PR #407, a bounded stacked prerequisite authorized 2026-11-13 (ADR-0034 Amendment 2). #393 depends on it and on #404.
+    status: merged # PR #407 landed in merge 517553e (2026-11-14). A bounded stacked prerequisite authorized 2026-11-13 (ADR-0034 Amendment 2); #393 depends on it and on #404.
     allowed_paths:
       - db/migrations/0013_mcp_backfill_privileges.sql
       - db/migrations/tests/0013_mcp_backfill_privileges.test.sql
@@ -1566,7 +1566,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-BACKFILL-PRIVILEGES]
     team: data
     branch: agent/mcp-ingest-accepted-at
-    status: blocked # Also waits for #405 worker column grants. Must not run concurrently with #62 or #66 (workers/tests/**).
+    status: active # Dispatched 2026-11-14 on the integration lead's instruction, Lane C; #392, #404 and #405 merged in 517553e. Must not run concurrently with #62, #66 or the FIX-* packages that touch workers/tests/** (#410, #411, #412).
     allowed_paths:
       - workers/src/fel_workers/ingestion/**
       - workers/src/fel_workers/consumer.py
@@ -1577,7 +1577,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: api
     branch: agent/mcp-cutoff-predicates
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404).
+    status: blocked # #392 and #404 merged in 517553e; next in Lane B after #396. Must not run concurrently with FIX-REVIEW-CITATION-BLOCKERS (#409) or FIX-RUN-ERROR-REDACTION (#412), which also edit apps/api/tests/**.
     allowed_paths:
       - apps/api/app/corpus.py
       - apps/api/app/reader.py
@@ -1590,7 +1590,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: retrieval
     branch: agent/mcp-evidence-read
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Imports lanes.py; must not edit it (owned by MCP-CUTOFF-PREDICATES).
+    status: active # Dispatched 2026-11-14 on the integration lead's instruction, Lane A; #392 and #404 merged in 517553e. Imports lanes.py; must not edit it (owned by MCP-CUTOFF-PREDICATES).
     allowed_paths:
       - packages/retrieval/fel_retrieval/evidence/** # except interfaces.py, owned by MCP-CONTRACT
       - packages/retrieval/tests/evidence/** # except test_interfaces.py, frozen by #404
@@ -1600,7 +1600,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: trust
     branch: agent/mcp-verifier
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Existing mock identity strings and goldens must stay byte-identical.
+    status: active # Dispatched 2026-11-14 on the integration lead's instruction, Lane B; #392 and #404 merged in 517553e. Existing mock identity strings and goldens must stay byte-identical.
     allowed_paths:
       - packages/retrieval/fel_retrieval/verification.py
       - packages/retrieval/fel_retrieval/verification_report.py
@@ -1653,3 +1653,64 @@ packages:
       - infra/**
       - docs/runbooks/**
       - docs/handoff/CREDENTIALS.md
+  # --- Fix packages from the 2026-11-13 repository code review ---
+  # The four findings that survived independent re-verification as the top tier
+  # (docs/research/2026-11-13-repository-code-review.md, "Verification status").
+  # Defect fixes: no canonical task covers them, so every entry carries
+  # `tasks: []`. Their allowed paths are disjoint from each other, but three of
+  # them sit under workers/tests/**, which MCP-INGEST-ACCEPTED-AT (#393) owns
+  # while it is active, and two sit under apps/api/tests/**, which
+  # MCP-CUTOFF-PREDICATES (#394) owns once it is dispatched. Flipping any entry
+  # is a dispatch decision reserved to the integration lead, within the
+  # four-package concurrency cap.
+  - id: FIX-REVIEW-CITATION-BLOCKERS
+    issue: 409
+    tasks: [] # Finding C1: review accept/merge can clear the unverified-citation blocker.
+    depends_on: []
+    team: extraction
+    branch: agent/fix-review-citation-blockers
+    status: active # Registered and dispatched 2026-11-14 on the integration lead's instruction. Must finish before #394 is dispatched (apps/api/tests/**).
+    allowed_paths:
+      - apps/api/app/extraction/**
+      - apps/api/tests/extraction/**
+  - id: FIX-NUMERIC-SIGN-PARSING
+    issue: 410
+    tasks: [] # Finding C3: parse_numeric drops the sign of non-dollar and U+2212 negatives.
+    depends_on: []
+    team: extraction
+    branch: agent/fix-numeric-sign-parsing
+    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393 to release workers/tests/**.
+    allowed_paths:
+      - workers/src/fel_workers/extraction/normalize/**
+      - workers/tests/extraction/test_normalize.py
+      - workers/tests/extraction/test_normalize_magnitude.py
+      - workers/tests/extraction/test_normalize_sign.py
+  - id: FIX-XBRL-DIVIDE-UNITS
+    issue: 411
+    tasks: [] # Finding C4: xbrli:divide units collapse to the last measure.
+    depends_on: []
+    team: data
+    branch: agent/fix-xbrl-divide-units
+    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393, which owns workers/src/fel_workers/ingestion/** and workers/tests/**.
+    allowed_paths:
+      - workers/src/fel_workers/ingestion/parser.py
+      - workers/src/fel_workers/ingestion/xbrl.py
+      - workers/tests/test_parser_golden.py
+      - workers/tests/test_parser_golden_stress.py
+      - workers/tests/test_xbrl_normalize.py
+      - workers/tests/fixtures/**
+  - id: FIX-RUN-ERROR-REDACTION
+    issue: 412
+    tasks: [] # Finding H4: run-failure text is stored, and for retrieval returned, unredacted.
+    depends_on: []
+    team: trust
+    branch: agent/fix-run-error-redaction
+    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393 (workers/tests/**) and must not overlap #394 (apps/api/tests/**).
+    allowed_paths:
+      - apps/api/app/retrieval.py
+      - apps/api/app/retrieval_run_store.py
+      - apps/api/tests/test_retrieval_api.py
+      - workers/src/fel_workers/redact.py
+      - workers/src/fel_workers/extraction/workflow.py
+      - workers/tests/test_redact.py
+      - workers/tests/extraction/test_run_error_redaction.py
