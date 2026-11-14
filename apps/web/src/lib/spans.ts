@@ -5,9 +5,10 @@ import type { SectionRecord, SourceSpanRecord } from "./contracts";
  * span covering the slice (empty = plain text). Overlapping spans are split
  * at every span boundary so each segment has a stable set of covering spans.
  *
- * `start`/`end` are SECTION-LOCAL render anchors (offsets into `content`),
- * derived from the global canonical coordinates at the last moment — they are
- * a view-model detail and are never written back onto any SourceSpan.
+ * `start`/`end` are SECTION-LOCAL render anchors: UTF-16 indices into
+ * `content` (what `String.prototype.slice` takes), converted from the global
+ * canonical code-point coordinates at the last moment. They are a view-model
+ * detail and are never written back onto any SourceSpan.
  */
 export interface SectionSegment {
   text: string;
@@ -16,17 +17,23 @@ export interface SectionSegment {
   spanIds: string[];
 }
 
+const SURROGATE_PAIR = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+
 /**
- * True when a section's global canonical range is internally consistent:
- * integer bounds, 0 <= start <= end, and `content` is exactly the canonical
- * slice length `end_char - start_char`. A section failing this check cannot
- * anchor any span (fail-closed).
+ * Length of `text` in Unicode code points, the unit canonical offsets use
+ * (Python `len(str)`). Each surrogate pair counts once; a lone surrogate
+ * counts once, as Python counts it.
  */
+export function codePointLength(text: string): number {
+  return text.length - (text.match(SURROGATE_PAIR)?.length ?? 0);
+}
+
+/** Consistency check plus the code-point to UTF-16 offset map for one section. */
 function sectionOffsets(section: SectionRecord) {
   // Only supplementary characters add an extra UTF-16 code unit. Keep their
   // code-point positions, leaving the common BMP-only case allocation-free.
   let supplementary: number[] | undefined;
-  for (const match of section.content.matchAll(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)) {
+  for (const match of section.content.matchAll(SURROGATE_PAIR)) {
     supplementary ??= [];
     supplementary.push(match.index - supplementary.length);
   }
@@ -50,6 +57,12 @@ function sectionOffsets(section: SectionRecord) {
   return { consistent, renderOffset };
 }
 
+/**
+ * True when a section's global canonical range is internally consistent:
+ * integer bounds, 0 <= start <= end, and the code-point length of `content`
+ * (see `codePointLength`) equals `end_char - start_char`. A section failing
+ * this check cannot anchor any span (fail-closed).
+ */
 export function sectionRangeConsistent(section: SectionRecord): boolean {
   return sectionOffsets(section).consistent;
 }
@@ -114,7 +127,8 @@ export function createLocalSpanAnchorResolver(section: SectionRecord) {
 /**
  * Maps spans onto the section text, producing an ordered, gap-free list of
  * segments covering the whole content. Span offsets are GLOBAL canonical
- * offsets; local anchors are derived per span via `deriveLocalSpanAnchor`.
+ * code-point offsets; UTF-16 local anchors are derived per span by one
+ * `createLocalSpanAnchorResolver` built for the section.
  * Handles overlapping and adjacent spans.
  *
  * Fail-closed: spans whose global offsets fall outside the section's
