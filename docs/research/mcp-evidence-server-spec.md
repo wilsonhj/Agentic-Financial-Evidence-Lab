@@ -14,9 +14,8 @@ The auth, deployment, timestamp and operating-budget questions raised here
 (§4, §11, §14) are decided or explicitly left open by ADR-0034. The hosted
 pilot's gates are not satisfied by this document.
 
-Related: the Claude for Financial Services review
-(`claude-for-financial-services-review.md`, proposed in
-[PR #388](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/388)),
+Related: the
+[Claude for Financial Services review](claude-for-financial-services-review.md),
 which recommends this surface.
 [`financial-evidence-skills-review.md`](financial-evidence-skills-review.md)
 deferred MCP distribution "until a public read API is ready". This document
@@ -114,7 +113,7 @@ paths.
 | P6 | **ADR-0004 rejects anonymous reads**, even of the untenanted public corpus. | `docs/decisions/ADR-0004-public-corpus-tenancy.md` | ADR-0034 must either authorize anonymous, rate-limited, read-only access through the MCP surface only, or require OAuth (§8). |
 | P7 | **Quotes are not persisted.** The `citations` table has no `quote` column, and traces return only `source_span_id`. | `db/migrations/0003_retrieval_core.sql` | Not blocking for v1, because the MCP server returns text sliced from canonical text at read time. Needed later for stored verification reports. |
 | P8 | **The live corpus is not loaded or accepted.** | T0112 / #56; `docs/handoff/STATUS.md` | A hosted server needs the 20-issuer cohort ingested with P1 timestamps. Self-hosters bring their own. |
-| P9 | **No MCP dependency.** Adding `mcp` changes lockfiles. | `requirements.lock`, `uv.lock` | `contract-change` plus an authorization record. Check whether `mcp` 2.x's transitive dependencies (reportedly `httpx2` replacing `httpx`, unverified) coexist with the pinned `httpx` 0.28.1. |
+| P9 | **No MCP dependency.** Adding `mcp` changes lockfiles. | `requirements.lock`, `requirements-dev.lock` | `contract-change` plus an authorization record. Check whether `mcp` 2.x's transitive dependencies (reportedly `httpx2` replacing `httpx`, unverified) coexist with the pinned `httpx` 0.28.1. |
 | P10 | **Company-facts facts cite a fetch-dated snapshot.** The company-facts document gets `published_at=fetched_at`. Its facts cite spans inside that snapshot document version (`source_span_id=observation.span_id`). Re-dating a fact by its source accession would not change that provenance. Backdating the snapshot would expose observations filed later. | `workers/src/fel_workers/ingestion/company_facts.py:631`, `:707` | **v1 excludes `COMPANYFACTS` snapshot documents and every fact citing them from all MCP tools.** Facts come only from filing-native XBRL, whose spans live in the filing itself. Including company facts later requires a frozen design, decided before promotion, for: observation time, snapshot vintage, source-accession provenance, and citation round-trip semantics. |
 
 ## 5. Architecture
