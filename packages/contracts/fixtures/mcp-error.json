@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "top_k must be at most 20.",
+    "retryable": false,
+    "field": "top_k",
+    "recovery": "Lower top_k to 20 or fewer and retry."
+  }
+}

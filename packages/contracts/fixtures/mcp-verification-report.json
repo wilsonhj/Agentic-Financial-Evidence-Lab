@@ -1,0 +1,30 @@
+{
+  "verifier": "deterministic-v1",
+  "claim_status": "unsupported",
+  "citations": [
+    {
+      "index": 0,
+      "checks": {
+        "visible": true,
+        "hash_valid": true,
+        "quote_found": true
+      },
+      "reason": null,
+      "edge_status": "partial",
+      "numeric_checks": null
+    },
+    {
+      "index": 1,
+      "checks": {
+        "visible": false,
+        "hash_valid": null,
+        "quote_found": null
+      },
+      "reason": "not_found",
+      "edge_status": "irrelevant"
+    }
+  ],
+  "semantic_entailment": "not_evaluated",
+  "entailment_method": "lexical-coverage-v1",
+  "quote_normalization": "whitespace-collapse-v1"
+}

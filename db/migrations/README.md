@@ -23,7 +23,7 @@ Rules (see ADR-0002 and the constitution):
 - Tenant-scoped tables must ship with their row-level-security policies in
   the same migration that creates them.
 
-The directory holds migrations `0001` through `0011`; list it for the
+The directory holds migrations `0001` through `0013`; list it for the
 current set rather than relying on this count.
 
 ## Guard locks and role coverage
@@ -198,3 +198,69 @@ This is a coordinated rollout requirement, not a zero-downtime migration.
 Rollback stops producers and preserves migrated history; do not downgrade data.
 The 0011 SQL harness and worker occurrence tests cover local acceptance. No
 hosted rollout is certified by merging this migration.
+
+### 0012: acceptance and publication time, and the public read role (ADR-0034)
+
+Adds four columns to `documents`: `accepted_at`, `public_at` and
+`public_at_basis` (`acceptance` or `next_session_open`), all nullable, and
+`timestamp_precision` (`date` or `second`, default `date`). Acceptance is not
+publication: most submissions begun after 17:30 ET get the next business day's
+filing date and are not disseminated until then (ADR-0034 Amendment 1). CHECKs
+enforce that:
+
+- the three are all set or all NULL;
+- `timestamp_precision = 'second'` exactly when they are set;
+- `public_at >= accepted_at`;
+- `public_at_basis = 'acceptance'` exactly when `public_at = accepted_at`.
+
+The migration does not derive `public_at`. One ingestion function owned by
+#393 does, by the rule in the column comment. Existing rows stay `date` with
+NULLs until #393 backfills them. `documents_entity_public_idx` supports
+`(entity_id, public_at)` cutoff reads.
+
+`fel_guard_candidate` rejects a candidate when
+`GREATEST(COALESCE(public_at, published_at), published_at)` is after the query
+cutoff, the expression #394's lanes use. It cannot admit anything the 0003
+`published_at` rule rejected.
+
+`fel_public_read` is a NOLOGIN group role with SELECT on ten untenanted tables:
+the eight 0002 corpus tables and `retrieval_index_versions` and
+`retrieval_items`. The migration refuses to grant on any table that has an
+`org_id` column. It gets nothing on `ingestion_quarantine`, `ingestion_runs`,
+`retrieval_embeddings`, `schema_migrations`, sequences or any tenant table, and
+belongs to no other role. A role-level `statement_timeout` would not apply after
+`SET ROLE`, so the MCP pool sets it per transaction (design contract §7.4).
+
+The harness checks every relation in `public` against the allowlist in the
+catalog. It then runs each denied `SELECT`, write, row lock and `CREATE` as the
+role and expects `42501`. A table added later is denied by default and covered
+without editing the harness.
+
+0012 grants `fel_worker` no `UPDATE` on `documents`. Migration 0013 adds the
+column-level grants for the #393 backfill run under `FEL_WORKER_DB_ROLE`.
+
+### 0013: worker backfill column privileges (ADR-0034 Amendment 2, #405)
+
+Grants `fel_worker` UPDATE on exactly `documents.accepted_at`, `public_at`,
+`public_at_basis`, `timestamp_precision`, and `financial_facts.restates`.
+Existing SELECT/INSERT grants and other runtime permissions are preserved;
+neither table receives table-level UPDATE. No new permission goes to `fel_app`
+or `fel_public_read`. Raw source metadata, source hashes, canonical text,
+financial values, units, periods, dimensions and duplicate links remain outside
+these UPDATE grants. The 0012 publication CHECKs and restatement foreign key
+still apply.
+
+Column privileges do not restrict which rows the worker may update. The #393
+implementation must exclude COMPANYFACTS, validate pinned publication metadata
+and constrain restatement targets; this migration does not enforce those row
+selection rules or claim backfill completion. Deployment must still adopt
+`fel_worker` explicitly rather than use a database owner connection.
+
+Harness: `tests/0013_mcp_backfill_privileges.test.sql`. It inserts evidence and
+performs publication/backfill updates as `fel_worker`, proves existing CHECK/FK
+constraints still reject invalid writes, and rejects UPDATE of every other
+column on both tables. It also checks mixed allowed/forbidden writes, evidence
+rewrites and deletion denials, and individually denies all five new column
+writes as `fel_app` and `fel_public_read`. Public corpus reads remain available
+while tenant reads stay denied. Existing 0008/0012 harnesses retain coverage of
+the worker's other runtime privileges and the full public-role allowlist.

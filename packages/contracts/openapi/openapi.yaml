@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Financial Evidence Lab API
-  version: 0.9.0
+  version: 0.10.0
   description: >-
     Frozen v1 contract surface (ADR-0001). This file seeds the M0 freeze:
     conventions (error envelope, idempotency, optimistic concurrency,
@@ -19,7 +19,9 @@ info:
     path, parameter, field, or enum changes. List bounding and its query
     parameter are deliberately not declared here — lists stay unbounded
     until pagination lands with a client that can page. Modeling and
-    forecasting paths arrive in later minors.
+    forecasting paths arrive in later minors. v0.10.0 adds optional
+    accepted_at, public_at, public_at_basis and timestamp_precision to
+    DocumentMeta (ADR-0034).
 servers:
   - url: /
 # `x-fel-status: planned` on a path item means the contract is frozen but the
@@ -1997,6 +1999,32 @@ components:
         published_at:
           type: string
           format: date-time
+        accepted_at:
+          type: string
+          format: date-time
+          description: >-
+            Verified SEC acceptance instant (v0.10.0, ADR-0034). Omitted when
+            unknown; published_at is then the filing date at midnight UTC.
+        public_at:
+          type: string
+          format: date-time
+          description: >-
+            Instant the filing became public, the visibility instant (v0.10.0,
+            ADR-0034 Amendment 1). Equals accepted_at, or 06:00
+            America/New_York on the filing date when that date is later than
+            the Eastern date of acceptance. Omitted when unknown.
+        public_at_basis:
+          type: string
+          enum: [acceptance, next_session_open]
+          description: >-
+            How public_at was derived (v0.10.0, ADR-0034 Amendment 1). Present
+            exactly when public_at is.
+        timestamp_precision:
+          type: string
+          enum: [date, second]
+          description: >-
+            second when accepted_at and public_at are verified instants; date
+            when only the filing date is known (v0.10.0, ADR-0034).
         filed_at:
           type: string
           format: date-time
