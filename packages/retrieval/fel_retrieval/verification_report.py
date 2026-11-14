@@ -25,9 +25,10 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Final, Protocol
 
 from fel_retrieval.evidence.interfaces import (
@@ -57,6 +58,11 @@ from fel_retrieval.verification import (
 # run of Unicode whitespace becomes one space and the ends are trimmed. This is
 # the normalization the rules already apply for whole-evidence text identity.
 QUOTE_NORMALIZATION: Final = "whitespace-collapse-v1"
+
+# The only stored form of financial_facts.value (its CHECK in migration 0002,
+# and mcp-get-financial-facts-output). Decimal() alone also accepts "+100",
+# "1E+2", "1_00", padded and non-ASCII digits, so the form is checked first.
+_STORED_DECIMAL: Final = re.compile(r"-?[0-9]+(\.[0-9]+)?")
 
 # classify_claim can name ``derived`` in its type but never returns it; v1
 # reports exclude it (design contract §7.2).
@@ -136,21 +142,23 @@ def _quote_found(quote: str, text: str) -> bool:
 
 
 def _legal_scale(scale: object) -> bool:
-    return type(scale) is int and scale in NUMERIC_SCALE_EXPONENTS
+    return type(scale) is int and scale in NUMERIC_SCALE_EXPONENTS  # bool is not int here
+
+
+def _blank(label: object) -> bool:
+    return not isinstance(label, str) or not label.strip()
 
 
 def _evidence_tuple(fact: EvidenceFact | None) -> NumericTuple | None:
     if fact is None:
         return None
-    try:
-        value = Decimal(fact.value) if isinstance(fact.value, str) else None
-    except InvalidOperation:
-        value = None
-    if value is None or not value.is_finite() or not _legal_scale(fact.scale):
+    if not isinstance(fact.value, str) or not _STORED_DECIMAL.fullmatch(fact.value):
         raise _UnverifiableFact
-    if not fact.unit or not fact.period:
+    if not _legal_scale(fact.scale) or _blank(fact.unit) or _blank(fact.period):
         raise _UnverifiableFact
-    return NumericTuple(value=value, unit=fact.unit, period=fact.period, scale=fact.scale)
+    return NumericTuple(
+        value=Decimal(fact.value), unit=fact.unit, period=fact.period, scale=fact.scale
+    )
 
 
 def _invalid_numeric(field: str, constraint: str) -> EvidenceReadError:
@@ -171,6 +179,10 @@ def _claim_tuple(numeric: ClaimNumeric | None) -> NumericTuple | None:
         raise _invalid_numeric("value", "a finite decimal")
     if not _legal_scale(numeric.scale):
         raise _invalid_numeric("scale", f"one of {sorted(NUMERIC_SCALE_EXPONENTS)}")
+    if _blank(numeric.unit):
+        raise _invalid_numeric("unit", "a non-blank label")
+    if _blank(numeric.period):
+        raise _invalid_numeric("period", "a non-blank label")
     return NumericTuple(numeric.value, numeric.unit, numeric.period, numeric.scale)
 
 

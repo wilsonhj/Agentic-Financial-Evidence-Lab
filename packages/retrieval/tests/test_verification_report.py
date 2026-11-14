@@ -374,6 +374,7 @@ def test_an_integrity_failure_overrides_every_other_edge(other: SpanEvidence) ->
         _fact(scale=-3),
         _fact(scale=12),
         _fact(scale=True),
+        _fact(scale=False),  # a bool is not the integer 0
         _fact(scale=6.0),
         _fact(scale="6"),
         _fact("abc"),
@@ -381,8 +382,19 @@ def test_an_integrity_failure_overrides_every_other_edge(other: SpanEvidence) ->
         _fact("NaN"),
         _fact("-Infinity"),
         _fact(100.0),  # never a float
+        # Decimal() accepts all of these as 100; the stored form is ^-?[0-9]+(\.[0-9]+)?$
+        _fact("1_00"),
+        _fact(" 100\n"),
+        _fact("+100"),
+        _fact("1E+2"),
+        _fact("\u0661\u0660\u0660"),  # Arabic-Indic digits
+        _fact("100."),
+        _fact(".1e3"),
+        _fact("-0100.000\n"),
         _fact(unit=""),
+        _fact(unit=" \t"),
         _fact(period=""),
+        _fact(period="\n "),
     ],
 )
 @pytest.mark.parametrize("numeric", [None, _numeric()])
@@ -399,7 +411,18 @@ def test_unparseable_evidence_fact_never_supports(
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("scale", 2), ("scale", "6"), ("value", 100.0), ("value", "100"), ("value", Decimal("NaN"))],
+    [
+        ("scale", 2),
+        ("scale", "6"),
+        ("scale", False),  # a bool is not the integer 0
+        ("value", 100.0),
+        ("value", "100"),
+        ("value", Decimal("NaN")),
+        ("unit", ""),
+        ("unit", "  "),
+        ("period", ""),
+        ("period", "\t\n"),
+    ],
 )
 def test_malformed_asserted_numeric_is_invalid_input_not_a_raw_error(
     field: str, value: Any
@@ -409,6 +432,32 @@ def test_malformed_asserted_numeric_is_invalid_input_not_a_raw_error(
     with pytest.raises(i.EvidenceReadError) as error:
         _build(TEXT, {"a": _span(TEXT, _fact())}, numeric=numeric)
     assert (error.value.code, error.value.field) == ("invalid_input", f"numeric.{field}")
+
+
+def test_whitespace_periods_on_both_sides_do_not_match() -> None:
+    """A blank claim period must not match a blank stored one and come back supported."""
+    numeric = _numeric(period=" ")
+    object.__setattr__(numeric, "period", " ")
+    with pytest.raises(i.EvidenceReadError) as error:
+        _build(TEXT, {"a": _span(TEXT, _fact(period=" "))}, numeric=numeric)
+    assert (error.value.code, error.value.field) == ("invalid_input", "numeric.period")
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        hashlib.sha256(TEXT.encode()).hexdigest(),  # the right digest without its prefix
+        "SHA256:" + hashlib.sha256(TEXT.encode()).hexdigest(),
+        "sha256:" + hashlib.sha256(TEXT.encode()).hexdigest().upper(),
+        "md5:" + hashlib.sha256(TEXT.encode()).hexdigest(),
+        _hash(TEXT) + "\n",
+    ],
+)
+def test_stored_hash_must_be_the_exact_prefixed_digest(stored: str) -> None:
+    payload = _build(TEXT, {"a": _span(text_hash=stored)})
+    assert payload["citations"][0]["checks"]["hash_valid"] is False
+    assert payload["citations"][0]["reason"] == "hash_mismatch"
+    assert payload["claim_status"] == "unsupported"
 
 
 def test_unknown_verifier_pin_is_refused_before_any_read() -> None:
