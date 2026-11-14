@@ -223,6 +223,11 @@ def worker_proposal(extraction_client, extraction_tenant, extraction_url, source
 
 @pytest.fixture
 def waiting_review_fixture(worker_proposal):
-    from tests.extraction.test_mock_lifecycle import ScopedMock
+    """A reviewable proposal: its citation asserts the pinned span's text_hash.
 
-    return worker_proposal(ScopedMock)
+    The committed mock reply cites by membership only, which the worker blocks
+    and review therefore refuses to promote (test_review_citation_blockers.py).
+    """
+    from tests.extraction.test_mock_lifecycle import HashAssertingMock
+
+    return worker_proposal(HashAssertingMock)
