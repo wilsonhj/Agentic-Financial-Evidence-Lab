@@ -39,6 +39,10 @@ date it was first committed is used and marked "(committed)".
 | [deployment-guard-contract.md](deployment-guard-contract.md) | 2026-09-16 | Frozen contract | `FEL_DEPLOYMENT_MODE` guard rules for API and web under ADR-0027 |
 | [offline-calibration-contract.md](offline-calibration-contract.md) | 2026-09-16 | Frozen contract | Offline calibration dataset interchange and numerical primitives under ADR-0028 |
 | [financial-evidence-skills-review.md](financial-evidence-skills-review.md) | 2026-09-26 | Review | What was adopted from, improved on, and left as proposals from an external read-only evidence router; adopted items live in `workers/src/fel_workers/http.py` |
+| [claude-for-financial-services-review.md](claude-for-financial-services-review.md) | 2026-11-10 | Review | What Anthropic's financial-services connectors, skills and plugins offer, what can be reused under Apache-2.0, and what conflicts with point-in-time and immutable-evidence invariants |
+| [mcp-evidence-server-spec.md](mcp-evidence-server-spec.md) | 2026-11-10 | Frozen contract (§6–§7) | Read-only MCP server and Claude plugin for SEC evidence with point-in-time cutoffs, span citations and deterministic claim verification; lists the code prerequisites (acceptance timestamps, guarded reads, lexical-only search) |
+| [2026-11-10-adoption-roadmap.md](2026-11-10-adoption-roadmap.md) | 2026-11-10 | Proposed plan | Verified deployment and product state, remaining work by release, owner-only decisions, a contract wave and parallel lanes, and the staged roadmap toward adoption |
+| [2026-11-13-repository-code-review.md](2026-11-13-repository-code-review.md) | 2026-11-13 | Review | Full-repo adversarial review at `2f7f066` for an external agent team; citation/span/numeric/CI/tenancy findings with suggested fix packages — no implementation in this note |
 
 ## Related pages
 

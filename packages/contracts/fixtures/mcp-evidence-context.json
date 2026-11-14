@@ -1,0 +1,11 @@
+{
+  "effective_as_of": "2024-03-07T14:30:00Z",
+  "timestamp_mode": "strict",
+  "temporal_guarantee": "strict",
+  "corpus_version_id": "a07c9a8e-2f1d-4e4a-9b3c-738495a6b7c8",
+  "index_version_id": null,
+  "parser_version": "edgar-html-v3",
+  "verifier_version": "deterministic-v1",
+  "document_version_id": null,
+  "filters": {}
+}

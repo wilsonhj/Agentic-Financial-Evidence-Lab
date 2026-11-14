@@ -116,7 +116,7 @@ apps/api/                    FastAPI routes and database-backed services
 apps/web/                    Next.js reader, Update Desk (3D/2D viz), Observatory, and Review UI
 workers/                     Job consumer, ingestion pipelines, extraction runtime
 packages/calculation-engine/ Typed model graph and Decimal calculation engine
-packages/contracts/          Versioned JSON Schema/OpenAPI contracts (0.9.0)
+packages/contracts/          Versioned JSON Schema/OpenAPI contracts (0.10.0)
 packages/ontology/           SaaS metric ontology, comparability keys, loader
 packages/providers/          Provider protocols and deterministic mocks
 packages/retrieval/          Chunking, retrieval, fusion, traces, and claims

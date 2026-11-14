@@ -12,7 +12,7 @@ from typing import Any
 
 
 def document_body(row: dict[str, Any]) -> dict[str, Any]:
-    """Contract DocumentMeta; optional temporal fields omitted when unset."""
+    """Contract DocumentMeta; optional temporal fields omitted when unset or unselected."""
     body: dict[str, Any] = {
         "id": str(row["id"]),
         "entity_id": str(row["entity_id"]),
@@ -24,6 +24,14 @@ def document_body(row: dict[str, Any]) -> dict[str, Any]:
     }
     if row["form"] is not None:
         body["form"] = row["form"]
+    # Acceptance and publication time (0012, ADR-0034): optional, so rows read
+    # with an explicit column list that predates 0012 still serialize unchanged.
+    for key in ("accepted_at", "public_at"):
+        if row.get(key) is not None:
+            body[key] = row[key].isoformat()
+    for key in ("public_at_basis", "timestamp_precision"):
+        if row.get(key) is not None:
+            body[key] = row[key]
     for key in ("filed_at", "valid_from", "valid_to"):
         if row[key] is not None:
             body[key] = row[key].isoformat()

@@ -13,6 +13,7 @@ shared_paths:
   - docs/decisions/**
   - docs/handoff/workstreams.yaml
   - docs/handoff/STATUS.md
+  - .claude-plugin/marketplace.json # ADR-0034 Amendment 2: shared configuration.
   # Root package/lock/config files (per AGENTS.md "Shared paths") — the
   # complete root inventory from the M0 scaffold; keep in sync with it:
   - package.json
@@ -1501,3 +1502,154 @@ packages:
       - apps/web/playwright.reader-prod-smoke.config.ts
       - apps/web/e2e/reader-prod-smoke.acceptance.ts
       - .github/workflows/reader-prod-smoke.yml # Existing named shared-path exception in #108 accepted addendum.
+  # --- MCP evidence server (specs/006-mcp-evidence-server; ADR-0034 accepted 2026-11-10) ---
+  # New scope outside the MVP release gates: no canonical task covers it, so
+  # every entry carries `tasks: []`. MCP-CONTRACT (#392) is the contract package;
+  # MCP-REPLAY-CONTRACT (#404) and MCP-BACKFILL-PRIVILEGES (#405) are bounded
+  # corrections to it under ADR-0034 Amendment 2. The eight lanes after those
+  # depend on MCP-CONTRACT and #404, and #393 also on #405. Flipping any entry
+  # is a dispatch decision reserved to the integration lead.
+  - id: MCP-CONTRACT
+    issue: 392
+    tasks: [] # New scope; milestone tasks MCP-101..107 in specs/006-mcp-evidence-server/tasks.md.
+    depends_on: []
+    team: contracts
+    branch: agent/mcp-contract
+    status: active # Dispatched 2026-11-10 after the owner accepted ADR-0034 as drafted. Carries contract-change; the mcp dependency is authorized by ADR-0034 decision 8.
+    allowed_paths:
+      - db/migrations/**
+      - packages/contracts/**
+      - requirements.txt
+      - requirements.lock
+      - requirements-dev.txt
+      - requirements-dev.lock
+      - pyproject.toml # dependency tables only
+      - packages/retrieval/fel_retrieval/evidence/interfaces.py
+      - packages/retrieval/fel_retrieval/evidence/__init__.py # empty package marker
+      - packages/retrieval/tests/evidence/test_interfaces.py # interface contract test only; the rest of tests/evidence/** is MCP-EVIDENCE-READ's
+      - apps/api/app/serializers.py # document-metadata passthrough only
+      - apps/api/tests/test_serializers.py # the passthrough's test
+      - apps/api/tests/test_list_contract.py # pinned contract version line only (0.10.0)
+      - docs/handoff/workstreams.yaml
+      - docs/decisions/ADR-0034-public-read-only-evidence-surface.md # status line only
+  - id: MCP-REPLAY-CONTRACT
+    issue: 404
+    tasks: []
+    depends_on: [MCP-CONTRACT]
+    team: contracts
+    branch: agent/mcp-replay-contract
+    status: review # PR #406, authored on #402's head under the 2026-11-13 authorization (ADR-0034 Amendment 2).
+    allowed_paths:
+      - packages/contracts/**
+      - packages/retrieval/fel_retrieval/evidence/interfaces.py
+      - packages/retrieval/tests/evidence/test_interfaces.py
+      - docs/research/mcp-evidence-server-spec.md
+      - docs/decisions/ADR-0034-public-read-only-evidence-surface.md
+      - docs/handoff/workstreams.yaml
+      - specs/006-mcp-evidence-server/spec.md
+      - specs/006-mcp-evidence-server/plan.md
+      - specs/006-mcp-evidence-server/tasks.md
+  - id: MCP-BACKFILL-PRIVILEGES
+    issue: 405
+    tasks: []
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: data
+    branch: agent/mcp-backfill-privileges
+    status: review # PR #407, a bounded stacked prerequisite authorized 2026-11-13 (ADR-0034 Amendment 2). #393 depends on it and on #404.
+    allowed_paths:
+      - db/migrations/0013_mcp_backfill_privileges.sql
+      - db/migrations/tests/0013_mcp_backfill_privileges.test.sql
+      - db/migrations/README.md
+  - id: MCP-INGEST-ACCEPTED-AT
+    issue: 393
+    tasks: [] # MCP-201..204
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-BACKFILL-PRIVILEGES]
+    team: data
+    branch: agent/mcp-ingest-accepted-at
+    status: blocked # Also waits for #405 worker column grants. Must not run concurrently with #62 or #66 (workers/tests/**).
+    allowed_paths:
+      - workers/src/fel_workers/ingestion/**
+      - workers/src/fel_workers/consumer.py
+      - workers/tests/**
+  - id: MCP-CUTOFF-PREDICATES
+    issue: 394
+    tasks: [] # MCP-301..304
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: api
+    branch: agent/mcp-cutoff-predicates
+    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404).
+    allowed_paths:
+      - apps/api/app/corpus.py
+      - apps/api/app/reader.py
+      - apps/api/tests/**
+      - packages/retrieval/fel_retrieval/lanes.py
+      - packages/retrieval/tests/test_lanes*.py
+  - id: MCP-EVIDENCE-READ
+    issue: 395
+    tasks: [] # MCP-401..407
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: retrieval
+    branch: agent/mcp-evidence-read
+    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Imports lanes.py; must not edit it (owned by MCP-CUTOFF-PREDICATES).
+    allowed_paths:
+      - packages/retrieval/fel_retrieval/evidence/** # except interfaces.py, owned by MCP-CONTRACT
+      - packages/retrieval/tests/evidence/** # except test_interfaces.py, frozen by #404
+  - id: MCP-VERIFIER
+    issue: 396
+    tasks: [] # MCP-501..503
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: trust
+    branch: agent/mcp-verifier
+    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Existing mock identity strings and goldens must stay byte-identical.
+    allowed_paths:
+      - packages/retrieval/fel_retrieval/verification.py
+      - packages/retrieval/fel_retrieval/verification_report.py
+      - packages/retrieval/tests/test_verification*.py
+  - id: MCP-SERVER
+    issue: 397
+    tasks: [] # MCP-601..606
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: platform
+    branch: agent/mcp-server
+    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Builds against an interface mock; final integration needs MCP-EVIDENCE-READ and MCP-VERIFIER merged.
+    allowed_paths:
+      - packages/mcp-server/**
+      - apps/api/app/main.py # the /mcp mount only
+      - apps/api/app/config.py # one enabling setting only
+      - apps/api/tests/test_mcp_mount.py # Serialize after #394 releases apps/api/tests/**.
+      - pyproject.toml # Mechanical package directory lists only; ADR-0008 and ADR-0034 Amendment 2.
+      - Makefile # Mechanical package directory lists only.
+      - .github/workflows/ci.yml # Python job package directory lists only; schedule shared hunks with lead.
+  - id: MCP-PLUGIN
+    issue: 398
+    tasks: [] # MCP-701..703
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: experience
+    branch: agent/mcp-plugin
+    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Marketplace is shared under ADR-0034 Amendment 2; contract-change and lead review required.
+    allowed_paths:
+      - plugins/financial-evidence-lab/**
+      - .claude-plugin/marketplace.json # Shared; ADR-0034 Amendment 2 records the ruling.
+      - NOTICE # Only if adapted content requires attribution.
+  - id: MCP-EVALS
+    issue: 399
+    tasks: [] # MCP-801..806
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: trust
+    branch: agent/mcp-evals
+    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Confined to a new subtree of the evals/** claimed by #62/#67/#68/#108/#177/#201.
+    allowed_paths:
+      - evals/mcp/**
+      - pyproject.toml # Add only evals/mcp to pytest testpaths when tests land; serialize against #397 scaffold changes.
+  - id: MCP-HOSTED-PILOT
+    issue: 400
+    tasks: [] # MCP-901..905
+    depends_on: [MCP-INGEST-ACCEPTED-AT, MCP-CUTOFF-PREDICATES, MCP-EVIDENCE-READ, MCP-VERIFIER, MCP-SERVER, MCP-PLUGIN, MCP-EVALS, RELEASE-LIVE-CUTOVER]
+    team: integration
+    branch: agent/mcp-hosted-pilot
+    status: blocked # Hosting, the operating budget and the live corpus are not provisioned (ADR-0034 owner inputs; #177; #108 shared storage).
+    credentials: hosted-required # override defaults.credentials mock-only; names only until lead provisions
+    allowed_paths:
+      - infra/**
+      - docs/runbooks/**
+      - docs/handoff/CREDENTIALS.md

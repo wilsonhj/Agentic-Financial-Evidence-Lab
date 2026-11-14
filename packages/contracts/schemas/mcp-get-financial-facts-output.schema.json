@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.fel.dev/schemas/mcp-get-financial-facts-output/v1",
+  "x-fel-version": "1.0.0",
+  "title": "McpGetFinancialFactsOutput",
+  "description": "Output of get_financial_facts. Values are decimal strings. restated_by and duplicate_of name only facts whose documents are also visible. Every output carries evidence_context and coverage_note (design contract §7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence_context", "coverage_note", "facts", "next_cursor"],
+  "properties": {
+    "evidence_context": {
+      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1",
+      "properties": {
+        "index_version_id": {
+          "type": "null",
+          "description": "This tool does not use an index. It stays null even if an index is published or rebuilt."
+        },
+        "verifier_version": {
+          "const": "deterministic-v1",
+          "description": "Fixed v1 context marker for non-verification tools; never the active or latest verifier."
+        }
+      }
+    },
+    "coverage_note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "issuers", "forms", "date_range"],
+      "description": "What was searched: issuers, forms and date range under the visibility predicate. An empty result reads 'no matching evidence in the visible indexed corpus', never a claim that a company did not disclose something (design contract §7).",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "issuers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Issuers in scope, as CIKs."
+        },
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "date_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+              "description": "Earliest visible public_at in scope, or null when nothing is visible."
+            },
+            "to": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+              "description": "Latest visible public_at in scope, never after effective_as_of; null when nothing is visible."
+            }
+          }
+        }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fact_id",
+          "concept",
+          "label",
+          "value",
+          "unit",
+          "scale",
+          "period",
+          "dimensions",
+          "reported_or_derived",
+          "citation",
+          "restated_by",
+          "duplicate_of"
+        ],
+        "properties": {
+          "fact_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "concept": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": ["string", "null"]
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scale": {
+            "type": "integer"
+          },
+          "period": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "instant", "start", "end"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["instant", "duration"]
+              },
+              "instant": {
+                "type": ["string", "null"],
+                "format": "date"
+              },
+              "start": {
+                "type": ["string", "null"],
+                "format": "date"
+              },
+              "end": {
+                "type": ["string", "null"],
+                "format": "date"
+              }
+            }
+          },
+          "dimensions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "reported_or_derived": {
+            "type": "string",
+            "enum": ["reported", "derived"]
+          },
+          "citation": {
+            "$ref": "https://contracts.fel.dev/schemas/mcp-citation/v1"
+          },
+          "restated_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "duplicate_of": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    "next_cursor": {
+      "type": ["string", "null"],
+      "maxLength": 2048,
+      "description": "Opaque cursor for the next page, or null on the last page. The token is bound to this evidence_context and frozen filters and expires within 15 minutes. Expiring token bytes are exempt from byte-identical replay; evidence, context, ordering and page boundaries remain stable. Expired tokens return cursor_expired; a different context returns invalid_input."
+    }
+  }
+}
