@@ -370,7 +370,8 @@ def test_backfill_keeps_set_values_and_leaves_unverifiable_rows_null(
     corpus_conn: psycopg.Connection, sec: FixtureSecClient
 ) -> None:
     _ingest(corpus_conn, sec, [A], legacy=True)
-    # Stored filing date disagrees with the pinned index: not verifiable.
+    # Stored filing date disagrees with the pinned index: not verifiable, so
+    # it stays NULL, and the disagreement is reported for an operator.
     _ingest(corpus_conn, sec, [B], legacy=True, filed_on="2026-05-04")
     _ingest(corpus_conn, sec, [C])  # set at ingest, and correct
     # Set at ingest to something the index does not say: reported, never overwritten.
@@ -378,7 +379,7 @@ def test_backfill_keeps_set_values_and_leaves_unverifiable_rows_null(
     _ingest(corpus_conn, sec, [D], legacy=True)  # its index entry has no UTC offset
     index = _EditedIndex(sec, _offsetless_time_for_d)
     report = run_publication_backfill_job(corpus_conn, index, {"cik": CIK})
-    assert (report.updated, report.unresolved, report.conflicts) == (1, 2, (E,))
+    assert (report.updated, report.unresolved, report.conflicts) == (1, 2, (B, E))
     noon = _t("2026-05-06T12:00:00Z")
     assert _publication(corpus_conn) == {
         A: KNOWN[A],

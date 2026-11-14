@@ -8,8 +8,9 @@ transaction, using only the columns migration 0013 grants ``fel_worker``:
    them where they are still NULL. A row is left NULL when it cannot be
    verified: no acceptance time, an unusable one, or a stored filing date
    that disagrees with the index. A row that already holds values is never
-   written: equal values need no write, and different ones are reported as a
-   conflict for an operator, not overwritten. Company-facts snapshots are
+   written: equal values need no write. A stored filing date or publication
+   time that differs from the index is reported as a conflict for an
+   operator, never overwritten. Company-facts snapshots are
    excluded by form in both the read and the write.
 
 2. **Repair.** Recompute every filing fact's ``restates`` from the stored
@@ -64,7 +65,8 @@ class BackfillReport:
     unresolved: int = 0
     """The issuer's filings that still have no publication time."""
     conflicts: tuple[str, ...] = ()
-    """Accessions whose stored values differ from the index; left untouched."""
+    """Accessions whose stored filing date or publication time differs from
+    the index; left untouched."""
     repair: RepairReport = field(default_factory=RepairReport)
 
 
@@ -154,15 +156,16 @@ def _backfill_publication(
     conflicts: list[str] = []
     for row in rows:
         ref = refs[str(row["accession"])]
+        # Only a row ingested with this exact filing date is the filing the
+        # index describes; anything else is reported and stays as it is.
+        if row["filed_at"] != datetime.combine(ref.filed_on, time(0), tzinfo=UTC):
+            conflicts.append(ref.accession)
+            continue
         try:
             derived = derive_publication(ref.acceptance_datetime, ref.filed_on)
         except ValueError:
             continue  # an unusable acceptance time resolves nothing
-        # Only a row ingested with this exact filing date is the filing the
-        # index describes; anything else stays NULL rather than be guessed.
-        if derived.accepted_at is None or row["filed_at"] != datetime.combine(
-            ref.filed_on, time(0), tzinfo=UTC
-        ):
+        if derived.accepted_at is None:
             continue
         if row["accepted_at"] is not None:
             stored = Publication(
