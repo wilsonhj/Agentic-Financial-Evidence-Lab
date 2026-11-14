@@ -65,8 +65,8 @@ _COVERAGE: Final = " ".join(
 )
 
 
-def _integrity_error(reason: str, span_id: str) -> i.EvidenceReadError:
-    _LOG.error("evidence integrity failure: %s (span %s)", reason, span_id)
+def _integrity_error(reason: str, reference: str) -> i.EvidenceReadError:
+    _LOG.error("evidence integrity failure: %s (%s)", reason, reference)
     return i.EvidenceReadError(
         "integrity_error",
         "Stored evidence failed integrity verification and was not returned.",
@@ -144,8 +144,8 @@ def get_citation(
 
     span_id, start, end = str(row[0]), int(row[1]), int(row[2])
     if len(rows) > 1:
-        raise _integrity_error("more than one stored span answers the reference", span_id)
-    text = _verified_text(texts, str(row[7]), start, end, str(row[3]), span_id)
+        raise _integrity_error("more than one stored span answers the reference", f"span {span_id}")
+    text = _verified_text(texts, str(row[7]), start, end, str(row[3]), f"span {span_id}")
     form = None if row[11] is None else str(row[11])
     citation = i.Citation(
         span_id=span_id,
