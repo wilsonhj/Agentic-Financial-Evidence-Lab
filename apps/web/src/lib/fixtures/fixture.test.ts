@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 
 import { describe, expect, it } from "vitest";
 
-import { extractSpanText } from "../spans";
+import { codePointLength, extractSpanText } from "../spans";
 import { createAjv } from "../data/ajv-setup";
 import { fixtureEvidenceSource } from "../data/fixture-source";
 import {
@@ -75,7 +75,9 @@ describe("synthetic filing fixture", () => {
         .sort((a, b) => a.order - b.order);
       expect(sections.length).toBeGreaterThan(0);
       for (const section of sections) {
-        expect(section.end_char - section.start_char, section.id).toBe(section.content.length);
+        expect(section.end_char - section.start_char, section.id).toBe(
+          codePointLength(section.content),
+        );
       }
       // Sections tile the canonical text cumulatively.
       for (let i = 1; i < sections.length; i += 1) {
@@ -102,7 +104,7 @@ describe("synthetic filing fixture", () => {
     const sectionsById = new Map(fixtureSections.map((section) => [section.id, section]));
     for (const record of fixtureSpans) {
       const section = sectionsById.get(record.span.section_id)!;
-      expect(record.span.start_char, record.id).toBeGreaterThan(section.content.length);
+      expect(record.span.start_char, record.id).toBeGreaterThan(codePointLength(section.content));
       expect(record.span.start_char, record.id).toBeGreaterThanOrEqual(section.start_char);
       expect(record.span.end_char, record.id).toBeLessThanOrEqual(section.end_char);
       expect(record.span.end_char, record.id).toBeGreaterThan(record.span.start_char);
