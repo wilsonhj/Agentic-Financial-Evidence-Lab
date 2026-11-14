@@ -189,7 +189,8 @@ def test_both_verifiers_share_one_rule_implementation() -> None:
     assert MockCitationVerifier.verify is DeterministicRules.verify
     assert DeterministicCitationVerifier.verify is DeterministicRules.verify
     for verifier in (MockCitationVerifier, DeterministicCitationVerifier):
-        assert set(vars(verifier)) - {"__module__", "__doc__"} == {"name", "model", "version"}
+        own = {name for name in vars(verifier) if not name.startswith("__")}
+        assert own == {"name", "model", "version"}
 
 
 def test_promoted_trace_differs_from_the_mock_trace_only_in_identity_strings() -> None:

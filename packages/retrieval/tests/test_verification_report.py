@@ -304,11 +304,12 @@ def test_other_source_errors_are_not_reported_as_not_found() -> None:
     ],
 )
 def test_stale_hash_makes_an_identical_claim_unsupported(span: SpanEvidence) -> None:
-    payload = _build(span.text, {"a": span, "b": _span(span.text.replace("\ud800", "?"))})
+    spans = {"a": span, "b": _span(span.text.replace("\ud800", "?"))}
+    payload = _build(span.text, spans, quotes={"a": "absent"})
     assert payload["citations"][0] == {
         "index": 0,
-        "checks": {"visible": True, "hash_valid": False, "quote_found": None},
-        "reason": "hash_mismatch",
+        "checks": {"visible": True, "hash_valid": False, "quote_found": False},
+        "reason": "hash_mismatch",  # the first failed check, though the quote fails too
         "edge_status": "irrelevant",
         "numeric_checks": None,
     }
