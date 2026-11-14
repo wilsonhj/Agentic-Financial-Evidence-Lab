@@ -1,0 +1,32 @@
+{
+  "_note": "SYNTHETIC submissions payload with acceptanceDateTime for the publication-time tests (#393). CIK 9999997 and every filing here are fabricated; this is not real EDGAR data. Newest first, as EDGAR lists them. 000001 and 000002 share a filing date; 000003 was accepted on a Friday evening and dated the following Monday; 000004 has no acceptance time.",
+  "cik": "9999997",
+  "name": "Synthetic Example Corporation",
+  "filings": {
+    "recent": {
+      "accessionNumber": [
+        "0009999997-26-000004",
+        "0009999997-26-000003",
+        "0009999997-26-000005",
+        "0009999997-26-000002",
+        "0009999997-26-000001"
+      ],
+      "form": ["8-K", "10-Q/A", "8-K", "10-Q/A", "10-Q"],
+      "filingDate": ["2026-05-12", "2026-05-11", "2026-05-06", "2026-05-05", "2026-05-05"],
+      "acceptanceDateTime": [
+        null,
+        "2026-05-08T22:10:45.000Z",
+        "2026-05-06T13:00:00.000Z",
+        "2026-05-05T19:40:02.000Z",
+        "2026-05-05T12:05:11.000Z"
+      ],
+      "primaryDocument": [
+        "synx-8k-20260512.htm",
+        "synx-10qa2-20260331.htm",
+        "synx-8k-20260506.htm",
+        "synx-10qa1-20260331.htm",
+        "synx-10q-20260331.htm"
+      ]
+    }
+  }
+}

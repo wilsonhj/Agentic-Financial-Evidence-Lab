@@ -13,6 +13,8 @@ to the discovery handler so the whole chain runs off one queue.
 ``sec_company_facts`` jobs (issue #83) dispatch through a runtime
 ``isinstance`` narrow onto the workers-local ``CompanyFactsSecClient``
 capability; a bound client without it fails the job like an unknown kind.
+``sec_publication_backfill`` jobs (#393) set publication times on filings
+ingested before they were recorded and repair their restatement links.
 
 All collaborators (connection, storage, SEC client, sleep) are injected;
 tests drive the loop with ``max_iterations`` against mocks and a real
@@ -46,6 +48,10 @@ from fel_workers.extraction.persist import (
     RunAlreadyTerminal,
 )
 from fel_workers.extraction.telemetry import emit
+from fel_workers.ingestion.backfill import (
+    JOB_KIND_SEC_PUBLICATION_BACKFILL,
+    run_publication_backfill_job,
+)
 from fel_workers.ingestion.company_facts import (
     JOB_KIND_SEC_COMPANY_FACTS,
     CompanyFactsSecClient,
@@ -58,6 +64,7 @@ from fel_workers.ingestion.discovery import (
     run_discovery_job,
 )
 from fel_workers.ingestion.pipeline import IngestionOutcome, ingest_filing
+from fel_workers.ingestion.publication import UNKNOWN_PUBLICATION, derive_publication
 from fel_workers.storage import apply_worker_db_role
 
 __all__ = [
@@ -171,6 +178,19 @@ def handle_sec_filing_fetch(
         # Discovery records the EDGAR filing DATE; midnight UTC is the
         # earliest conservative instant for point-in-time filtering.
         filed_at = filed_at.replace(tzinfo=UTC)
+    # Publication time (ADR-0034, #393): the SEC acceptance string is carried
+    # uninterpreted from discovery and read by exactly one function. The rule
+    # compares calendar dates, so an instant in filed_on cannot stand in for
+    # the filing date. Unusable input fails before I/O and is never echoed;
+    # an absent acceptance time is stored as unknown, never estimated.
+    publication = UNKNOWN_PUBLICATION
+    acceptance = payload.get("acceptance_datetime")
+    if acceptance is not None and acceptance != "":
+        if not isinstance(acceptance, str) or not re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}", filed_on_text
+        ):
+            raise ValueError("acceptance time needs a string and a YYYY-MM-DD filing date")
+        publication = derive_publication(acceptance, filed_at.date())
     # These are explicit producer-supplied dates, never inferred from filing
     # time or document text. An incomplete/invalid pair must fail before I/O.
     period_start = period_end = None
@@ -202,6 +222,7 @@ def handle_sec_filing_fetch(
         filed_at=filed_at,
         period_start=period_start,
         period_end=period_end,
+        publication=publication,
     )
 
 
@@ -425,6 +446,7 @@ def run_worker(
             JOB_KIND_SEC_DISCOVERY,
             JOB_KIND_SEC_FILING_FETCH,
             JOB_KIND_SEC_COMPANY_FACTS,
+            JOB_KIND_SEC_PUBLICATION_BACKFILL,
             JOB_KIND_EXTRACTION_RUN,
         ):
             queue.fail(conn, job, f"unknown job kind {job.kind!r}")
@@ -513,6 +535,22 @@ def run_worker(
                     job.payload.get("cik"),
                     outcome.status,
                     outcome.reason_code or "ok",
+                )
+            elif job.kind == JOB_KIND_SEC_PUBLICATION_BACKFILL:
+                backfill = run_publication_backfill_job(conn, sec, job.payload)
+                # The changed versions are logged because a repair alters rows
+                # that corpus pins may expose (ADR-0034 Amendment 2).
+                log.info(
+                    "publication backfill cik=%s: %d set, %d unresolved, conflicts=%s;"
+                    " restates %d linked, %d relinked, %d cleared in versions %s",
+                    job.payload.get("cik"),
+                    backfill.updated,
+                    backfill.unresolved,
+                    list(backfill.conflicts),
+                    backfill.repair.linked,
+                    backfill.repair.relinked,
+                    backfill.repair.cleared,
+                    list(backfill.repair.document_version_ids),
                 )
             elif job.kind == JOB_KIND_EXTRACTION_RUN:
                 if extraction_provider is None:  # pragma: no cover — narrowed above

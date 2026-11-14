@@ -42,6 +42,10 @@ from psycopg.rows import dict_row
 from fel_providers.interfaces import StorageProvider
 from fel_workers.ingestion.errors import DivergentAccessionError, IngestError
 from fel_workers.ingestion.parser import PARSER_VERSION, parse_filing
+from fel_workers.ingestion.publication import UNKNOWN_PUBLICATION, Publication
+from fel_workers.ingestion.raw_store import (
+    COMPANY_FACTS_FORM as COMPANY_FACTS_FORM,
+)
 from fel_workers.ingestion.raw_store import (
     StoredDocument,
     content_address,
@@ -50,13 +54,12 @@ from fel_workers.ingestion.raw_store import (
 )
 from fel_workers.ingestion.xbrl import NORMALIZER_VERSION, PriorFact, normalize_facts
 
-# Form marker for SEC companyfacts snapshot documents (issue #83 ruling).
-# Defined here (not in company_facts.py, which imports this module) because
-# the restatement-target query below must exclude that channel: companyfacts
-# snapshots are point-in-time API aggregates, never restatement targets for
-# filing facts, and companyfacts normalization symmetrically passes
-# ``prior_facts=None`` — isolation in both directions.
-COMPANY_FACTS_FORM = "COMPANYFACTS"
+# COMPANY_FACTS_FORM is defined in raw_store (not in company_facts.py, which
+# imports this module) and re-exported above because the restatement-target
+# query below must exclude that channel: companyfacts snapshots are
+# point-in-time API aggregates, never restatement targets for filing facts,
+# and companyfacts normalization symmetrically passes ``prior_facts=None`` —
+# isolation in both directions.
 
 
 class PublishConflictError(Exception):
@@ -113,12 +116,22 @@ class IngestionOutcome:
 def _prior_canonical_facts(
     conn: psycopg.Connection[Any], *, entity_id: str, published_before: datetime
 ) -> dict[str, PriorFact]:
-    """Latest canonical fact per key from earlier published filings.
+    """Latest canonical fact per key from filings visible before an instant.
 
     Deterministic restatement targets: only the LATEST successfully parsed
     version of each prior document is consulted, and candidates are totally
-    ordered (published_at DESC, version created_at DESC, fact id) so reruns
-    always link ``restates`` to the same fact row.
+    ordered (visible instant DESC, accession DESC, fact id) so reruns always
+    link ``restates`` to the same fact row, whatever order the prior filings
+    were ingested in.
+
+    A filing is visible from ``GREATEST(COALESCE(public_at, published_at),
+    published_at)``, the expression migration 0012's candidate guard and the
+    read predicates use (ADR-0034 decision 4), so an original and an
+    amendment accepted later the same day are ordered (#393). A row with no
+    ``public_at`` falls back to its filing date at midnight UTC: two such
+    same-day filings still tie and do not link, and one sorts before every
+    second-precision filing of its day. ``backfill.repair_restatement_links``
+    applies the same ordering to rows already stored.
 
     Companyfacts snapshot documents (``form = 'COMPANYFACTS'``) are excluded
     (issue #83 ruling — cross-channel restatement isolation): filing
@@ -136,7 +149,7 @@ def _prior_canonical_facts(
             WHERE ff.entity_id = %s
               AND ff.duplicate_of IS NULL
               AND dv.status = 'parsed'
-              AND d.published_at < %s
+              AND GREATEST(COALESCE(d.public_at, d.published_at), d.published_at) < %s
               AND d.form IS DISTINCT FROM %s
               AND dv.id = (
                   SELECT dv2.id FROM document_versions dv2
@@ -144,7 +157,9 @@ def _prior_canonical_facts(
                   ORDER BY dv2.created_at DESC, dv2.id DESC
                   LIMIT 1
               )
-            ORDER BY ff.fact_key, d.published_at DESC, dv.created_at DESC, ff.id
+            ORDER BY ff.fact_key,
+                     GREATEST(COALESCE(d.public_at, d.published_at), d.published_at) DESC,
+                     d.accession DESC, ff.id
             """,
             (entity_id, published_before, COMPANY_FACTS_FORM),
         ).fetchall()
@@ -191,8 +206,12 @@ def ingest_filing(
     period_start: date | None = None,
     period_end: date | None = None,
     mime_type: str = "text/html",
+    publication: Publication = UNKNOWN_PUBLICATION,
 ) -> IngestionOutcome:
     """Run the full store -> parse -> normalize -> persist pipeline once.
+
+    ``publication`` is when the filing became public (``derive_publication``);
+    it is stored on a new document row and orders restatement targets.
 
     Idempotent: an identical (entity, accession, source, parser,
     normalizer) job is a no-op returning the recorded result — enforced by
@@ -254,9 +273,12 @@ def ingest_filing(
                 mime_type=mime_type,
                 content_hash=content_hash,
                 storage_key=storage_key,
+                publication=publication,
             )
             parsed = parse_filing(raw, id_seed=version_id, content_hash=content_hash)
-            prior = _prior_canonical_facts(conn, entity_id=entity_id, published_before=published_at)
+            # The instant the SQL visibility expression yields for this row.
+            visible_at = max(publication.public_at or published_at, published_at)
+            prior = _prior_canonical_facts(conn, entity_id=entity_id, published_before=visible_at)
             facts = normalize_facts(
                 parsed,
                 entity_id=entity_id,
