@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.fel.dev/schemas/mcp-verification-report/v1",
+  "x-fel-version": "1.0.0",
+  "title": "McpVerificationReport",
+  "description": "Deterministic verification of one claim against cited spans (design contract §7.2). Integrity checks run per citation in front of the unchanged deterministic rules. A reference that does not resolve within the visible evidence set (missing or hidden) yields exactly {index, checks: {visible: false, hash_valid: null, quote_found: null}, reason: not_found, edge_status: irrelevant} and nothing else, so hidden and nonexistent spans are byte-identical. Citations are named by request position only. claim_status never takes derived in v1, and semantic entailment is never evaluated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verifier",
+    "claim_status",
+    "citations",
+    "semantic_entailment",
+    "entailment_method",
+    "quote_normalization"
+  ],
+  "properties": {
+    "verifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9.-]*$",
+      "description": "Verifier identity, e.g. deterministic-v1. Equals evidence_context.verifier_version."
+    },
+    "claim_status": {
+      "type": "string",
+      "enum": ["supported", "partially_supported", "contradicted", "unsupported"],
+      "x-fel-open-enum": false,
+      "description": "classify_claim over the edges: any contradictory -> contradicted; all entailed -> supported; a supporting edge alongside others -> partially_supported; else unsupported. Any failed integrity check makes the claim unsupported."
+    },
+    "citations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/notVisible"
+          },
+          {
+            "$ref": "#/$defs/visible"
+          }
+        ]
+      }
+    },
+    "semantic_entailment": {
+      "const": "not_evaluated"
+    },
+    "entailment_method": {
+      "const": "lexical-coverage-v1"
+    },
+    "quote_normalization": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Versioned whitespace normalization applied before the quote_found check."
+    }
+  },
+  "$defs": {
+    "notVisible": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "checks", "reason", "edge_status"],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["visible", "hash_valid", "quote_found"],
+          "properties": {
+            "visible": {
+              "const": false
+            },
+            "hash_valid": {
+              "const": null
+            },
+            "quote_found": {
+              "const": null
+            }
+          }
+        },
+        "reason": {
+          "const": "not_found"
+        },
+        "edge_status": {
+          "const": "irrelevant"
+        }
+      }
+    },
+    "visible": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "checks", "reason", "edge_status", "numeric_checks"],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["visible", "hash_valid", "quote_found"],
+          "properties": {
+            "visible": {
+              "const": true
+            },
+            "hash_valid": {
+              "type": "boolean"
+            },
+            "quote_found": {
+              "type": ["boolean", "null"],
+              "description": "null when the request gave no quote."
+            }
+          }
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "enum": ["hash_mismatch", "quote_not_found", null],
+          "x-fel-open-enum": false,
+          "description": "The first failed integrity check, or null when all passed."
+        },
+        "edge_status": {
+          "type": "string",
+          "enum": ["entailed", "partial", "contradictory", "irrelevant"],
+          "x-fel-open-enum": false
+        },
+        "numeric_checks": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "unit", "period", "sign", "scale"],
+              "description": "Five orthogonal exact-Decimal numeric checks (verification.validate_numeric).",
+              "properties": {
+                "value": {
+                  "type": "boolean"
+                },
+                "unit": {
+                  "type": "boolean"
+                },
+                "period": {
+                  "type": "boolean"
+                },
+                "sign": {
+                  "type": "boolean"
+                },
+                "scale": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ],
+          "description": "Present when the request supplied numeric and the cited evidence has a numeric tuple; else null."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "checks": {
+                "properties": {
+                  "hash_valid": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "const": "hash_mismatch"
+              },
+              "edge_status": {
+                "const": "irrelevant"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "checks": {
+                "properties": {
+                  "hash_valid": {
+                    "const": true
+                  },
+                  "quote_found": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "const": "quote_not_found"
+              },
+              "edge_status": {
+                "const": "irrelevant"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "checks": {
+                "properties": {
+                  "hash_valid": {
+                    "const": true
+                  },
+                  "quote_found": {
+                    "enum": [true, null]
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "const": null
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -18,3 +18,8 @@ psycopg[binary,pool]>=3.2
 
 # Installed in deployments; initialization remains conditional on FEL_SENTRY_DSN.
 sentry-sdk[fastapi]>=2.69.1
+
+# MCP evidence server (ADR-0034 decision 8, #392). 2.x is the SDK line that
+# negotiates both MCP protocol eras; it brings httpx2 (a separate distribution
+# and import name), not a replacement for the pinned httpx.
+mcp>=2.3.0,<3

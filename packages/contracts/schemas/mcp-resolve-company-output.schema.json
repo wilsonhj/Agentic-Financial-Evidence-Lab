@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.fel.dev/schemas/mcp-resolve-company-output/v1",
+  "x-fel-version": "1.0.0",
+  "title": "McpResolveCompanyOutput",
+  "description": "Output of resolve_company. Coverage is computed under the visibility predicate: only filings visible at effective_as_of count. Every output carries evidence_context and coverage_note (design contract §7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence_context", "coverage_note", "matches"],
+  "properties": {
+    "evidence_context": {
+      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1",
+      "properties": {
+        "index_version_id": {
+          "type": "null",
+          "description": "This tool does not use an index. It stays null even if an index is published or rebuilt."
+        },
+        "verifier_version": {
+          "const": "deterministic-v1",
+          "description": "Fixed v1 context marker for non-verification tools; never the active or latest verifier."
+        }
+      }
+    },
+    "coverage_note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "issuers", "forms", "date_range"],
+      "description": "What was searched: issuers, forms and date range under the visibility predicate. An empty result reads 'no matching evidence in the visible indexed corpus', never a claim that a company did not disclose something (design contract §7).",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "issuers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Issuers in scope, as CIKs."
+        },
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "date_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+              "description": "Earliest visible public_at in scope, or null when nothing is visible."
+            },
+            "to": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+              "description": "Latest visible public_at in scope, never after effective_as_of; null when nothing is visible."
+            }
+          }
+        }
+      }
+    },
+    "matches": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["company", "coverage"],
+        "properties": {
+          "company": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["entity_id", "cik", "ticker", "name"],
+            "properties": {
+              "entity_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "cik": {
+                "type": "string",
+                "pattern": "^[0-9]{10}$"
+              },
+              "ticker": {
+                "type": ["string", "null"]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "coverage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "first_visible_filing",
+              "last_visible_filing",
+              "visible_forms",
+              "visible_filing_count"
+            ],
+            "properties": {
+              "first_visible_filing": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "accession",
+                      "form",
+                      "filing_date",
+                      "accepted_at",
+                      "public_at",
+                      "public_at_basis"
+                    ],
+                    "properties": {
+                      "accession": {
+                        "type": "string",
+                        "pattern": "^[0-9]{10}-[0-9]{2}-[0-9]{6}$"
+                      },
+                      "form": {
+                        "type": ["string", "null"]
+                      },
+                      "filing_date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "accepted_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+                      },
+                      "public_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+                        "description": "Instant the filing became public, the visibility instant (ADR-0034 decision 4, Amendment 1). Strict mode shows a document only when public_at <= effective_as_of."
+                      },
+                      "public_at_basis": {
+                        "type": ["string", "null"],
+                        "enum": ["acceptance", "next_session_open", null],
+                        "x-fel-open-enum": false,
+                        "description": "acceptance: public_at equals accepted_at. next_session_open: the filing date is later than the Eastern date of acceptance, so public_at is 06:00 America/New_York on the filing date, the earliest it could have been public."
+                      }
+                    }
+                  }
+                ]
+              },
+              "last_visible_filing": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "accession",
+                      "form",
+                      "filing_date",
+                      "accepted_at",
+                      "public_at",
+                      "public_at_basis"
+                    ],
+                    "properties": {
+                      "accession": {
+                        "type": "string",
+                        "pattern": "^[0-9]{10}-[0-9]{2}-[0-9]{6}$"
+                      },
+                      "form": {
+                        "type": ["string", "null"]
+                      },
+                      "filing_date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "accepted_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+                      },
+                      "public_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+                        "description": "Instant the filing became public, the visibility instant (ADR-0034 decision 4, Amendment 1). Strict mode shows a document only when public_at <= effective_as_of."
+                      },
+                      "public_at_basis": {
+                        "type": ["string", "null"],
+                        "enum": ["acceptance", "next_session_open", null],
+                        "x-fel-open-enum": false,
+                        "description": "acceptance: public_at equals accepted_at. next_session_open: the filing date is later than the Eastern date of acceptance, so public_at is 06:00 America/New_York on the filing date, the earliest it could have been public."
+                      }
+                    }
+                  }
+                ]
+              },
+              "visible_forms": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "visible_filing_count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

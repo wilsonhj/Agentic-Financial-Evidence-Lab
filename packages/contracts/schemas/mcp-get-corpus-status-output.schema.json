@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.fel.dev/schemas/mcp-get-corpus-status-output/v1",
+  "x-fel-version": "1.0.0",
+  "title": "McpGetCorpusStatusOutput",
+  "description": "Output of get_corpus_status: coverage, coverage_note and evidence_context replay byte-identically. live_status describes the server at request time and is labeled replayable: false. Expiring cursor token bytes in paginated tools are also exempt from replay (design contract §6.3, §12.4). An explicit available index pin is validated and echoed; an omitted index pin stays null, independent of active indexes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence_context", "coverage_note", "coverage", "live_status"],
+  "properties": {
+    "evidence_context": {
+      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1",
+      "properties": {
+        "verifier_version": {
+          "const": "deterministic-v1",
+          "description": "Fixed v1 context marker for non-verification tools; never the active or latest verifier."
+        }
+      }
+    },
+    "coverage_note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "issuers", "forms", "date_range"],
+      "description": "What was searched: issuers, forms and date range under the visibility predicate. An empty result reads 'no matching evidence in the visible indexed corpus', never a claim that a company did not disclose something (design contract §7).",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "issuers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Issuers in scope, as CIKs."
+        },
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "date_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+              "description": "Earliest visible public_at in scope, or null when nothing is visible."
+            },
+            "to": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+              "description": "Latest visible public_at in scope, never after effective_as_of; null when nothing is visible."
+            }
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effective_as_of", "issuers", "date_range", "timestamp_precision_mix"],
+      "properties": {
+        "effective_as_of": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+          "description": "Equals evidence_context.effective_as_of."
+        },
+        "issuers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "company",
+              "visible_filing_count",
+              "first_filing_date",
+              "last_filing_date"
+            ],
+            "properties": {
+              "company": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["entity_id", "cik", "ticker", "name"],
+                "properties": {
+                  "entity_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "cik": {
+                    "type": "string",
+                    "pattern": "^[0-9]{10}$"
+                  },
+                  "ticker": {
+                    "type": ["string", "null"]
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "visible_filing_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "first_filing_date": {
+                "type": ["string", "null"],
+                "format": "date"
+              },
+              "last_filing_date": {
+                "type": ["string", "null"],
+                "format": "date"
+              }
+            }
+          }
+        },
+        "date_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+            },
+            "to": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+            }
+          }
+        },
+        "timestamp_precision_mix": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["second", "date"],
+          "description": "Visible document counts by stored documents.timestamp_precision.",
+          "properties": {
+            "second": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "date": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "live_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replayable",
+        "observed_at",
+        "active_corpus_version_id",
+        "retained_corpus_versions",
+        "active_index_version_id",
+        "retained_index_versions",
+        "verifier_versions",
+        "known_limitations"
+      ],
+      "properties": {
+        "replayable": {
+          "const": false
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        "active_corpus_version_id": {
+          "type": ["string", "null"],
+          "format": "uuid"
+        },
+        "retained_corpus_versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status", "published_at"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "published_at": {
+                "type": ["string", "null"],
+                "format": "date-time",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+              }
+            }
+          }
+        },
+        "active_index_version_id": {
+          "type": ["string", "null"],
+          "format": "uuid"
+        },
+        "retained_index_versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status", "published_at", "corpus_version_id"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "published_at": {
+                "type": ["string", "null"],
+                "format": "date-time",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+              },
+              "corpus_version_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        },
+        "verifier_versions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "known_limitations": {
+          "type": "array",
+          "description": "Limitations stated at request time. Always includes the two residual uncertainties of ADR-0034 Amendment 1: next_session_open is the earliest a filing could have been public, and intraday dissemination delay is treated as zero.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "text"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "x-fel-open-enum": true
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            }
+          },
+          "allOf": [
+            {
+              "contains": {
+                "properties": {
+                  "code": {
+                    "const": "public_at_next_session_open_is_earliest"
+                  }
+                }
+              }
+            },
+            {
+              "contains": {
+                "properties": {
+                  "code": {
+                    "const": "intraday_dissemination_delay_assumed_zero"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
