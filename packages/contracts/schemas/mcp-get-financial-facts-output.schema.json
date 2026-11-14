@@ -9,7 +9,17 @@
   "required": ["evidence_context", "coverage_note", "facts", "next_cursor"],
   "properties": {
     "evidence_context": {
-      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1"
+      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1",
+      "properties": {
+        "index_version_id": {
+          "type": "null",
+          "description": "This tool does not use an index. It stays null even if an index is published or rebuilt."
+        },
+        "verifier_version": {
+          "const": "deterministic-v1",
+          "description": "Fixed v1 context marker for non-verification tools; never the active or latest verifier."
+        }
+      }
     },
     "coverage_note": {
       "type": "object",
@@ -154,7 +164,7 @@
     "next_cursor": {
       "type": ["string", "null"],
       "maxLength": 2048,
-      "description": "Opaque cursor for the next page, or null on the last page."
+      "description": "Opaque cursor for the next page, or null on the last page. The token is bound to this evidence_context and frozen filters and expires within 15 minutes. Expiring token bytes are exempt from byte-identical replay; evidence, context, ordering and page boundaries remain stable. Expired tokens return cursor_expired; a different context returns invalid_input."
     }
   }
 }

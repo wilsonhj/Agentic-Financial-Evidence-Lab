@@ -3,13 +3,19 @@
   "$id": "https://contracts.fel.dev/schemas/mcp-get-corpus-status-output/v1",
   "x-fel-version": "1.0.0",
   "title": "McpGetCorpusStatusOutput",
-  "description": "Output of get_corpus_status: two separate objects. coverage is bound to evidence_context and replays byte-identically. live_status describes the server at request time, is labeled replayable: false and is the one exemption from the replay guarantee (design contract §6.3, §12.4). Every output carries evidence_context and coverage_note (design contract §7).",
+  "description": "Output of get_corpus_status: coverage, coverage_note and evidence_context replay byte-identically. live_status describes the server at request time and is labeled replayable: false. Expiring cursor token bytes in paginated tools are also exempt from replay (design contract §6.3, §12.4). An explicit available index pin is validated and echoed; an omitted index pin stays null, independent of active indexes.",
   "type": "object",
   "additionalProperties": false,
   "required": ["evidence_context", "coverage_note", "coverage", "live_status"],
   "properties": {
     "evidence_context": {
-      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1"
+      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1",
+      "properties": {
+        "verifier_version": {
+          "const": "deterministic-v1",
+          "description": "Fixed v1 context marker for non-verification tools; never the active or latest verifier."
+        }
+      }
     },
     "coverage_note": {
       "type": "object",

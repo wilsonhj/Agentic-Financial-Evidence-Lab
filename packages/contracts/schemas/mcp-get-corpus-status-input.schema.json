@@ -37,7 +37,7 @@
     "index_version_id": {
       "type": "string",
       "format": "uuid",
-      "description": "Retrieval index version to search. Omitted resolves to the active version; an unknown, unpublished or retired pin returns pin_unavailable, never a fallback."
+      "description": "Optional retrieval index pin to validate and echo in evidence_context. Omitted stays null, independent of active indexes. An unknown, unpublished, retired or corpus-incompatible explicit pin returns pin_unavailable, never a fallback. Current index inventory belongs only to live_status."
     }
   }
 }

@@ -182,6 +182,7 @@ def _live_status(raw: dict[str, Any]) -> i.LiveStatus:
 CONTEXT = _context(_load("fixtures", "mcp-evidence-context"))
 NOTE = _coverage_note(_load("fixtures", "mcp-resolve-company-output")["coverage_note"])
 CITATION = _citation(_load("fixtures", "mcp-citation"))
+SEARCH_CONTEXT = _context(_load("fixtures", "mcp-search-filings-output")["evidence_context"])
 
 
 # ---------------------------------------------------------------------------
@@ -556,8 +557,44 @@ def test_error_rules_mirror_mcp_error_schema() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("tool", ["resolve-company", "get-citation"])
+def test_replay_fixture_corpus_pin_passes_through_context_request(tool: str) -> None:
+    raw = _load("fixtures", f"mcp-{tool}-input")
+    output = _load("fixtures", f"mcp-{tool}-output")
+    expected = _context(output["evidence_context"])
+    request = i.ContextRequest(
+        request_time=datetime(2026, 11, 10, tzinfo=UTC),
+        as_of=_day(raw["as_of"]) if len(raw["as_of"]) == 10 else _instant(raw["as_of"]),
+        corpus_version_id=raw["corpus_version_id"],
+    )
+    assert request.corpus_version_id == expected.corpus_version_id
+    assert request.index_version_id is None
+    assert request.require_index is False
+    assert expected.index_version_id is None
+    assert expected.verifier_version == "deterministic-v1"
+
+
+def test_search_index_requirement_is_an_internal_context_signal() -> None:
+    now = datetime(2026, 11, 10, tzinfo=UTC)
+    assert i.ContextRequest(request_time=now).require_index is False
+    search = i.ContextRequest(request_time=now, require_index=True)
+    assert search.require_index is True
+    assert search.index_version_id is None
+    for tool in (
+        "resolve-company",
+        "list-filings",
+        "search-filings",
+        "read-filing",
+        "get-citation",
+        "get-financial-facts",
+        "verify-claim",
+        "get-corpus-status",
+    ):
+        assert "require_index" not in _load("schemas", f"mcp-{tool}-input")["properties"]
+
+
 class FakeEvidenceReadService:
-    """Minimal in-memory service: one visible citation, nothing else."""
+    """Protocol example with one corpus/index fixture, not a runtime service."""
 
     def resolve_context(self, request: i.ContextRequest) -> i.EvidenceContext:
         if request.corpus_version_id not in (None, CONTEXT.corpus_version_id):
@@ -568,7 +605,18 @@ class FakeEvidenceReadService:
                 recovery="Omit the pin.",
                 field="corpus_version_id",
             )
-        return CONTEXT
+        if request.index_version_id not in (None, SEARCH_CONTEXT.index_version_id):
+            raise i.EvidenceReadError(
+                "pin_unavailable",
+                "Index version is not available.",
+                retryable=False,
+                recovery="Omit the pin.",
+                field="index_version_id",
+            )
+        index = request.index_version_id
+        if request.require_index and index is None:
+            index = SEARCH_CONTEXT.index_version_id
+        return dataclasses.replace(CONTEXT, index_version_id=index)
 
     def resolve_company(
         self, request: i.ResolveCompanyRequest, context: i.EvidenceContext
@@ -621,6 +669,51 @@ class FakeReportBuilder:
         return i.VerifyClaimResult(context, NOTE, report)
 
 
+@pytest.mark.parametrize(
+    ("require_index", "explicit", "expected"),
+    [
+        (False, None, None),
+        (True, None, SEARCH_CONTEXT.index_version_id),
+        (False, SEARCH_CONTEXT.index_version_id, SEARCH_CONTEXT.index_version_id),
+        (True, SEARCH_CONTEXT.index_version_id, SEARCH_CONTEXT.index_version_id),
+    ],
+)
+def test_fake_context_preserves_index_contract(
+    require_index: bool, explicit: str | None, expected: str | None
+) -> None:
+    """The in-memory protocol example must honor the declared index shapes."""
+    assert SEARCH_CONTEXT.index_version_id is not None
+    service = FakeEvidenceReadService()
+    context = service.resolve_context(
+        i.ContextRequest(
+            request_time=datetime(2026, 11, 10, tzinfo=UTC),
+            index_version_id=explicit,
+            require_index=require_index,
+        )
+    )
+    assert context.index_version_id == expected
+    if require_index:
+        search = service.search(i.SearchRequest("revenue", 5), context)
+        assert search.evidence_context.index_version_id == expected
+        assert search.evidence_context.index_version_id is not None
+    else:
+        status = service.corpus_coverage(context)
+        assert status.evidence_context.index_version_id == expected
+
+
+def test_fake_context_rejects_unavailable_explicit_index() -> None:
+    service = FakeEvidenceReadService()
+    with pytest.raises(i.EvidenceReadError) as pin:
+        service.resolve_context(
+            i.ContextRequest(
+                request_time=datetime(2026, 11, 10, tzinfo=UTC),
+                index_version_id="00000000-0000-4000-8000-00000000dead",
+            )
+        )
+    assert pin.value.code == "pin_unavailable"
+    assert pin.value.field == "index_version_id"
+
+
 def test_fakes_satisfy_the_protocols() -> None:
     service: i.EvidenceReadService = FakeEvidenceReadService()
     builder: i.VerificationReportBuilder = FakeReportBuilder()
@@ -635,7 +728,12 @@ def test_fakes_satisfy_the_protocols() -> None:
     assert pin.value.code == "pin_unavailable"
     assert service.resolve_company(i.ResolveCompanyRequest("CRM"), context).matches == ()
     assert service.list_filings(i.ListFilingsRequest("CRM", 10), context).filings == ()
-    assert service.search(i.SearchRequest("revenue", 5), context).results == ()
+    assert context.index_version_id is None
+    search_context = service.resolve_context(i.ContextRequest(request_time=now, require_index=True))
+    search = service.search(i.SearchRequest("revenue", 5), search_context)
+    assert search.results == ()
+    assert search.evidence_context.index_version_id == SEARCH_CONTEXT.index_version_id
+    assert search.evidence_context.index_version_id is not None
     assert service.get_facts(i.FactsRequest("CRM", 10), context).facts == ()
     assert service.get_citation(i.SpanIdRef(CITATION.span_id), context).hash_verified is True
     hidden = i.SpanIdRef("00000000-0000-4000-8000-00000000dead")

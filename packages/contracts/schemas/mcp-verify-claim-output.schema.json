@@ -9,7 +9,13 @@
   "required": ["evidence_context", "coverage_note", "report"],
   "properties": {
     "evidence_context": {
-      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1"
+      "$ref": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1",
+      "properties": {
+        "index_version_id": {
+          "type": "null",
+          "description": "This tool does not use an index. It stays null even if an index is published or rebuilt."
+        }
+      }
     },
     "coverage_note": {
       "type": "object",

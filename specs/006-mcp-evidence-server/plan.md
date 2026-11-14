@@ -14,9 +14,10 @@
 ## Summary
 
 Nine packages take the repository from no public surface to a hosted pilot.
-One contract package freezes every shared-path change. Seven packages then
-run in parallel on mocks and fixtures. The ninth, the hosted pilot, waits on
-infrastructure.
+One contract package plus the #404/#405 corrections establish the frozen
+interfaces and backfill permissions. Seven runtime/acceptance packages then
+run in three implementation lanes on mocks and fixtures. The hosted pilot
+waits on infrastructure.
 
 ADR-0034 was accepted on 2026-11-10, so the offline packages may be
 dispatched in wave order. The hosted pilot stays blocked.
@@ -40,7 +41,8 @@ four new schema families. All in `MCP-CONTRACT`.
 except `MCP-HOSTED-PILOT`. No package may make a network call to sec.gov or
 a paid provider.
 
-**Scale/Scope**: 9 packages, 9 issues, 4 waves.
+**Scale/Scope**: nine original packages and two bounded prerequisite corrections;
+three implementation lanes plus the coordinator.
 
 ## Constitution Check
 
@@ -75,19 +77,32 @@ a paid provider.
 | Wave | Packages | Gate to enter |
 |---|---|---|
 | 0. Decision | none | Done: ADR-0034 accepted on 2026-11-10 |
-| 1. Contract | `MCP-CONTRACT` (#392) | Wave 0 |
-| 2. Lanes | `MCP-INGEST-ACCEPTED-AT` (#393), `MCP-CUTOFF-PREDICATES` (#394), `MCP-EVIDENCE-READ` (#395), `MCP-VERIFIER` (#396), `MCP-SERVER` (#397), `MCP-PLUGIN` (#398), `MCP-EVALS` (#399) | #392 merged |
-| 3. Integration | #397 against real #395 and #396; #399 full runs | #395, #396 merged |
+| 1. Contract | `MCP-CONTRACT` (#392), `MCP-REPLAY-CONTRACT` (#404), `MCP-BACKFILL-PRIVILEGES` (#405) | Wave 0; corrections may be authored on the open #402 head |
+| 2. Lanes | `MCP-INGEST-ACCEPTED-AT` (#393), `MCP-CUTOFF-PREDICATES` (#394), `MCP-EVIDENCE-READ` (#395), `MCP-VERIFIER` (#396), `MCP-SERVER` (#397), `MCP-PLUGIN` (#398), `MCP-EVALS` (#399) | #392 and #404 merged; #393 also needs #405 |
+| 3. Integration | #397 against real #395 and #396; #399 full runs | #395, #396 merged; #399 full runs also need #397 |
 | 4. Hosted pilot | `MCP-HOSTED-PILOT` (#400) | Wave 3 green; #177; hosting; budget |
 
-Wave 2 admits seven concurrent packages. That is the maximum safe
-parallelism: every allowed path below is disjoint.
+Wave 2 admits at most three implementers plus the coordinator (ADR-0034
+Amendment 2 and ADR-0017). Use the following refill order:
+
+- Lane A: #395, continuously staffed through service integration.
+- Lane B: #396, then #394, then #397. Finish #394 before mount/test edits.
+- Lane C: #393, then #399; use #398's registered content work while #399
+  awaits integrated endpoints. #398's transcript also waits for the server.
+
+A package under review or paused for integration retains its path reservation
+until the coordinator explicitly releases it. Do not count paused ownership as
+permission to exceed the package cap. No lane status becomes ready merely
+because #402 merged: #404 is a separate required dependency. #405 requires
+#404's authorization record before merge and gates only #393.
 
 ## Path exclusivity
 
 | Package | Owns |
 |---|---|
 | #392 | `db/migrations/**`, `packages/contracts/**`, lockfiles and dependency tables, `packages/retrieval/fel_retrieval/evidence/interfaces.py` |
+| #404 | Replay schemas/interface and the named ADR, design, subordinate spec and registry corrections |
+| #405 | New backfill-privilege migration, its SQL harness and migration README |
 | #393 | `workers/src/fel_workers/ingestion/**`, `workers/src/fel_workers/consumer.py`, `workers/tests/**` |
 | #394 | `apps/api/app/corpus.py`, `apps/api/app/reader.py`, `apps/api/tests/**`, `packages/retrieval/fel_retrieval/lanes.py`, lane tests |
 | #395 | `packages/retrieval/fel_retrieval/evidence/**` except `interfaces.py`, `packages/retrieval/tests/evidence/**` |
@@ -102,16 +117,20 @@ Rules:
 - #394, #395 and #396 share `packages/retrieval` but no file. #395 imports
   `lanes.py` and must not edit it.
 - #394 and #397 both touch `apps/api`. #394 owns two modules and the test
-  tree; #397 owns the mount, one setting and one named test file. #397 must
-  rebase on #394 if both are open.
+  tree; #397 owns the mount, one setting and one named test file. Serialize
+  their implementation and rebase #397 on merged #394.
 - `evals/**` is claimed by other registered packages (#62, #67, #68, #108,
-  #177, #201). #399 is confined to the new `evals/mcp/` subtree.
+  #177, #201). #399 owns the new `evals/mcp/` subtree plus the exact pytest
+  collection entry when its tests land. Schedule that root-config hunk
+  separately from #397 scaffold additions; do not register an absent path.
 - `workers/tests/**` is also claimed by #62 and #66. #393 must not run
   concurrently with either; both are blocked today.
 
 ## Review
 
 Each pull request is reviewed by a different agent vendor than its author,
-and by the integration lead. The packages are sized so that one lane fits
-one reviewable pull request. `MCP-EVIDENCE-READ` is the largest and may
-split into reads and search as stacked pull requests.
+and by the integration lead. Keep each change independently reviewable;
+large lanes may need bounded PRs. OpenAI model variants do not count as
+different vendors. Hold new OpenAI-authored changes for non-OpenAI review
+and lead approval even when internal checks pass. `MCP-EVIDENCE-READ` is
+the largest and may split into reads and search as stacked pull requests.

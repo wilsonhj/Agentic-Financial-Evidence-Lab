@@ -3,7 +3,7 @@
   "$id": "https://contracts.fel.dev/schemas/mcp-evidence-context/v1",
   "x-fel-version": "1.0.0",
   "title": "McpEvidenceContext",
-  "description": "The resolved point-in-time context of one MCP response (design contract §6.3): cutoff, timestamp mode, corpus/index/parser/verifier pins, the selected document version where one applies, and a cursor's frozen filters. Optional members are required-and-nullable so the shape is stable for byte-identical replay. A client keeps one context per research workflow by passing effective_as_of and the pins back as request inputs.",
+  "description": "The resolved point-in-time context of one MCP response (design contract §6.3): cutoff, timestamp mode, corpus/index/parser/verifier pins, the selected document version where one applies, and frozen cursor filters. The context and evidence replay byte-identically when the caller supplies effective_as_of and applicable pins. The only exemptions are live_status and expiring cursor token bytes, not context, evidence, ordering or page boundaries.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -40,7 +40,7 @@
     "index_version_id": {
       "type": ["string", "null"],
       "format": "uuid",
-      "description": "Resolved retrieval index pin; null only when no published index exists for the corpus pin."
+      "description": "The resolved index used by search_filings. Null for tools that do not use an index, independent of index publication or rebuild. get_corpus_status validates and echoes an explicitly supplied available index pin; omitted stays null. Unknown, unpublished, retired or incompatible explicit pins return pin_unavailable, never a fallback."
     },
     "parser_version": {
       "type": ["string", "null"],
@@ -49,7 +49,8 @@
     "verifier_version": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^[a-z0-9][a-z0-9.-]*$"
+      "pattern": "^[a-z0-9][a-z0-9.-]*$",
+      "description": "Fixed deterministic-v1 for every non-verification tool. verify_claim resolves its requested verifier pin, or deterministic-v1 when omitted; unavailable pins return pin_unavailable, never a fallback or latest verifier."
     },
     "document_version_id": {
       "type": ["string", "null"],

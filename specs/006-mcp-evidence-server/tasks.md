@@ -32,6 +32,15 @@ Requirement IDs refer to [`spec.md`](spec.md) §3. Section references such as
   stack.
 - `MCP-107` Publish the evidence interface that the adapter calls.
 
+## Prerequisite corrections (#404, #405)
+
+#404 aligns the replay inputs, stable context fields and cursor/live-status
+exceptions under ADR-0034 Amendment 2, with schema/interface regressions and
+bounded dispatch registration. #405 adds only the backfill column grants in a
+new migration after `0012`, with actual-role positive and denial tests. These
+are corrections to the contract wave, not new canonical tasks or completion
+claims. All runtime lanes depend on #404; #393 also depends on #405.
+
 ## MCP-INGEST-ACCEPTED-AT (#393)
 
 - `MCP-201` Read `acceptanceDateTime` at discovery and store it at fetch
@@ -40,9 +49,10 @@ Requirement IDs refer to [`spec.md`](spec.md) §3. Section references such as
   in one function, pinned by fixtures for same-day, after-hours, weekend,
   after-hours Form 4 and daylight-saving cases.
 - `MCP-203` Add an idempotent backfill job that leaves unresolved records
-  NULL.
+  NULL; do not touch company-facts snapshots. Finish before exposing affected
+  corpus pins as replayable.
 - `MCP-204` Order restatement targets by publication time, and test a
-  same-day original and amendment.
+  same-day original and amendment; repair existing missed links idempotently.
 
 ## MCP-CUTOFF-PREDICATES (#394)
 
@@ -57,7 +67,8 @@ Requirement IDs refer to [`spec.md`](spec.md) §3. Section references such as
 - `MCP-401` Implement strict visibility and the single hidden-or-missing
   code path (`FR-MCP-003`, `004`).
 - `MCP-402` Implement context resolution, pins, unavailable-pin errors and
-  context-bound cursors (`FR-MCP-006`).
+  context-bound expiring cursors (`FR-MCP-006`); keep issuance entropy out of
+  the stable context and preserve logical page boundaries.
 - `MCP-403` Implement the company resolver and filing listing with
   cutoff-filtered coverage (`FR-MCP-002`).
 - `MCP-404` Implement bounded section reads and citation reads with
@@ -108,8 +119,11 @@ Requirement IDs refer to [`spec.md`](spec.md) §3. Section references such as
 - `MCP-802` Byte-identical hidden-versus-missing verification reports.
 - `MCP-803` Citation round-trip and link-scope checks.
 - `MCP-804` Determinism and replay across a corpus publish and index
-  rebuild.
+  rebuild, excluding only cursor token bytes and `live_status`; verify
+  cursor nullness, context binding and expiry independently.
 - `MCP-805` Error-contract and request-limit scenarios.
+- Register `evals/mcp` in root pytest collection when the subtree lands and
+  prove a failing MCP test fails the normal CI invocation.
 - `MCP-806` Retrieval baseline over the 65-question seed, reported and not
   gated.
 

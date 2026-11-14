@@ -127,7 +127,7 @@
       "minLength": 1,
       "maxLength": 64,
       "pattern": "^[a-z0-9][a-z0-9.-]*$",
-      "description": "Verifier version to apply. Omitted resolves to the active verifier; an unknown or retired version returns pin_unavailable."
+      "description": "Verifier version to use. Omitted resolves to deterministic-v1, never a latest verifier. An unavailable pin returns pin_unavailable, never a fallback."
     }
   }
 }
