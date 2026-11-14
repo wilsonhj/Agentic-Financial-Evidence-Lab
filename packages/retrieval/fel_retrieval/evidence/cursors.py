@@ -39,7 +39,12 @@ def _unb64(text: str) -> bytes:
 
 
 def _binding(context: i.EvidenceContext, scope: Mapping[str, Any]) -> str:
-    """Digest of the context and the tool's filters a cursor belongs to."""
+    """Digest of the context and the tool's filters a cursor belongs to.
+
+    The scope must name its tool, so a cursor cannot be replayed on another tool.
+    """
+    if not isinstance(scope.get("tool"), str):
+        raise ValueError("a cursor scope must name its tool")
     bound = dataclasses.asdict(context)
     bound["effective_as_of"] = context.effective_as_of.astimezone(UTC).isoformat()
     canonical = json.dumps({"context": bound, "scope": scope}, sort_keys=True)

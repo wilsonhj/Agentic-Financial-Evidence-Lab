@@ -16,6 +16,7 @@ from fel_retrieval.evidence.filings import list_filings, resolve_company
 CUTOFF = datetime(2024, 3, 6, 21, 14, 9, tzinfo=UTC)
 MICRO = timedelta(microseconds=1)
 HOUR = timedelta(hours=1)
+MAX_PAGES = 40  # more than any listing here: 14 visible filings at one per page
 CURSORS = CursorCodec(b"k" * 32, lambda: datetime(2026, 11, 14, tzinfo=UTC))
 
 
@@ -24,10 +25,13 @@ def _company() -> i.Company:
 
 
 def _pages(conn: Any, context: Any, company: i.Company, limit: int, forms: Any) -> list[Any]:
-    """Every page of the listing, checking that only the last page is short."""
+    """Every page of the listing, checking that only the last page is short.
+
+    Bounded, so a keyset regression that repeats a page fails instead of hanging.
+    """
     filings: list[Any] = []
     cursor = None
-    while True:
+    for _ in range(MAX_PAGES):
         request = i.ListFilingsRequest(company="tst", limit=limit, forms=forms, cursor=cursor)
         page = list_filings(
             conn, request, context, companies={company.entity_id: company}, cursors=CURSORS
@@ -37,6 +41,7 @@ def _pages(conn: Any, context: Any, company: i.Company, limit: int, forms: Any) 
         if cursor is None:
             return filings
         assert len(page.filings) == limit
+    pytest.fail(f"the listing did not end within {MAX_PAGES} pages")
 
 
 def test_property_pages_and_coverage_hold_exactly_the_visible_filings(

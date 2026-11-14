@@ -135,6 +135,16 @@ def test_forged_and_malformed_tokens_are_invalid_input(context: i.EvidenceContex
             codec.decode(candidate, context, SCOPE)
 
 
+def test_a_scope_must_name_its_tool(context: i.EvidenceContext) -> None:
+    codec = CursorCodec(KEY, Clock())
+    token = codec.encode(context, SCOPE, POSITION)
+    untagged = {key: value for key, value in SCOPE.items() if key != "tool"}
+    with pytest.raises(ValueError, match="name its tool"):
+        codec.encode(context, untagged, POSITION)
+    with pytest.raises(ValueError, match="name its tool"):
+        codec.decode(token, context, untagged)
+
+
 def test_the_codec_refuses_unsafe_configuration(context: i.EvidenceContext) -> None:
     with pytest.raises(ValueError, match="32 bytes"):
         CursorCodec(b"short", Clock())
