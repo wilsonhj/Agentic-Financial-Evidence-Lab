@@ -18,6 +18,7 @@ import json
 import os
 import pathlib
 import uuid
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
@@ -189,20 +190,29 @@ def _seed_company_facts_snapshot(conn: psycopg.Connection) -> None:
     )
 
 
-class _NewestOnly:
-    """The pinned index cut to its newest entries: a partial first pass."""
+class _EditedIndex:
+    """The pinned transport with its submissions index edited for one test."""
 
-    def __init__(self, inner: FixtureSecClient, keep: int) -> None:
-        self._inner, self._keep = inner, keep
+    def __init__(self, inner: FixtureSecClient, edit: Callable[[dict[str, list[Any]]], None]):
+        self._inner, self._edit = inner, edit
 
     def submissions(self, cik: str) -> dict[str, object]:
         payload: Any = self._inner.submissions(cik)
-        recent = payload["filings"]["recent"]
-        payload["filings"]["recent"] = {name: rows[: self._keep] for name, rows in recent.items()}
+        self._edit(payload["filings"]["recent"])
         return payload
 
     def fetch_document(self, url: str) -> bytes:
         return self._inner.fetch_document(url)
+
+
+def _newest_two_only(recent: dict[str, list[Any]]) -> None:
+    """A partial first pass: only D (no acceptance time) and C are listed."""
+    for rows in recent.values():
+        del rows[2:]
+
+
+def _offsetless_time_for_d(recent: dict[str, list[Any]]) -> None:
+    recent["acceptanceDateTime"][0] = "2026-05-12T09:00:00"
 
 
 def test_fetch_stores_acceptance_and_derived_publication_time(
@@ -230,16 +240,19 @@ def test_fetch_stores_acceptance_and_derived_publication_time(
     ],
 )
 def test_unusable_acceptance_input_fails_before_fetch_without_echo(
-    corpus_conn: psycopg.Connection, sec: FixtureSecClient, override: dict[str, Any]
+    corpus_conn: psycopg.Connection,
+    sec: FixtureSecClient,
+    override: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class NoFetch(_NewestOnly):
-        def fetch_document(self, url: str) -> bytes:
-            pytest.fail("an unusable acceptance time reached the transport")
+    def no_fetch(url: str) -> bytes:
+        pytest.fail("an unusable acceptance time reached the transport")
 
+    monkeypatch.setattr(sec, "fetch_document", no_fetch)
     payloads = {ref.accession: fetch_job_payload(ref) for ref in discover_filings(sec, CIK)}
     with pytest.raises(ValueError) as excinfo:
         handle_sec_filing_fetch(
-            corpus_conn, MockStorageProvider(), NoFetch(sec, 5), {**payloads[A], **override}
+            corpus_conn, MockStorageProvider(), sec, {**payloads[A], **override}
         )
     assert "2026" not in str(excinfo.value), "the untrusted payload was echoed"
     assert corpus_conn.execute("SELECT count(*) FROM documents").fetchone() == (0,)
@@ -282,7 +295,9 @@ def test_backfill_as_fel_worker_fills_repairs_and_never_rewrites(
     assert _links(corpus_conn) == [(C, B, 2)]
     assert set(_publication(corpus_conn).values()) == {UNKNOWN}
 
-    first = run_publication_backfill_job(corpus_conn, _NewestOnly(sec, 2), {"cik": CIK})
+    first = run_publication_backfill_job(
+        corpus_conn, _EditedIndex(sec, _newest_two_only), {"cik": CIK}
+    )
     assert (first.updated, first.conflicts, first.repair) == (1, (), RepairReport())
     after_first = _row_versions(corpus_conn)
 
@@ -321,13 +336,16 @@ def test_backfill_keeps_set_values_and_leaves_unverifiable_rows_null(
     _ingest(corpus_conn, sec, [C])  # set at ingest, and correct
     # Set at ingest to something the index does not say: reported, never overwritten.
     _ingest(corpus_conn, sec, [E], acceptance_datetime="2026-05-06T12:00:00.000Z")
-    report = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
-    assert (report.updated, report.unresolved, report.conflicts) == (1, 1, (E,))
+    _ingest(corpus_conn, sec, [D], legacy=True)  # its index entry has no UTC offset
+    index = _EditedIndex(sec, _offsetless_time_for_d)
+    report = run_publication_backfill_job(corpus_conn, index, {"cik": CIK})
+    assert (report.updated, report.unresolved, report.conflicts) == (1, 2, (E,))
     noon = _t("2026-05-06T12:00:00Z")
     assert _publication(corpus_conn) == {
         A: KNOWN[A],
         B: UNKNOWN,
         C: KNOWN[C],
+        D: UNKNOWN,
         E: (noon, noon, "acceptance", "second"),
     }
 
