@@ -114,24 +114,30 @@ class IngestionOutcome:
 
 
 def _prior_canonical_facts(
-    conn: psycopg.Connection[Any], *, entity_id: str, published_before: datetime
+    conn: psycopg.Connection[Any],
+    *,
+    entity_id: str,
+    published_before: datetime,
+    public_before: datetime | None = None,
 ) -> dict[str, PriorFact]:
-    """Latest canonical fact per key from filings visible before an instant.
+    """Latest canonical fact per key from filings published before another.
 
     Deterministic restatement targets: only the LATEST successfully parsed
     version of each prior document is consulted, and candidates are totally
-    ordered (visible instant DESC, accession DESC, fact id) so reruns always
-    link ``restates`` to the same fact row, whatever order the prior filings
-    were ingested in.
+    ordered (published_at DESC, public_at DESC NULLS LAST, accession DESC,
+    fact id) so reruns always link ``restates`` to the same fact row,
+    whatever order the prior filings were ingested in.
 
-    A filing is visible from ``GREATEST(COALESCE(public_at, published_at),
-    published_at)``, the expression migration 0012's candidate guard and the
-    read predicates use (ADR-0034 decision 4), so an original and an
-    amendment accepted later the same day are ordered (#393). A row with no
-    ``public_at`` falls back to its filing date at midnight UTC: two such
-    same-day filings still tie and do not link, and one sorts before every
-    second-precision filing of its day. ``backfill.repair_restatement_links``
-    applies the same ordering to rows already stored.
+    A prior filing is earlier than the one being ingested (published at
+    ``published_before``, public at ``public_before``) when its filing date
+    is earlier, or when both share a filing date and BOTH have a
+    ``public_at`` that orders them (#393). An original and an amendment
+    accepted later the same day therefore link, while a same-day pair with
+    either side unresolved does not link at all: a missing ``public_at`` is
+    unknown, not midnight. Ordering by filing date first keeps the relation
+    a strict partial order, so a single sort can choose the latest earlier
+    filing. ``backfill.repair_restatement_links`` uses the same relation for
+    rows already stored.
 
     Companyfacts snapshot documents (``form = 'COMPANYFACTS'``) are excluded
     (issue #83 ruling — cross-channel restatement isolation): filing
@@ -146,22 +152,28 @@ def _prior_canonical_facts(
             FROM financial_facts ff
             JOIN document_versions dv ON dv.id = ff.document_version_id
             JOIN documents d ON d.id = dv.document_id
-            WHERE ff.entity_id = %s
+            WHERE ff.entity_id = %(entity_id)s
               AND ff.duplicate_of IS NULL
               AND dv.status = 'parsed'
-              AND GREATEST(COALESCE(d.public_at, d.published_at), d.published_at) < %s
-              AND d.form IS DISTINCT FROM %s
+              AND (d.published_at < %(published_at)s
+                   OR (d.published_at = %(published_at)s
+                       AND d.public_at < %(public_at)s::timestamptz))
+              AND d.form IS DISTINCT FROM %(company_facts)s
               AND dv.id = (
                   SELECT dv2.id FROM document_versions dv2
                   WHERE dv2.document_id = d.id AND dv2.status = 'parsed'
                   ORDER BY dv2.created_at DESC, dv2.id DESC
                   LIMIT 1
               )
-            ORDER BY ff.fact_key,
-                     GREATEST(COALESCE(d.public_at, d.published_at), d.published_at) DESC,
+            ORDER BY ff.fact_key, d.published_at DESC, d.public_at DESC NULLS LAST,
                      d.accession DESC, ff.id
             """,
-            (entity_id, published_before, COMPANY_FACTS_FORM),
+            {
+                "entity_id": entity_id,
+                "published_at": published_before,
+                "public_at": public_before,
+                "company_facts": COMPANY_FACTS_FORM,
+            },
         ).fetchall()
     return {
         str(row["fact_key"]): PriorFact(fact_id=str(row["id"]), value=str(row["value"]))
@@ -276,9 +288,12 @@ def ingest_filing(
                 publication=publication,
             )
             parsed = parse_filing(raw, id_seed=version_id, content_hash=content_hash)
-            # The instant the SQL visibility expression yields for this row.
-            visible_at = max(publication.public_at or published_at, published_at)
-            prior = _prior_canonical_facts(conn, entity_id=entity_id, published_before=visible_at)
+            prior = _prior_canonical_facts(
+                conn,
+                entity_id=entity_id,
+                published_before=published_at,
+                public_before=publication.public_at,
+            )
             facts = normalize_facts(
                 parsed,
                 entity_id=entity_id,
