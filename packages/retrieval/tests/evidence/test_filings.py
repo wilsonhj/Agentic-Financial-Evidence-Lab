@@ -5,10 +5,15 @@ boundary. ``test_filings_db.py`` proves the SQL on PostgreSQL.
 from __future__ import annotations
 
 import dataclasses
+import json
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
 
 from fel_retrieval import content_sha256
 from fel_retrieval.evidence import interfaces as i
@@ -264,3 +269,109 @@ def test_a_form_filter_with_no_visible_filing_is_an_empty_page_not_an_error(worl
 def test_two_parsed_versions_of_one_document_fail_closed(world: Any) -> None:
     with pytest.raises(i.EvidenceReadError, check=lambda e: e.code == "integrity_error"):
         world.listing({"GROUP BY": _stats(CRM), "LIMIT": [_page_row(1, LATE, versions=2)]})
+
+
+SCHEMAS = Path(__file__).resolve().parents[3] / "contracts" / "schemas"
+
+
+def _json(value: Any) -> Any:
+    """The interface value as the MCP JSON the schemas describe."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {
+            f.name.rstrip("_"): _json(getattr(value, f.name)) for f in dataclasses.fields(value)
+        }
+    if isinstance(value, datetime):
+        return value.isoformat().replace("+00:00", "Z")
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, tuple | list):
+        return [_json(item) for item in value]
+    if isinstance(value, Mapping):
+        return {key: _json(item) for key, item in value.items()}
+    return value
+
+
+def _validate(result: Any, schema: str) -> None:
+    resources = []
+    for path in SCHEMAS.glob("*.schema.json"):
+        contents = json.loads(path.read_text())
+        resources.append((contents["$id"], Resource.from_contents(contents)))
+    document = json.loads((SCHEMAS / f"{schema}.schema.json").read_text())
+    payload = _json(result)
+    payload["evidence_context"]["filters"] = {
+        key: item
+        for key, item in payload["evidence_context"]["filters"].items()
+        if item is not None
+    }
+    Draft202012Validator(document, registry=Registry().with_resources(resources)).validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("form_chars", "form_count", "summary"),
+    [
+        (8, 21, "F00XXXXX, F01XXXXX"),  # names are counted, forms still listed
+        (20, 60, "Searched filings of 60 forms of 20 issuers public from"),  # both counted
+    ],
+)
+def test_a_coverage_note_stays_within_the_schema_at_twenty_matches(
+    fake_conn: Any, evidence_helpers: Any, form_chars: int, form_count: int, summary: str
+) -> None:
+    cohort = {}
+    for n in range(20):
+        name = f"Northern {n:02d} Holdings International Incorporated".ljust(60, "n")
+        company = i.Company(f"00000000-0000-4000-8000-{n:012d}", f"{n:010d}", None, name)
+        cohort[company.entity_id] = company
+    forms = [f"F{n:02d}".ljust(form_chars, "X") for n in range(form_count)]
+    stats = [(entity, form, 1, EARLY, LATE) for entity in cohort for form in forms]
+    edge = [
+        (entity, f"{n:010d}-24-000001", forms[0], LATE.date(), LATE, LATE, "acceptance")
+        for n, entity in enumerate(cohort)
+    ]
+    conn = fake_conn({"GROUP BY": stats, "d.public_at ASC": edge, "d.public_at DESC": edge})
+    context = evidence_helpers.make_context(AS_OF, CORPUS)
+    result = resolve_company(conn, i.ResolveCompanyRequest(query="n"), context, companies=cohort)
+    assert len(result.matches) == 20
+    assert len(result.coverage_note.text) <= 1000
+    assert summary in result.coverage_note.text
+    assert "of 20 issuers public from" in result.coverage_note.text
+    assert result.coverage_note.issuers == tuple(c.cik for c in cohort.values())
+    assert len(result.coverage_note.forms) == form_count  # counted in the text, listed here
+    _validate(result, "mcp-resolve-company-output")
+
+
+def test_the_match_cap_applies_after_visibility(fake_conn: Any, evidence_helpers: Any) -> None:
+    # 25 candidates; the 20 that sort first have nothing visible.
+    cohort = {}
+    for n in range(25):
+        company = i.Company(f"00000000-0000-4000-8000-{n:012d}", f"{n:010d}", None, f"Co {n:02d}")
+        cohort[company.entity_id] = company
+    visible = list(cohort)[20:]
+    stats = [(entity, "10-K", 1, EARLY, LATE) for entity in visible]
+    edge = [
+        (entity, f"{n:010d}-24-000001", "10-K", LATE.date(), LATE, LATE, "acceptance")
+        for n, entity in enumerate(visible, start=20)
+    ]
+    conn = fake_conn({"GROUP BY": stats, "d.public_at ASC": edge, "d.public_at DESC": edge})
+    context = evidence_helpers.make_context(AS_OF, CORPUS)
+    result = resolve_company(conn, i.ResolveCompanyRequest(query="co"), context, companies=cohort)
+    assert [match.company.entity_id for match in result.matches] == visible
+
+
+def test_list_filings_takes_no_name_fragment(world: Any) -> None:
+    with pytest.raises(i.EvidenceReadError) as raised:
+        world.listing({"GROUP BY": _stats(CRM), "LIMIT": [_page_row(1, LATE)]}, company="Salesf")
+    assert vars(raised.value) == vars(i.EvidenceReadError.not_found())
+
+
+def test_forms_are_upper_cased_and_cursors_bind_the_resolved_company(world: Any) -> None:
+    rows = [_page_row(3, LATE), _page_row(2, EARLY), _page_row(1, EARLY)]
+    answers = {"GROUP BY": _stats(CRM), "LIMIT": rows}
+    first = world.listing(answers, company="CRM", forms=("10-k", "8-K"))
+    page = next(params for sql, params in world.conn.statements if "LIMIT" in sql)
+    assert page["forms"] == ["10-K", "8-K"]
+    assert first.coverage_note.forms == ("10-K", "8-K")
+    # The same company and forms, spelled differently, continue the listing.
+    for spelling in ("crm", "1108524", CRM.entity_id):
+        world.listing(answers, company=spelling, forms=("8-k", "10-K"), cursor=first.next_cursor)
+    with pytest.raises(i.EvidenceReadError, check=lambda e: e.field == "cursor"):
+        world.listing(answers, company="NOW", forms=("10-K", "8-K"), cursor=first.next_cursor)

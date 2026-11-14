@@ -29,6 +29,7 @@ from fel_retrieval.evidence.visibility import (
 from fel_retrieval.index_build import DBConnection
 
 MAX_MATCHES: Final = 20  # mcp-resolve-company-output: matches.maxItems
+MAX_NOTE_CHARS: Final = 1000  # mcp-*-output: coverage_note.text.maxLength
 _FILING_REF: Final = (
     "d.entity_id, d.accession, d.form, (d.published_at AT TIME ZONE 'UTC')::date, "
     "d.accepted_at, d.public_at, d.public_at_basis"
@@ -116,11 +117,16 @@ def _coverage_note(
         first = last = None
     else:
         first, last = min(r[1] for r in ranges), max(r[2] for r in ranges)
+        span = f"public from {_instant(first)} to {_instant(last)}, visible at {cutoff}."
         names = ", ".join(f"{company.name} (CIK {company.cik})" for company in issuers)
-        text = (
-            f"Searched {', '.join(forms) or 'unlabeled'} filings of {names} public from "
-            f"{_instant(first)} to {_instant(last)}, visible at {cutoff}."
-        )
+        listed = ", ".join(forms) or "unlabeled"
+        # Names and forms are unbounded; past the budget they are counted, and
+        # the CIKs and forms stay listed in issuers[] and forms[].
+        text = f"Searched {listed} filings of {names} {span}"
+        if len(text) > MAX_NOTE_CHARS:
+            text = f"Searched {listed} filings of {len(issuers)} issuers {span}"
+        if len(text) > MAX_NOTE_CHARS:
+            text = f"Searched filings of {len(forms)} forms of {len(issuers)} issuers {span}"
     return i.CoverageNote(
         text=text,
         issuers=tuple(company.cik for company in issuers),
@@ -191,12 +197,15 @@ def list_filings(
     """
     check_request(request)
     visible = visibility_params(context)
-    forms = None if request.forms is None else sorted(request.forms)
-    binding = {"tool": "list_filings", "company": request.company, "forms": forms}
+    # EDGAR form types are upper case; normalise so "10-k" lists 10-K filings.
+    forms = None if request.forms is None else sorted({form.upper() for form in request.forms})
+    candidates = match_companies(companies, request.company, partial=False)
+    # Bound to the companies the reference resolves to, not to its spelling.
+    entities = [company.entity_id for company in candidates]
+    binding = {"tool": "list_filings", "entities": entities, "forms": forms}
     after_public, after_id = (
         (None, None) if request.cursor is None else cursors.decode(request.cursor, context, binding)
     )
-    candidates = match_companies(companies, request.company, partial=False)
     with public_read_session(conn):
         stats = _form_stats(conn, visible, candidates)
         shown = [company for company in candidates if company.entity_id in stats]
