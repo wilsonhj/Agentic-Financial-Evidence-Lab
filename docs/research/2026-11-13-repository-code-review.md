@@ -51,8 +51,10 @@ there as a lead to reproduce, not as an established defect.
 3. Start with a failing test that reproduces the finding, then the smallest fix.
 4. Shared paths (`packages/contracts/**`, `db/migrations/**`, `.github/**`,
    `docs/decisions/**`, handoff ledgers) need the `contract-change` label and
-   lead review. Do not weaken Recall@10, review budgets, or citation blockers
-   to make a gate pass.
+   lead review; `packages/contracts/**`, `db/migrations/**`, `specs/**`, and
+   `docs/decisions/**` additionally require an accepted ADR per `AGENTS.md`. Do
+   not weaken Recall@10, review budgets, or citation blockers to make a gate
+   pass.
 5. Never put credential values in issues, commits, fixtures, or PR text.
 
 Severity here means: **Critical** = integrity / tenancy / governance bypass
@@ -102,13 +104,13 @@ permission to edit.
 | R3 | Numeric sign/currency parsing + XBRL divide/sign/`typedMember`/`ix:exclude` | `workers/src/fel_workers/extraction/normalize/**`, `workers/src/fel_workers/ingestion/**` | none |
 | R4 | Shared-path CI hardening (trusted scripts, merge-base `--all` / merge-tree, lockfile coverage) | `.github/workflows/shared-paths.yml`, `.github/scripts/**` | `contract-change` |
 | R5 | Retrieval RBAC, lane connection role/pool, cost metering on extraction | `apps/api/app/retrieval*.py`, `apps/api/app/extraction/runs.py`, `apps/api/tests/**` | none |
-| R6 | Platform RLS grants / FORCE RLS / platform-job policy | `db/migrations/**` (new migration only), `db/migrations/tests/**` | `contract-change` + ADR if policy changes |
+| R6 | Platform RLS grants / FORCE RLS / platform-job policy | `db/migrations/**` (new migration only), `db/migrations/tests/**` | `contract-change` + accepted ADR + lead review |
 | R7 | Error redaction on run failure paths | `workers/src/fel_workers/extraction/workflow.py`, `workers/src/fel_workers/redact.py`, `apps/api/app/retrieval.py` | none |
 | R8 | SEC `published_at` / restates / corpus span quarantine | `workers/src/fel_workers/ingestion/**`, `workers/src/fel_workers/consumer.py`, `apps/api/app/corpus.py` | none |
 | R9 | Web public-mode telemetry guard, `as_of` fail-closed, workspace binding, feedback idempotency | `apps/web/src/**` | none |
 | R10 | Calculation-engine `MappingProxyType` canonicalization + exponent bounds | `packages/calculation-engine/**` | none |
-| R11 | Retrieval claim `scale` enum, embeddings batching, OpenAI usage accounting | `packages/retrieval/**`, `packages/providers/**`, possibly `packages/contracts/**` | contracts only with `contract-change` |
-| R12 | Advisories lockfile scan, retrieval-gate `entity_id`, path_guard deny-mode | `.github/workflows/advisories.yml`, `evals/harness/retrieval_gate.py`, `scripts/agent/path_guard.py` | R4 for workflow edits |
+| R11 | Retrieval claim `scale` enum, embeddings batching, OpenAI usage accounting | `packages/retrieval/**`, `packages/providers/**`, possibly `packages/contracts/**` | `contract-change` + accepted ADR + lead review if changing `packages/contracts/**` |
+| R12 | Advisories lockfile scan, retrieval-gate `entity_id`, path_guard deny-mode | `.github/workflows/advisories.yml`, `evals/harness/retrieval_gate.py`, `scripts/agent/path_guard.py` | R4; `contract-change` + lead review for `.github/**` |
 
 Cap concurrent implementation packages at four. Prefer PRs under roughly 600
 changed lines.
