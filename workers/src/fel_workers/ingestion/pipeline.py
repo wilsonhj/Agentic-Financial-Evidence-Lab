@@ -329,7 +329,8 @@ def ingest_filing(
             )
             if parse_failure is not None:
                 raise parse_failure
-            assert parsed is not None
+            if parsed is None:
+                raise RuntimeError("filing preparation produced no parsed document")
             # Same-content replays preserve the existing document metadata.
             # Use that persisted publication time even when an old queued job
             # lacks acceptance data or carries a stale filing date.
@@ -378,7 +379,8 @@ def ingest_filing(
 
         if canonical_failure is not None:
             raise canonical_failure
-        assert text_key is not None
+        if text_key is None:
+            raise RuntimeError("filing preparation produced no canonical storage key")
 
         conn.execute(
             "INSERT INTO document_versions"
