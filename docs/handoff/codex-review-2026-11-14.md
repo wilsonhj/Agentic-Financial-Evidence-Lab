@@ -139,7 +139,7 @@ the handoff README.
   coordinator; the cap is not limited to MCP writers. Read-only reviewers
   are exempt, and shared-file writes remain serialized.
 
-Not yet independently reviewed.
+Independent review completed on November 14; subsequent changes still need review.
 
 ## PR #414: deterministic verifier and verification report
 
@@ -210,7 +210,7 @@ The non-required extraction acceptance job also fails. All three seed proposals
 from committed mock models that cite by membership only:
 `evals/harness/extraction_cross_stack.py::ScopedMock` and
 `apps/api/benchmarks/extraction_load_fixture.py::BulkMock`. They were passing
-through the defect. Those files are outside #409's lane; see
+through the defect. Those files were outside #409's original lane; AC6 and the November 15 bounded load-report test extension now record their ownership; see
 [decision B](#open-integration-lead-decisions).
 
 **Product consequence.** No extraction role prompt gives the model a span's
@@ -228,7 +228,7 @@ the roles can assert hashes.
   the 100-item budget test) to use a hash-asserting mock. Confirm no assertion
   was weakened.
 
-Not yet independently reviewed.
+Independent review completed on November 14; subsequent changes still need review.
 
 ## PR #416: evidence read, part 1
 
@@ -350,7 +350,7 @@ defects. Do give a recommendation with reasons.
 | A1 | #414 | Keep commit `f492762` (`abs()` → `copy_abs()`)? | Keep: 0 differences across 200k random values of 28 digits or fewer; the old code mis-certified longer values |
 | A2 | #414 | `numeric_checks` content on a hash mismatch | Keep diagnostics required by the frozen contract; overall support remains fail-closed |
 | A3 | #414 | How claim period labels such as `FY2024` map for verification | Open: labels exist only in index-versioned `retrieval_items.period`, but a `verify_claim` context has `index_version_id = null`; may need a contract change |
-| B1 | #415 | Widen #409's lane to `evals/harness/extraction_cross_stack.py`, `apps/api/benchmarks/extraction_load_fixture.py` and `evals/tests/test_extraction_cross_stack.py` (none shared), or register a sibling package | Widen |
+| B1 | #415 | Record the two fixture producers, cross-stack test and bounded `apps/api/tests/test_extraction_load_report.py` regression | Extension recorded in #409; preserve source hashes, values, usage and negative fixtures |
 | B2 | #415 | Register a follow-up so extraction roles receive and assert span hashes | Yes; without it `accept`/`merge` are unusable for real runs |
 | C1 | #416/#418 | Conflicting context/parser provenance prose and fixtures | Preserve resolved context immutability; selected provenance belongs on citation/document. Reconcile fixtures explicitly before `read_filing` integration |
 | C2 | #416 | Canonical text over 4 MiB is reported as `integrity_error`; the existing reader allows 16 MiB | Open |

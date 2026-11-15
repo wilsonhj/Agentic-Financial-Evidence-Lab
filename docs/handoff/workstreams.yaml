@@ -1566,7 +1566,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-BACKFILL-PRIVILEGES]
     team: data
     branch: agent/mcp-ingest-accepted-at
-    status: active # Dispatched 2026-11-14 on the integration lead's instruction, Lane C; #392, #404 and #405 merged in 517553e. Must not run concurrently with #62, #66 or the FIX-* packages that touch workers/tests/** (#410, #411, #412).
+    status: active # Dispatched 2026-11-14 on the integration lead's instruction, Lane C; #392, #404 and #405 merged in 517553e. PR #417 had changes requested on 2026-11-14 by an external different-vendor review (published-pin serialization, temporal ordering, reparse metadata). Corpus publication in ingestion/pipeline.py is inside this lane. Must not run concurrently with #62, #66 or the FIX-* packages that touch workers/tests/** (#410, #411, #412).
     allowed_paths:
       - workers/src/fel_workers/ingestion/**
       - workers/src/fel_workers/consumer.py
@@ -1670,7 +1670,7 @@ packages:
     depends_on: []
     team: extraction
     branch: agent/fix-review-citation-blockers
-    status: active # Registered and dispatched 2026-11-14 on the integration lead's instruction. Must finish before #394 is dispatched (apps/api/tests/**).
+    status: active # Registered and dispatched 2026-11-14 on the integration lead's instruction. Widened the same day to three acceptance-fixture files, with the bounded load-report regression test added November 15; whose mock models cited by membership only and had passed through the C1 defect; an external different-vendor review confirmed both resulting CI failures. Must finish before #394 is dispatched (apps/api/tests/**).
     allowed_paths:
       - apps/api/app/extraction/**
       - apps/api/tests/extraction/**

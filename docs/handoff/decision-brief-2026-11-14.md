@@ -26,6 +26,7 @@ were corrected against the frozen contracts; they are not new accepted ADRs.
 ## Contents
 
 - [Summary](#summary)
+- [Update after the external review](#update-after-the-external-review)
 - [Context in five minutes](#context-in-five-minutes)
 - [G — governance records](#g--governance-records)
 - [A — verifier (#396, PR #414)](#a--verifier-396-pr-414)
@@ -48,7 +49,7 @@ The **Blocks** column says what cannot proceed until the decision is made.
 | G1 | Record authorization for ADR-0034 and Amendment 2 | Audit trail only; already on `main` | Add a one-line owner statement |
 | G2 | Authorize the `mcp` dependency pin (#402) | Audit trail only; already on `main` | Add an authorization record |
 | G3 | Waive or register a work package for #403 | Closing a Codex P1 thread | Record a waiver |
-| G4 | Different-vendor review provenance | Merging #413–#418; it is missing for #406/#407 | Commission a Codex review of #413–#418 |
+| G4 | Different-vendor review provenance | Merging #413–#418; it is missing for #406/#407 | Done for #413–#418 (OpenAI review, 2026-11-14); #406/#407 still open |
 | G5 | Merge ledger PR #413 | Makes today's dispatch and fix packages official | Merge after review |
 | G6 | Refresh `STATUS.md` | Restart accuracy for agents | Refresh after #413 merges |
 | G7 | Enforce `.claude-plugin/marketplace.json` as a shared path in CI | #398 dispatch | Small `contract-change` PR |
@@ -59,14 +60,50 @@ The **Blocks** column says what cannot proceed until the decision is made.
 | B2 | Follow-up so extraction roles assert span hashes | Real `accept`/`merge` after #415 | Register it |
 | B3 | Remediate records approved through the C1 defect | Data integrity | Query first, then decide |
 | C1 | Does the evidence context carry `parser_version`? | `read_filing`, #395 part 3 | Keep resolved context immutable; reconcile fixtures explicitly |
-| C2 | 4 MiB canonical-text cap reported as `integrity_error` | Large filings | Research real sizes |
+| C2 | 4 MiB canonical-text cap reported as `integrity_error` | Large filings | Treat as availability limit; prefer bounded range reads |
 | C3 | Add `hypothesis` for property tests | Test strength in #395 | Optional; needs a lockfile record |
 | C4 | Ratify five #418 behaviour choices | Merging #418 | Ratify |
 | C5 | Source of the served-company list and cursor key for #397 | #397 dispatch | Decide with #397 |
 | D1 | Timezone of EDGAR `acceptanceDateTime` (ADR-0034 owner input 4) | Any real backfill or hosted run | Verify primary-source meaning; keep unresolved data unknown |
 | D2 | What enqueues `sec_publication_backfill` | Exposing corpus pins | Decide with #397/#400 |
+| D3 | Versioning or retirement for published corpus pins that backfill must not change | Backfilling any already-published corpus | New; see update |
+| G8 | Concurrency limit: three implementers in total, or three MCP plus fix lanes | Every dispatch | Three in total, until an amendment says otherwise (new) |
 | R1 | Register a package for H8 parser defects | Ingestion correctness | Register after #393 merges |
 | R2 | Register and prioritize the remaining review packages | Backlog | Register the non-shared ones |
+
+## Update after the external review
+
+On 2026-11-14 an independent OpenAI review team reviewed #413–#418 and #420,
+with database reproductions on PostgreSQL 17. That review is the
+different-vendor review input for the Claude-authored #413–#418 (G4),
+not for OpenAI-authored #420 or subsequent OpenAI-authored repairs. It changed
+this brief as follows; the decision cards below incorporate the corrected
+recommendations. Lead approval and review of later changes remain required.
+
+| ID | Change |
+| --- | --- |
+| A1 | Agrees: keep `copy_abs()`; exact 34-digit behaviour checked under several Decimal precisions. |
+| A2 | **Revised to keep reporting `numeric_checks`.** The current schema says numeric diagnostics are present when both request and evidence carry numeric tuples. Switching to `null` would be a contract decision. The claim must still never become `supported` on a hash failure. |
+| A3 | Adds: select facts deterministically by concept and period, and derive fiscal labels from pinned, versioned evidence. Never borrow an unpinned latest index when `index_version_id` is null. |
+| B1 | **Done.** #409's lane was widened on 2026-11-14 to the three original acceptance-fixture files, after the review reproduced both CI failures on real PostgreSQL. The November 15 repair also names the bounded load-report regression test. Registry ratification is in #413. |
+| B2 | Adds: give roles an authenticated evidence envelope that carries the hashes, and require the model to copy the matching content address. Never ask a model to compute SHA-256. A copied hash proves source identity, not correctness. |
+| C1 | **Revised.** Keep the resolved request context immutable, as the frozen interface and replay identity require. Put document and parser provenance on the document or citation. Reconcile the contrary fixtures and spec text in one narrow `contract-change` before `read_filing`. Inject a fresh connection into each read session. |
+| C2 | **Revised.** A valid canonical object over 4 MiB is an availability limit, not corruption. Prefer bounded range or chunk reads with span and hash integrity, or document the restrictive behaviour and its error contract. Keep a request-wide output budget across multi-citation verification. |
+| C4 | Agrees: ratify all five. Describe the 20-result company cap as bounded results, not a complete listing. |
+| C5 | Adds: the server must inject one strong cursor key shared across replicas, plus an agreed clock and rotation policy. |
+| D1 | **Revised. Option (b) is withdrawn.** A conservative guessed instant is still not verified publication metadata. Keep unresolved publication data unknown and invisible in strict mode until the primary-source interpretation is verified. |
+| D3 | **New, from a reproduced P1 in #417.** Backfill and restatement repair changed already-published corpus pins, including a race in which a corpus is published while a backfill is uncommitted. #417 is being fixed to serialize publication with backfill and repair writes, and to refuse changes to evidence in active or superseded pins. That leaves documents already in a published corpus without publication times, so they stay invisible to strict reads. A versioning or retirement design to backfill them is a lead decision. |
+| G5 | Adds: #413's text described three MCP implementers plus one fix lane. Since 2026-11-14 the ledger keeps #393 and #409 as repair owners, and #395 and #396 in review. The November 15 wave also registers #419 documentation ownership. See G8. |
+| G8 | **New.** ADR-0034 Amendment 2 says "at most three implementation agents plus the coordinator". The reviewers read that as a limit on all implementers, not only MCP ones. Recommend three in total unless an accepted amendment says otherwise. Reviewers are exempt. |
+
+The same review requested changes on #417 (published-pin serialization;
+restatement order must use known publication instants, never filing date; a
+reparse must use stored, not incoming, metadata) and on #415 (fixture mocks).
+Both are in progress. It found no new defect in #414, #416 or #418. It also
+reviewed #420, the OpenAI-authored production-readiness research PR. Its two
+specification findings there (rerun invalidation for the
+security-evidence check; unassigned telemetry adapters) belong to #420's
+authors, and #420 still needs a non-OpenAI review.
 
 ## Context in five minutes
 
@@ -87,7 +124,8 @@ defines shared paths. Contracts, migrations, `specs/**` and ADRs need the
 `contract-change` label, an accepted ADR and lead review. Lockfile pins need
 an authorization record. Handoff ledgers need `contract-change` and lead
 review. One issue and one branch per package, inside its `allowed_paths`, with
-at most four packages active at once.
+a general four-package ceiling, subject to Amendment 2's stricter current
+limit of three implementers total plus the coordinator.
 
 **MCP evidence server.** [ADR-0034](../decisions/ADR-0034-public-read-only-evidence-surface.md)
 adds a public, read-only MCP surface over the SEC corpus.
@@ -95,7 +133,8 @@ adds a public, read-only MCP surface over the SEC corpus.
 - The contract wave merged today in merge `517553e` (#401, #402, #406,
   #407): schemas, OpenAPI 0.10.0, migration 0012 (publication columns,
   `fel_public_read` role) and 0013 (worker backfill grants).
-- Amendment 2 caps MCP work at three implementers. It makes different-vendor
+- Amendment 2 caps the current wave at three implementers total, including fix
+and research writers. It makes different-vendor
   review and lead approval merge gates.
 
 **Defect review.** The [2026-11-13 repository code review](../research/2026-11-13-repository-code-review.md)
