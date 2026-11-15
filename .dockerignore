@@ -1,0 +1,18 @@
+# Build context allowlist for infra/docker/api.Dockerfile: send only what the
+# API image installs. Everything else, including .git, node_modules, .venv and
+# local .env files, stays out of the context.
+*
+!requirements.lock
+!scripts/runtime/
+!packages/providers/
+!packages/ontology/
+!packages/retrieval/
+!workers/
+!apps/api/
+
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/tests/
+**/benchmarks/
