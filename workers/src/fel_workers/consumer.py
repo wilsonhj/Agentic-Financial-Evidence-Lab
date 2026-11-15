@@ -63,6 +63,7 @@ from fel_workers.ingestion.discovery import (
     JOB_KIND_SEC_FILING_FETCH,
     run_discovery_job,
 )
+from fel_workers.ingestion.pin_guard import PublishedPinMutationError
 from fel_workers.ingestion.pipeline import IngestionOutcome, ingest_filing
 from fel_workers.ingestion.publication import UNKNOWN_PUBLICATION, derive_publication
 from fel_workers.storage import apply_worker_db_role
@@ -537,21 +538,35 @@ def run_worker(
                     outcome.reason_code or "ok",
                 )
             elif job.kind == JOB_KIND_SEC_PUBLICATION_BACKFILL:
-                backfill = run_publication_backfill_job(conn, sec, job.payload)
-                # The changed versions are logged because a repair alters rows
-                # that corpus pins may expose (ADR-0034 Amendment 2).
-                log.info(
-                    "publication backfill cik=%s: %d set, %d unresolved, conflicts=%s;"
-                    " restates %d linked, %d relinked, %d cleared in versions %s",
-                    job.payload.get("cik"),
-                    backfill.updated,
-                    backfill.unresolved,
-                    list(backfill.conflicts),
-                    backfill.repair.linked,
-                    backfill.repair.relinked,
-                    backfill.repair.cleared,
-                    list(backfill.repair.document_version_ids),
-                )
+                try:
+                    backfill = run_publication_backfill_job(conn, sec, job.payload)
+                except PublishedPinMutationError:
+                    # The entire mutation transaction has rolled back. This
+                    # rejection persists while the pin is retained, so park
+                    # the job for an operator instead of retrying unchanged.
+                    log.warning(
+                        "publication backfill cik=%s rejected changes to published corpus pins;"
+                        " all changes rolled back",
+                        job.payload.get("cik"),
+                    )
+                    verdict = (
+                        "dead_letter",
+                        "publication backfill rejected changes to published corpus pins;"
+                        " all changes rolled back; lead decision required",
+                    )
+                else:
+                    log.info(
+                        "publication backfill cik=%s: %d set, %d unresolved, conflicts=%s;"
+                        " restates %d linked, %d relinked, %d cleared in versions %s",
+                        job.payload.get("cik"),
+                        backfill.updated,
+                        backfill.unresolved,
+                        list(backfill.conflicts),
+                        backfill.repair.linked,
+                        backfill.repair.relinked,
+                        backfill.repair.cleared,
+                        list(backfill.repair.document_version_ids),
+                    )
             elif job.kind == JOB_KIND_EXTRACTION_RUN:
                 if extraction_provider is None:  # pragma: no cover — narrowed above
                     raise RuntimeError("structured LLM capability vanished mid-dispatch")

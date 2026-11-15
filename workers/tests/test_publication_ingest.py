@@ -941,3 +941,27 @@ def test_corpus_mutations_reject_stale_snapshot_isolation(
     assert corpus_conn.execute(
         "SELECT status FROM corpus_versions WHERE id = %s", (pin,)
     ).fetchone() == ("draft",)
+
+
+@pytest.mark.parametrize("pinned", [A, B], ids=["early rejection", "rollback earlier update"])
+def test_worker_dead_letters_a_backfill_that_had_to_leave_a_pin_alone(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, pinned: str
+) -> None:
+    """All changes roll back; park the job failed on its first attempt so a
+    retained pin rejection reaches an operator without futile retries."""
+    _ingest(corpus_conn, sec, [A, B], legacy=True)
+    _publish(corpus_conn, pinned)
+    queue.enqueue(
+        corpus_conn,
+        kind=JOB_KIND_SEC_PUBLICATION_BACKFILL,
+        payload={"cik": CIK},
+        queue="ingestion",
+    )
+    completed = run_worker(
+        corpus_conn, MockStorageProvider(), sec, queue_name="ingestion", max_iterations=2
+    )
+    assert completed == 0
+    assert _publication(corpus_conn) == {A: UNKNOWN, B: UNKNOWN}
+    row = corpus_conn.execute("SELECT status, attempts, error FROM jobs").fetchone()
+    assert row is not None and (row[0], row[1]) == ("failed", 1)
+    assert "published corpus pins; all changes rolled back" in row[2]["error"]["message"]

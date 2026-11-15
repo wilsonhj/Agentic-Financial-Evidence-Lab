@@ -137,6 +137,8 @@ def _prior_canonical_facts(
     restatement target; cross-channel value reconciliation is a QA-report
     concern, not a restatement edge.
     """
+    if public_before is None:
+        return {}
     with conn.cursor(row_factory=dict_row) as cur:
         rows = cur.execute(
             """

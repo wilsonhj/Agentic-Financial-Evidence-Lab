@@ -27,7 +27,7 @@ from fel_workers.ingestion.pipeline import (
     job_key,
     publish_corpus_version,
 )
-from fel_workers.ingestion.publication import derive_publication
+from fel_workers.ingestion.publication import Publication
 from fel_workers.ingestion.raw_store import content_address, store_raw_document
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -45,6 +45,11 @@ pytestmark = requires_db
 
 ENTITY = str(uuid.uuid4())
 PUBLISHED = datetime(2026, 5, 5, 16, 30, tzinfo=UTC)
+
+
+def _public(at: datetime) -> Publication:
+    """A known publication instant: restatement order needs one on both sides (#393)."""
+    return Publication(at, at, "acceptance", "second")
 
 
 def _counts(conn: psycopg.Connection) -> dict[str, int]:
@@ -74,10 +79,6 @@ def _ingest(conn: psycopg.Connection, storage: MockStorageProvider, **overrides)
         "form": "10-Q",
     }
     params.update(overrides)
-    params.setdefault(
-        "publication",
-        derive_publication(params["published_at"].isoformat(), params["published_at"].date()),
-    )
     return ingest_filing(conn, storage, **params)
 
 
@@ -186,7 +187,7 @@ def test_identical_job_rerun_is_a_noop(corpus_conn: psycopg.Connection) -> None:
 
 def test_restatement_links_across_document_versions(corpus_conn: psycopg.Connection) -> None:
     storage = MockStorageProvider()
-    _ingest(corpus_conn, storage)
+    _ingest(corpus_conn, storage, publication=_public(PUBLISHED))
     # A later synthetic filing restates consolidated revenue (1,250 -> 1,300).
     amended = (
         fixture_bytes("synthetic_10q.html")
@@ -207,6 +208,7 @@ def test_restatement_links_across_document_versions(corpus_conn: psycopg.Connect
         raw=amended,
         accession="0009999999-26-000011",
         published_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
+        publication=_public(datetime(2026, 6, 1, 9, 0, tzinfo=UTC)),
     )
     assert outcome.status == "succeeded"
     rows = corpus_conn.execute(
@@ -481,7 +483,7 @@ def test_restatement_targets_latest_parsed_version_total_order(
     facts come from the LATEST parsed version only, with a total-order
     tiebreaker (created_at DESC, id DESC) when created_at ties."""
     storage = MockStorageProvider()
-    first = _ingest(corpus_conn, storage)
+    first = _ingest(corpus_conn, storage, publication=_public(PUBLISHED))
     assert first.status == "succeeded"
     fact_row = corpus_conn.execute(
         "SELECT fact_key, value FROM financial_facts"
@@ -558,6 +560,7 @@ def test_restatement_targets_latest_parsed_version_total_order(
         raw=amended,
         accession="0009999999-26-000012",
         published_at=datetime(2026, 7, 1, 9, 0, tzinfo=UTC),
+        publication=_public(datetime(2026, 7, 1, 9, 0, tzinfo=UTC)),
     )
     assert outcome.status == "succeeded"
     restates = corpus_conn.execute(

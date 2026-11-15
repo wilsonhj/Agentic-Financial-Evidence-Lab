@@ -202,6 +202,10 @@ class SyntheticCohortSecClient:
                     "accessionNumber": [filing.accession for filing in plan],
                     "form": [filing.form for filing in plan],
                     "filingDate": [filing.filed_on for filing in plan],
+                    # Explicit fabricated instants let the real pipeline order
+                    # this synthetic corpus's amendments by publication time.
+                    # They are fixture metadata, never a live-date fallback.
+                    "acceptanceDateTime": [f"{filing.filed_on}T16:00:00Z" for filing in plan],
                     "primaryDocument": [filing.primary_document for filing in plan],
                 }
             },
