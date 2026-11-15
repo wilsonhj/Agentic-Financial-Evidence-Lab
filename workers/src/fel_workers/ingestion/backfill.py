@@ -19,9 +19,11 @@ transaction, using only the columns migration 0013 grants ``fel_worker``:
    set of filings, not on the order they were ingested in.
 
 Both steps are idempotent and a rerun does only the work still outstanding.
-A repair changes rows that corpus pins may already expose, so the report
-names the document versions it touched (ADR-0034 Amendment 2: repair before
-exposing pins, or retire the affected ones). Nothing here runs at ingest.
+Actual metadata or edge changes to active or retained superseded pins are
+rejected atomically (ADR-0034 Amendment 2). Backfill and direct repair share
+publication's transaction lock, held through the caller's outer transaction.
+Repair must therefore finish before publishing an affected pin. No retirement
+state is introduced. Nothing here runs automatically at ingest.
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ from psycopg.rows import dict_row
 from fel_providers.interfaces import SecClient
 from fel_workers.ingestion.company_facts import entity_id_for_cik
 from fel_workers.ingestion.discovery import discover_filings
+from fel_workers.ingestion.pin_guard import lock_corpus_mutations, reject_retained_pin_changes
 from fel_workers.ingestion.publication import Publication, derive_publication
 from fel_workers.ingestion.raw_store import COMPANY_FACTS_FORM
 
@@ -73,13 +76,13 @@ class BackfillReport:
 # The expected target of a fact is the canonical fact with the same key in
 # the latest parsed version of the latest earlier filing, when its value
 # differs: exactly what ingest links (``pipeline._prior_canonical_facts``).
-# Earlier means an earlier filing date, or the same filing date with both
-# public_at set and ordered; a same-day pair with either side unresolved is
-# never linked. A link already pointing at the expected filing through an
-# older parse of it is the same edge and is kept.
+# Earlier requires both public_at instants to be known and strictly ordered;
+# filing dates never override them, and unresolved/tied times never link.
+# A link already pointing at the expected filing through an older parse of it
+# is the same edge and is kept.
 _REPAIR_SQL = """
 WITH filing AS (
-    SELECT d.id, d.accession, d.published_at, d.public_at,
+    SELECT d.id, d.accession, d.public_at,
            (SELECT dv.id FROM document_versions dv
             WHERE dv.document_id = d.id AND dv.status = 'parsed'
             ORDER BY dv.created_at DESC, dv.id DESC
@@ -103,9 +106,9 @@ expected AS (
         WHERE p.entity_id = f.entity_id
           AND p.fact_key = f.fact_key
           AND p.duplicate_of IS NULL
-          AND (pd.published_at < fd.published_at
-               OR (pd.published_at = fd.published_at AND pd.public_at < fd.public_at))
-        ORDER BY pd.published_at DESC, pd.public_at DESC NULLS LAST, pd.accession DESC, p.id
+          AND pd.id <> fd.id
+          AND pd.public_at < fd.public_at
+        ORDER BY pd.public_at DESC, pd.accession DESC, p.id
         LIMIT 1
     ) target ON target.value <> f.value
     LEFT JOIN financial_facts held ON held.id = f.restates
@@ -125,12 +128,19 @@ RETURNING f.document_version_id, e.held_id IS NULL, e.target_id IS NULL
 def repair_restatement_links(conn: psycopg.Connection[Any], *, entity_id: str) -> RepairReport:
     """Make one issuer's ``restates`` links what in-order ingest would produce.
 
-    One statement; writes only ``financial_facts.restates`` and only on rows
-    whose link is wrong, so a second run changes nothing.
+    Writes only wrong ``financial_facts.restates`` links. If any changed fact
+    belongs to a retained pin, the whole repair rolls back, including when
+    this function is called directly or its error is caught in an outer
+    transaction. A settled retained pin remains a no-op.
     """
-    rows = conn.execute(
-        _REPAIR_SQL, {"entity_id": entity_id, "company_facts": COMPANY_FACTS_FORM}
-    ).fetchall()
+    with conn.transaction():
+        lock_corpus_mutations(conn)
+        rows = conn.execute(
+            _REPAIR_SQL, {"entity_id": entity_id, "company_facts": COMPANY_FACTS_FORM}
+        ).fetchall()
+        reject_retained_pin_changes(
+            conn, document_version_ids=tuple({str(version_id) for version_id, _, _ in rows})
+        )
     return RepairReport(
         linked=sum(1 for _, was_null, now_null in rows if was_null and not now_null),
         relinked=sum(1 for _, was_null, now_null in rows if not was_null and not now_null),
@@ -179,10 +189,10 @@ def _backfill_publication(
             continue
         # The predicate repeats both guards so the write itself can never
         # replace a stored publication time or touch a company-facts row.
-        updated += conn.execute(
+        changed = conn.execute(
             "UPDATE documents SET accepted_at = %s, public_at = %s, public_at_basis = %s,"
             " timestamp_precision = %s"
-            " WHERE id = %s AND accepted_at IS NULL AND form IS DISTINCT FROM %s",
+            " WHERE id = %s AND accepted_at IS NULL AND form IS DISTINCT FROM %s RETURNING id",
             (
                 derived.accepted_at,
                 derived.public_at,
@@ -191,7 +201,9 @@ def _backfill_publication(
                 row["id"],
                 COMPANY_FACTS_FORM,
             ),
-        ).rowcount
+        ).fetchall()
+        reject_retained_pin_changes(conn, document_ids=tuple(str(item[0]) for item in changed))
+        updated += len(changed)
     return updated, tuple(conflicts)
 
 
@@ -206,6 +218,7 @@ def run_publication_backfill_job(
     cik = str(payload.get("cik", ""))
     entity_id = entity_id_for_cik(cik)
     with conn.transaction():
+        lock_corpus_mutations(conn)
         updated, conflicts = _backfill_publication(conn, client, cik, entity_id)
         repair = repair_restatement_links(conn, entity_id=entity_id)
         remaining = conn.execute(

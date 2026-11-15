@@ -20,10 +20,10 @@ different bytes fails closed into quarantine with reason code
 ``documents.content_hash`` always matches the bytes the published versions
 were parsed from.
 
-Corpus versions are published atomically — a single transaction flips the
-active pointer, and a partial unique index guarantees at most one active
-version even under races; a losing racer gets :class:`PublishConflictError`
-instead of a raw database error.
+Corpus versions are published atomically under the same transaction lock as
+publication backfill and restatement repair, preserving retained pins. A
+partial unique index additionally prevents multiple active versions even if
+a nonparticipating writer races; its conflict becomes PublishConflictError.
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ from psycopg.rows import dict_row
 from fel_providers.interfaces import StorageProvider
 from fel_workers.ingestion.errors import DivergentAccessionError, IngestError
 from fel_workers.ingestion.parser import PARSER_VERSION, parse_filing
+from fel_workers.ingestion.pin_guard import lock_corpus_mutations
 from fel_workers.ingestion.publication import UNKNOWN_PUBLICATION, Publication
 from fel_workers.ingestion.raw_store import (
     COMPANY_FACTS_FORM as COMPANY_FACTS_FORM,
@@ -117,27 +118,18 @@ def _prior_canonical_facts(
     conn: psycopg.Connection[Any],
     *,
     entity_id: str,
-    published_before: datetime,
-    public_before: datetime | None = None,
+    public_before: datetime | None,
+    document_id: str,
 ) -> dict[str, PriorFact]:
     """Latest canonical fact per key from filings published before another.
 
-    Deterministic restatement targets: only the LATEST successfully parsed
-    version of each prior document is consulted, and candidates are totally
-    ordered (published_at DESC, public_at DESC NULLS LAST, accession DESC,
-    fact id) so reruns always link ``restates`` to the same fact row,
-    whatever order the prior filings were ingested in.
-
-    A prior filing is earlier than the one being ingested (published at
-    ``published_before``, public at ``public_before``) when its filing date
-    is earlier, or when both share a filing date and BOTH have a
-    ``public_at`` that orders them (#393). An original and an amendment
-    accepted later the same day therefore link, while a same-day pair with
-    either side unresolved does not link at all: a missing ``public_at`` is
-    unknown, not midnight. Ordering by filing date first keeps the relation
-    a strict partial order, so a single sort can choose the latest earlier
-    filing. ``backfill.repair_restatement_links`` uses the same relation for
-    rows already stored.
+    Only known, strictly earlier public_at instants establish predecessors.
+    Filing dates may be adjusted by the SEC, and unknown timestamps establish
+    no ordering, even across dates. Equal public instants are not predecessors.
+    The latest successfully parsed version supplies canonical facts, ordered
+    by public_at DESC, accession DESC and fact id for deterministic ties.
+    Excluding this document also prevents linking to an older parse of itself.
+    ``backfill.repair_restatement_links`` applies the same relation.
 
     Companyfacts snapshot documents (``form = 'COMPANYFACTS'``) are excluded
     (issue #83 ruling — cross-channel restatement isolation): filing
@@ -155,9 +147,8 @@ def _prior_canonical_facts(
             WHERE ff.entity_id = %(entity_id)s
               AND ff.duplicate_of IS NULL
               AND dv.status = 'parsed'
-              AND (d.published_at < %(published_at)s
-                   OR (d.published_at = %(published_at)s
-                       AND d.public_at < %(public_at)s::timestamptz))
+              AND d.id <> %(document_id)s
+              AND d.public_at < %(public_at)s::timestamptz
               AND d.form IS DISTINCT FROM %(company_facts)s
               AND dv.id = (
                   SELECT dv2.id FROM document_versions dv2
@@ -165,12 +156,12 @@ def _prior_canonical_facts(
                   ORDER BY dv2.created_at DESC, dv2.id DESC
                   LIMIT 1
               )
-            ORDER BY ff.fact_key, d.published_at DESC, d.public_at DESC NULLS LAST,
+            ORDER BY ff.fact_key, d.public_at DESC,
                      d.accession DESC, ff.id
             """,
             {
                 "entity_id": entity_id,
-                "published_at": published_before,
+                "document_id": document_id,
                 "public_at": public_before,
                 "company_facts": COMPANY_FACTS_FORM,
             },
@@ -288,11 +279,19 @@ def ingest_filing(
                 publication=publication,
             )
             parsed = parse_filing(raw, id_seed=version_id, content_hash=content_hash)
+            # Same-content replays preserve the existing document metadata.
+            # Use that persisted publication time even when an old queued job
+            # lacks acceptance data or carries a stale filing date.
+            held = conn.execute(
+                "SELECT public_at FROM documents WHERE id = %s", (stored.document_id,)
+            ).fetchone()
+            if held is None:  # pragma: no cover — raw store just established it
+                raise RuntimeError("stored document is missing")
             prior = _prior_canonical_facts(
                 conn,
                 entity_id=entity_id,
-                published_before=published_at,
-                public_before=publication.public_at,
+                public_before=held[0],
+                document_id=stored.document_id,
             )
             facts = normalize_facts(
                 parsed,
@@ -508,13 +507,14 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
     """Atomically make a draft corpus version the single active one.
 
     Both updates happen in one transaction; readers see either the old or
-    the new active pointer, never zero or two. The partial unique index
-    ``corpus_versions_single_active`` fails any racing second publisher —
-    that race surfaces as :class:`PublishConflictError`, never a raw
-    database error.
+    the new active pointer, never zero or two. The shared transaction lock
+    serializes publishers with publication/edge repairs until outer commit.
+    The partial unique index also defends against nonparticipating writers;
+    such a conflict surfaces as PublishConflictError.
     """
     try:
         with conn.transaction():
+            lock_corpus_mutations(conn)
             conn.execute(
                 "UPDATE corpus_versions SET is_active = false, status = 'superseded'"
                 " WHERE is_active"

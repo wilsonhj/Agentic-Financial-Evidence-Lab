@@ -27,6 +27,7 @@ from fel_workers.ingestion.pipeline import (
     job_key,
     publish_corpus_version,
 )
+from fel_workers.ingestion.publication import derive_publication
 from fel_workers.ingestion.raw_store import content_address, store_raw_document
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -73,6 +74,10 @@ def _ingest(conn: psycopg.Connection, storage: MockStorageProvider, **overrides)
         "form": "10-Q",
     }
     params.update(overrides)
+    params.setdefault(
+        "publication",
+        derive_publication(params["published_at"].isoformat(), params["published_at"].date()),
+    )
     return ingest_filing(conn, storage, **params)
 
 
@@ -531,13 +536,17 @@ def test_restatement_targets_latest_parsed_version_total_order(
     prior = _prior_canonical_facts(
         corpus_conn,
         entity_id=ENTITY,
-        published_before=datetime(2026, 6, 1, tzinfo=UTC),
+        public_before=datetime(2026, 6, 1, tzinfo=UTC),
+        document_id=str(uuid.uuid4()),
     )
     assert prior[revenue_key].fact_id == winning_fact
     assert prior[revenue_key].value == "1260000000"
     # Reruns are stable (same total order, same target).
     again = _prior_canonical_facts(
-        corpus_conn, entity_id=ENTITY, published_before=datetime(2026, 6, 1, tzinfo=UTC)
+        corpus_conn,
+        entity_id=ENTITY,
+        public_before=datetime(2026, 6, 1, tzinfo=UTC),
+        document_id=str(uuid.uuid4()),
     )
     assert again[revenue_key].fact_id == winning_fact
 

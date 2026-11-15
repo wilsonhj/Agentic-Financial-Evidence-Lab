@@ -39,6 +39,7 @@ from fel_workers.ingestion.backfill import (
 )
 from fel_workers.ingestion.discovery import discover_filings, fetch_job_payload
 from fel_workers.ingestion.fixture_sec_client import FixtureSecClient
+from fel_workers.ingestion.pin_guard import PublishedPinMutationError
 from fel_workers.ingestion.pipeline import create_corpus_version, publish_corpus_version
 from fel_workers.ingestion.publication import derive_publication
 from fel_workers.ingestion.raw_store import store_raw_document
@@ -334,8 +335,8 @@ def test_backfill_as_fel_worker_fills_repairs_and_never_rewrites(
     _seed_company_facts_snapshot(corpus_conn)
     _ingest(corpus_conn, sec, [C, D], legacy=True)
     _ingest(corpus_conn, sec, [D], legacy=True, accession=UNLISTED)
-    # Date-only rows: the same-day amendment B never linked to A.
-    assert _links(corpus_conn) == [(C, B, 2)]
+    # Date-only rows establish no trustworthy publication ordering.
+    assert _links(corpus_conn) == []
     assert set(_publication(corpus_conn).values()) == {UNKNOWN}
 
     first = run_publication_backfill_job(
@@ -353,12 +354,13 @@ def test_backfill_as_fel_worker_fills_repairs_and_never_rewrites(
         E: UNKNOWN,  # the company-facts snapshot, never touched
     }
     assert _links(corpus_conn) == LINKS
-    assert (second.repair.linked, second.repair.relinked, second.repair.cleared) == (2, 0, 0)
-    assert len(second.repair.document_version_ids) == 1
+    assert (second.repair.linked, second.repair.relinked, second.repair.cleared) == (4, 0, 0)
+    assert len(second.repair.document_version_ids) == 2
     after_second = _row_versions(corpus_conn)
     # Resumed, not redone: only documents A and B and B's two revenue facts were
-    # written. C, set by the first pass, kept its row version.
-    assert len({key for key, xmin in after_second.items() if after_first[key] != xmin}) == 4
+    # written, plus C's two newly verifiable edges. C's metadata, set by the
+    # first pass, kept its row version.
+    assert len({key for key, xmin in after_second.items() if after_first[key] != xmin}) == 6
 
     third = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
     assert (third.updated, third.unresolved, third.conflicts) == (0, 2, ())
@@ -467,7 +469,10 @@ def _strictly_visible(conn: psycopg.Connection, corpus: str, cutoff: datetime) -
 def _other_connection() -> psycopg.Connection:
     url = os.environ.get("TEST_DATABASE_URL")
     assert url is not None
-    return psycopg.connect(url, autocommit=True)
+    conn = psycopg.connect(url, autocommit=True)
+    conn.execute("SET ROLE fel_worker")
+    conn.execute("SET statement_timeout = '5s'")
+    return conn
 
 
 def _blocked_on_advisory_lock(observer: psycopg.Connection, worker: threading.Thread) -> bool:
@@ -488,8 +493,8 @@ def _blocked_on_advisory_lock(observer: psycopg.Connection, worker: threading.Th
 def test_backfill_never_changes_a_published_pin(
     corpus_conn: psycopg.Connection, sec: FixtureSecClient
 ) -> None:
-    """Active and superseded pins keep their publication metadata; only the
-    unpinned filing is backfilled, and the rejected ones are reported."""
+    """Active and superseded pins keep metadata; the entire job is rejected
+    atomically, including the unpinned filing's proposed change."""
     _ingest(corpus_conn, sec, [A, B, C], legacy=True)
     superseded = _publish(corpus_conn, A)
     active = _publish(corpus_conn, C)
@@ -499,14 +504,14 @@ def test_backfill_never_changes_a_published_pin(
         _strictly_visible(corpus_conn, active, cutoff),
     ) == (0, 0)
 
-    report = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+    with pytest.raises(PublishedPinMutationError):
+        run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
 
-    assert _publication(corpus_conn) == {A: UNKNOWN, B: KNOWN[B], C: UNKNOWN}
+    assert _publication(corpus_conn) == {A: UNKNOWN, B: UNKNOWN, C: UNKNOWN}
     assert (
         _strictly_visible(corpus_conn, superseded, cutoff),
         _strictly_visible(corpus_conn, active, cutoff),
     ) == (0, 0)
-    assert (report.updated, report.rejected) == (1, (A, C))
 
 
 def test_repair_preserves_restates_edges_inside_a_published_pin(
@@ -518,10 +523,10 @@ def test_repair_preserves_restates_edges_inside_a_published_pin(
     _publish(corpus_conn, A, C)
     _ingest(corpus_conn, sec, [B])  # unpinned; restates A at ingest
 
-    report = repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    with pytest.raises(PublishedPinMutationError):
+        repair_restatement_links(corpus_conn, entity_id=ENTITY)
 
     assert _links(corpus_conn) == [(B, A, 2), (C, A, 2)]
-    assert (report.relinked, report.rejected_versions) == (0, (_version(corpus_conn, C),))
 
 
 def test_publication_waits_for_an_uncommitted_backfill(
@@ -558,7 +563,7 @@ def test_publication_waits_for_an_uncommitted_backfill(
     assert status == ("active",)
     assert _publication(corpus_conn) == {A: KNOWN[A]}
     after = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
-    assert (after.updated, after.rejected, after.repair) == (0, (), RepairReport())
+    assert (after.updated, after.repair) == (0, RepairReport())
 
 
 def test_backfill_waits_for_an_uncommitted_publication_then_rejects_it(
@@ -588,8 +593,7 @@ def test_backfill_waits_for_an_uncommitted_publication_then_rejects_it(
         worker.join(timeout=30)
     assert blocked and still_waiting, "the backfill did not wait for the uncommitted publication"
     assert _publication(corpus_conn) == {A: UNKNOWN}
-    assert len(reports) == 1 and not isinstance(reports[0], BaseException), reports
-    assert (reports[0].updated, reports[0].rejected) == (0, (A,))
+    assert len(reports) == 1 and isinstance(reports[0], PublishedPinMutationError), reports
 
 
 @pytest.mark.parametrize("order", [(A, B, C), (B, A, C)], ids=["ABC", "BAC"])
@@ -634,3 +638,306 @@ def test_reparse_orders_by_stored_publication_time(
     ).fetchall()
     assert _publication(corpus_conn)[B] == KNOWN[B]
     assert targets == [(A, 2)]
+
+
+def _pin(conn: psycopg.Connection, *, version_ids: list[str] | None = None) -> str:
+    if version_ids is None:
+        version_ids = [str(row[0]) for row in conn.execute("SELECT id FROM document_versions")]
+    pin = create_corpus_version(conn, label="retained evidence", document_version_ids=version_ids)
+    publish_corpus_version(conn, pin)
+    return pin
+
+
+@pytest.mark.parametrize("superseded", [False, True], ids=["active", "superseded"])
+def test_backfill_rejects_retained_pin_metadata_changes(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, superseded: bool
+) -> None:
+    _ingest(corpus_conn, sec, [A, B], legacy=True)
+    pin = _pin(corpus_conn)
+    if superseded:
+        _pin(corpus_conn, version_ids=[])
+    before = _row_versions(corpus_conn)
+    with pytest.raises(PublishedPinMutationError):
+        run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+    assert _row_versions(corpus_conn) == before
+    assert _publication(corpus_conn) == {A: UNKNOWN, B: UNKNOWN}
+    assert corpus_conn.execute(
+        "SELECT status FROM corpus_versions WHERE id = %s", (pin,)
+    ).fetchone() == ("superseded" if superseded else "active",)
+
+
+@pytest.mark.parametrize("superseded", [False, True], ids=["active", "superseded"])
+def test_repair_rejects_retained_pin_edge_changes(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, superseded: bool
+) -> None:
+    _ingest(corpus_conn, sec, [A, C])
+    _pin(corpus_conn)
+    if superseded:
+        _pin(corpus_conn, version_ids=[])
+    _ingest(corpus_conn, sec, [B])
+    before = _row_versions(corpus_conn)
+    with pytest.raises(PublishedPinMutationError):
+        repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert _row_versions(corpus_conn) == before
+    assert _links(corpus_conn) == [(B, A, 2), (C, A, 2)]
+
+
+def test_reparse_uses_stored_publication_and_excludes_own_document(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ingest(corpus_conn, sec, [A, B])
+    monkeypatch.setattr(pipeline, "PARSER_VERSION", "publication-reparse-v2")
+    # A stale date and missing acceptance must not replace stored metadata.
+    _ingest(corpus_conn, sec, [B], legacy=True, filed_on="2026-05-12")
+    rows = corpus_conn.execute(
+        "SELECT d.accession, target_document.accession FROM financial_facts f"
+        " JOIN document_versions v ON v.id = f.document_version_id"
+        " JOIN documents d ON d.id = v.document_id"
+        " JOIN financial_facts target ON target.id = f.restates"
+        " JOIN document_versions target_version ON target_version.id = target.document_version_id"
+        " JOIN documents target_document ON target_document.id = target_version.document_id"
+        " WHERE v.parser_version = 'publication-reparse-v2'"
+    ).fetchall()
+    assert rows == [(B, A), (B, A)]
+    assert _publication(corpus_conn)[B] == KNOWN[B]
+
+
+def test_adjusted_filing_date_cannot_target_later_publication(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    _ingest(
+        corpus_conn, sec, [A], filed_on="2026-05-04", acceptance_datetime="2026-05-07T12:00:00Z"
+    )
+    _ingest(corpus_conn, sec, [B])
+    assert _links(corpus_conn) == []
+    repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert _links(corpus_conn) == [(A, B, 2)]
+
+
+def test_latest_prior_is_chosen_by_publication_in_ingest_and_repair(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    _ingest(
+        corpus_conn, sec, [A], filed_on="2026-05-04", acceptance_datetime="2026-05-07T12:00:00Z"
+    )
+    _ingest(corpus_conn, sec, [B, C])
+    assert _links(corpus_conn) == [(C, A, 2)]
+    repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert _links(corpus_conn) == [(A, B, 2), (C, A, 2)]
+
+
+@pytest.mark.parametrize("unresolved", [A, C])
+def test_unresolved_publication_never_infers_cross_date_predecessor(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, unresolved: str
+) -> None:
+    _ingest(corpus_conn, sec, [A], legacy=unresolved == A)
+    _ingest(corpus_conn, sec, [C], legacy=unresolved == C)
+    assert _links(corpus_conn) == []
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+
+
+@pytest.mark.parametrize("filed_on", ["2026-05-04", "2026-05-05"])
+@pytest.mark.parametrize("acceptance", ["2026-05-05T12:05:11Z", "2026-05-05T08:05:11-04:00"])
+def test_equal_publication_times_are_not_predecessors(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, filed_on: str, acceptance: str
+) -> None:
+    _ingest(corpus_conn, sec, [A])
+    _ingest(corpus_conn, sec, [B], filed_on=filed_on, acceptance_datetime=acceptance)
+    assert _links(corpus_conn) == []
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+
+
+@pytest.mark.parametrize("order", [(A, B), (B, A)])
+def test_tied_prior_publications_choose_stable_accession_target(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, order: tuple[str, str]
+) -> None:
+    for accession in order:
+        _ingest(corpus_conn, sec, [accession], acceptance_datetime="2026-05-05T12:05:11Z")
+    _ingest(corpus_conn, sec, [C])
+    assert _links(corpus_conn) == [(C, B, 2)]
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+
+
+def _wait_for_advisory_lock(conn: psycopg.Connection, pid: int, completed: threading.Event) -> None:
+    """Observe the competing backend actually waiting, without timing guesses."""
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        waiting = conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid = %s"
+            " AND locktype = 'advisory' AND NOT granted)",
+            (pid,),
+        ).fetchone()
+        if waiting == (True,):
+            return
+        assert not completed.wait(0.01), "competing mutation completed before outer commit"
+    pytest.fail("competing backend never waited on the shared advisory lock")
+
+
+@pytest.mark.parametrize("operation", ["backfill", "repair"])
+@pytest.mark.parametrize("publish_first", [False, True], ids=["repair first", "publish first"])
+def test_publish_serializes_with_outer_repair_transaction(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, operation: str, publish_first: bool
+) -> None:
+    """Both directions use real entrypoints and hold the lock beyond return."""
+    if operation == "backfill":
+        _ingest(corpus_conn, sec, [A], legacy=True)
+    else:
+        _ingest(corpus_conn, sec, [A, C, B])
+    versions = [str(row[0]) for row in corpus_conn.execute("SELECT id FROM document_versions")]
+    pin = create_corpus_version(
+        corpus_conn, label="concurrent repair", document_version_ids=versions
+    )
+    started, completed = threading.Event(), threading.Event()
+    failures: list[BaseException] = []
+    peer_pids: list[int] = []
+    before = _row_versions(corpus_conn)
+
+    def repair(conn: psycopg.Connection) -> None:
+        if operation == "backfill":
+            run_publication_backfill_job(conn, sec, {"cik": CIK})
+        else:
+            repair_restatement_links(conn, entity_id=ENTITY)
+
+    def compete() -> None:
+        try:
+            with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as conn:
+                conn.execute("SET ROLE fel_worker")
+                conn.execute("SET statement_timeout = '5s'")
+                peer_pids.append(conn.info.backend_pid)
+                started.set()
+                if publish_first:
+                    repair(conn)
+                else:
+                    publish_corpus_version(conn, pin)
+        except BaseException as exc:
+            failures.append(exc)
+        finally:
+            completed.set()
+
+    thread = threading.Thread(target=compete)
+    try:
+        with corpus_conn.transaction():
+            if publish_first:
+                publish_corpus_version(corpus_conn, pin)
+            else:
+                repair(corpus_conn)
+            thread.start()
+            assert started.wait(2)
+            _wait_for_advisory_lock(corpus_conn, peer_pids[0], completed)
+    finally:
+        if thread.ident is not None:
+            thread.join(6)
+    assert not thread.is_alive()
+    if publish_first:
+        assert len(failures) == 1 and isinstance(failures[0], PublishedPinMutationError), failures
+        assert _row_versions(corpus_conn) == before
+    else:
+        assert not failures
+        if operation == "backfill":
+            assert _publication(corpus_conn)[A] == KNOWN[A]
+        else:
+            assert _links(corpus_conn) == LINKS
+    assert corpus_conn.execute(
+        "SELECT status FROM corpus_versions WHERE id = %s", (pin,)
+    ).fetchone() == ("active",)
+
+
+def test_metadata_guard_includes_older_pinned_parse(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ingest(corpus_conn, sec, [A], legacy=True)
+    _pin(corpus_conn)
+    monkeypatch.setattr(pipeline, "PARSER_VERSION", "unpinned-new-parse")
+    _ingest(corpus_conn, sec, [A], legacy=True)
+    before = _row_versions(corpus_conn)
+    with pytest.raises(PublishedPinMutationError):
+        run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+    assert _row_versions(corpus_conn) == before
+
+
+def test_direct_repair_rolls_back_pinned_and_unpinned_parse_changes_when_caught(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ingest(corpus_conn, sec, [A, C])
+    _pin(corpus_conn)
+    monkeypatch.setattr(pipeline, "PARSER_VERSION", "unpinned-new-parse")
+    _ingest(corpus_conn, sec, [C, B])
+    before = _row_versions(corpus_conn)
+    with corpus_conn.transaction():
+        with pytest.raises(PublishedPinMutationError):
+            repair_restatement_links(corpus_conn, entity_id=ENTITY)
+        assert _row_versions(corpus_conn) == before
+    assert _row_versions(corpus_conn) == before
+    assert _links(corpus_conn) == [(B, A, 2), (C, A, 4)]
+
+
+def test_backfill_rolls_back_unpinned_metadata_when_pinned_edges_would_change(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    _ingest(corpus_conn, sec, [A, C])
+    _pin(corpus_conn)
+    _ingest(corpus_conn, sec, [B], legacy=True)
+    before = _row_versions(corpus_conn)
+    with corpus_conn.transaction():
+        with pytest.raises(PublishedPinMutationError):
+            run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+        assert _row_versions(corpus_conn) == before
+    assert _publication(corpus_conn)[B] == UNKNOWN
+    assert _links(corpus_conn) == [(C, A, 2)]
+
+
+def test_repair_cannot_clear_retained_legacy_unknown_edges(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    _ingest(corpus_conn, sec, [A, C])
+    # Reproduce stored pre-publication-time edges from the legacy pipeline.
+    corpus_conn.execute(
+        "UPDATE documents SET accepted_at = NULL, public_at = NULL,"
+        " public_at_basis = NULL, timestamp_precision = 'date'"
+    )
+    _pin(corpus_conn)
+    before = _row_versions(corpus_conn)
+    with pytest.raises(PublishedPinMutationError):
+        repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert _row_versions(corpus_conn) == before
+    assert _links(corpus_conn) == [(C, A, 2)]
+
+
+def test_settled_retained_pin_allows_noop_backfill_and_repair(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    _ingest(corpus_conn, sec, [A, B])
+    _pin(corpus_conn)
+    before = _row_versions(corpus_conn)
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+    report = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+    assert report.updated == 0 and report.repair == RepairReport()
+    assert _row_versions(corpus_conn) == before
+
+
+@pytest.mark.parametrize("isolation", ["REPEATABLE READ", "SERIALIZABLE"])
+@pytest.mark.parametrize("operation", ["publish", "backfill", "repair"])
+def test_corpus_mutations_reject_stale_snapshot_isolation(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, isolation: str, operation: str
+) -> None:
+    _ingest(corpus_conn, sec, [A], legacy=True)
+    versions = [str(row[0]) for row in corpus_conn.execute("SELECT id FROM document_versions")]
+    pin = create_corpus_version(
+        corpus_conn, label="snapshot isolation", document_version_ids=versions
+    )
+    before = _row_versions(corpus_conn)
+    with corpus_conn.transaction():
+        # Isolation comes from a fixed parameter list, never user SQL.
+        corpus_conn.execute(f"SET TRANSACTION ISOLATION LEVEL {isolation}")  # noqa: S608
+        corpus_conn.execute("SELECT count(*) FROM corpus_versions")  # establish the outer snapshot
+        with pytest.raises(ValueError, match="READ COMMITTED"):
+            if operation == "publish":
+                publish_corpus_version(corpus_conn, pin)
+            elif operation == "backfill":
+                run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+            else:
+                repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert _row_versions(corpus_conn) == before
+    assert corpus_conn.execute(
+        "SELECT status FROM corpus_versions WHERE id = %s", (pin,)
+    ).fetchone() == ("draft",)

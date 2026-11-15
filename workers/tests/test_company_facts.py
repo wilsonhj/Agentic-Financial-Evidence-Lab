@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import pathlib
+import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -476,7 +477,8 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
     prior = _prior_canonical_facts(
         corpus_conn,
         entity_id=ENTITY_ID,
-        published_before=datetime(2026, 6, 1, tzinfo=UTC),
+        public_before=datetime(2026, 6, 1, tzinfo=UTC),
+        document_id=str(uuid.uuid4()),
     )
     assert prior == {}, "companyfacts documents must be excluded from restatement targets"
     filing = ingest_filing(
