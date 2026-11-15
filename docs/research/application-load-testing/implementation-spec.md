@@ -6,6 +6,11 @@ the identifiers in the [source register](sources.md). All new numerical budgets,
 test durations, algorithms and file paths are design proposals unless explicitly
 identified as an existing requirement or recorded measurement.
 
+The [2026-11-15 supplemental requirements](review-follow-up.md#supplemental-requirements)
+are part of this proposal: they define synthetic provider preflight, independent
+numeric oracles, retained baseline ownership and quota classification. Apply them
+when implementing the sections below. They authorize no dispatch or live run.
+
 ## 1. Outcome and evidence boundaries
 
 Produce a repeatable answer to: which workload, corpus, hardware, deployment and

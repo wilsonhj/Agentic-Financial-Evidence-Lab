@@ -4,6 +4,13 @@ Date: **2026-11-14**. Scope: [implementation specification](implementation-spec.
 [source register](sources.md) and [evidence manifest](evidence.json).
 Repository baseline: `33c6a635c05460624c894d00363d8710a780adc3`.
 
+This is the original 2026-11-14 review record for head
+`ce6f2fba4b740d715399025cf443156943a64ec0`. Its artifact hashes and check results
+below identify that historical revision. The
+[2026-11-15 follow-up](review-follow-up.md) records subsequent requirements,
+different-vendor feedback dispositions and validation separately. The hashes below
+have not been rewritten to imply that the original reviewers inspected later edits.
+
 After the draft was complete, the author assigned three subagents separate
 read-only verification tasks. Reviewers inspected source independently, reported
 findings outside the repository and did not edit the specification or post GitHub

@@ -24,6 +24,10 @@ Read in order:
 3. [Independent review record](review-record.md): review findings and dispositions.
 4. [Evidence manifest](evidence.json): hashes of the repository sources and dated
    external-document excerpts used in this research.
+5. [Supplemental requirements and review dispositions](review-follow-up.md):
+   2026-11-15 decisions on provider modes, retained ownership, quotas and independent
+   numerical oracles. These supplement the proposal without authorizing dispatch
+   or live execution; the original evidence remains frozen at its reviewed head.
 
 Related [PR #420](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/420)
 is an **unmerged proposal**, observed at
