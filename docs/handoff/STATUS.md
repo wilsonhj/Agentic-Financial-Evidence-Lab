@@ -29,6 +29,15 @@ new test successes. OpenAI review supplied different-vendor input for the
 Claude-authored heads, but does not supply that distinction for OpenAI-authored
 #420 or for newly OpenAI-authored repairs.
 
+The bounded repair authors then returned #393, #409 and #419 to `review`.
+#415 retained concurrent contributor commits and passed 40 targeted database
+tests plus the production browser acceptance; #417 retained the incoming
+regression-test commit and passed 604 non-extraction worker tests as `fel_worker`
+with zero skips. #420 documentation checks passed. These are local results;
+final independent verification, current-head CI and the applicable external
+review/lead gates remain required. The registry therefore has no implementation
+owner still active from this wave.
+
 Hosted targets, real SEC timestamp verification, live model binding and all
 earlier release gates below remain separate. Re-query GitHub for current heads
 and checks; this dated record does not authorize merge or hosted execution.

@@ -134,8 +134,7 @@ adds a public, read-only MCP surface over the SEC corpus.
   #407): schemas, OpenAPI 0.10.0, migration 0012 (publication columns,
   `fel_public_read` role) and 0013 (worker backfill grants).
 - Amendment 2 caps the current wave at three implementers total, including fix
-and research writers. It makes different-vendor
-  review and lead approval merge gates.
+  and research writers. It makes different-vendor review and lead approval merge gates.
 
 **Defect review.** The [2026-11-13 repository code review](../research/2026-11-13-repository-code-review.md)
 was re-verified. Its top tier: C1 (review can promote uncited proposals), C3
@@ -231,13 +230,15 @@ or #108.
 
 - #406 and #407 were authored by OpenAI agents. The only recorded reviews are
   Codex bot summaries, which are also OpenAI, and both PRs are already merged.
-- #413–#418 were authored by Claude agents and reviewed only by Claude agents.
+- The original #413–#418 heads were authored by Claude agents. The November 14
+  OpenAI review provides different-vendor input for those heads; later repairs
+  need independent review of their actual authorship and content.
 
 **Options:**
 
-- (a) Run a Codex review of #413–#418 from the brief on #413's branch, and
-  record whether an Anthropic or other non-OpenAI review of #406/#407
-  happened elsewhere.
+- (a) Retain the completed November 14 review evidence, obtain the required
+  review of subsequent changes, and record whether a non-OpenAI review of
+  #406/#407 happened elsewhere.
 - (b) Waive the gate for some PRs.
 
 **Recommendation.** (a).

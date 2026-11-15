@@ -45,9 +45,10 @@ contract clause.
 
 [ADR-0034 Amendment 2](../decisions/ADR-0034-public-read-only-evidence-surface.md#amendment-2-2026-11-13-replay-backfill-privileges-and-bounded-dispatch)
 makes **different-vendor review and integration-lead approval merge gates** for
-all new MCP work. Every PR here was written by Anthropic Claude agents and
-reviewed so far only by other Claude agents. Those reviews do not satisfy the
-gate. A Codex (OpenAI) review does, for these PRs.
+all new MCP work. The original heads here were authored by Anthropic Claude
+agents. The November 14 independent OpenAI review provides different-vendor
+input for those heads. Later OpenAI-authored repairs still need review from a
+different vendor; no formal approval or lead signoff follows from this brief.
 
 Earlier MCP PRs (#402, #406, #407) were written by OpenAI agents. The
 amendment notes that OpenAI agents do not satisfy the distinction for one
@@ -210,7 +211,8 @@ The non-required extraction acceptance job also fails. All three seed proposals
 from committed mock models that cite by membership only:
 `evals/harness/extraction_cross_stack.py::ScopedMock` and
 `apps/api/benchmarks/extraction_load_fixture.py::BulkMock`. They were passing
-through the defect. Those files were outside #409's original lane; AC6 and the November 15 bounded load-report test extension now record their ownership; see
+through the defect. Those files were outside #409's original lane; AC6 and
+the November 15 bounded load-report test extension now record their ownership; see
 [decision B](#open-integration-lead-decisions).
 
 **Product consequence.** No extraction role prompt gives the model a span's
@@ -447,9 +449,9 @@ Mark each finding **reproduced** (you ran it) or **traced** (read only).
 
 - The PR heads, check states and review history above were read on
   2026-11-14. If a head has moved, review the new head and say so.
-- Prior reviews were by Claude agents, the same vendor as the authors. They
-  are context, not independent evidence.
-- Database-backed behaviour is proven only by CI runs. No author or prior
-  reviewer ran PostgreSQL locally.
+- Initial reviews were by Claude agents, the same vendor as the original
+  authors. The November 14 OpenAI review and its limits are recorded in STATUS.md.
+- That independent review ran isolated PostgreSQL reproductions for #415/#417.
+  Other database skips remain explicit; no hosted proof follows from local tests.
 - Nothing here authorizes a merge, a status flip, a credential, a hosted run
   or a paid call.
