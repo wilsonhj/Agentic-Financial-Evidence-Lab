@@ -64,13 +64,17 @@ def _items(
     item_chars: int,
     pattern: re.Pattern[str] | None = None,
     unique: bool = True,
+    case_insensitive: bool = False,
 ) -> None:
     if values is None:
         return
-    if not 1 <= len(values) <= maximum or (unique and len(set(values)) != len(values)):
+    if not 1 <= len(values) <= maximum:
         raise invalid_input(field, f"must hold 1 to {maximum} distinct items")
     for value in values:
         _text(field, value, item_chars, pattern)
+    normalized = [value.casefold() if case_insensitive else value for value in values]
+    if unique and len(set(normalized)) != len(values):
+        raise invalid_input(field, f"must hold 1 to {maximum} distinct items")
 
 
 def _count(field: str, value: object, maximum: int) -> None:
@@ -90,13 +94,17 @@ def check_request(request: object) -> None:
     elif isinstance(request, i.ListFilingsRequest):
         _text("company", request.company, MAX_NAME_CHARS)
         _count("limit", request.limit, MAX_LIMIT)
-        _items("forms", request.forms, MAX_FORMS, MAX_FORM_CHARS, FORM_PATTERN)
+        _items(
+            "forms", request.forms, MAX_FORMS, MAX_FORM_CHARS, FORM_PATTERN, case_insensitive=True
+        )
         _optional_text("cursor", request.cursor, MAX_CURSOR_CHARS)
     elif isinstance(request, i.SearchRequest):
         _text("query", request.query, MAX_QUERY_CHARS)
         _count("top_k", request.top_k, MAX_TOP_K)
         _items("companies", request.companies, MAX_COMPANIES, MAX_NAME_CHARS)
-        _items("forms", request.forms, MAX_FORMS, MAX_FORM_CHARS, FORM_PATTERN)
+        _items(
+            "forms", request.forms, MAX_FORMS, MAX_FORM_CHARS, FORM_PATTERN, case_insensitive=True
+        )
         _items("periods", request.periods, MAX_PERIODS, MAX_PERIOD_CHARS)
     elif isinstance(request, i.ReadFilingRequest):
         if request.document_id is not None:
