@@ -76,21 +76,23 @@ def test_nearest_rank_and_strict_threshold_without_warmup_contamination():
 
 
 def test_bulk_mock_produces_100_distinct_source_supported_dates():
+    import hashlib
     from uuid import uuid4
 
     from benchmarks.extraction_load_fixture import DATES, SOURCE_TEXT, BulkMock
     from fel_providers.interfaces import StructuredGenerationRequest
+    from fel_providers.mocks import MockStructuredLLMProvider
 
     ids = {key: str(uuid4()) for key in ("span", "version", "entity")}
-    result = BulkMock(ids).generate_structured(
-        StructuredGenerationRequest(
-            schema_name="kpi",
-            schema_version="load/v1",
-            json_schema={},
-            messages=[],
-            max_output_tokens=4096,
-        )
+    request = StructuredGenerationRequest(
+        schema_name="kpi",
+        schema_version="load/v1",
+        json_schema={},
+        messages=[],
+        max_output_tokens=4096,
     )
+    baseline = MockStructuredLLMProvider().generate_structured(request)
+    result = BulkMock(ids).generate_structured(request)
     proposals = result.parsed["proposals"]
     assert len(proposals) == 100
     assert {p["period"]["instant"] for p in proposals} == set(DATES)
@@ -98,6 +100,22 @@ def test_bulk_mock_produces_100_distinct_source_supported_dates():
         assert proposal["period"]["instant"] in SOURCE_TEXT
         assert proposal["evidence"][0]["source_span_id"] == ids["span"]
         assert proposal["evidence"][0]["document_version_id"] == ids["version"]
+        assert proposal["evidence"][0]["text_hash"] == (
+            "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()
+        )
+        # The load fixture expands dates and binds provenance; all other
+        # committed financial values and provider usage must survive intact.
+        financial = {
+            k: v for k, v in proposal.items() if k not in {"period", "evidence", "entity_id"}
+        }
+        assert financial == {
+            k: v
+            for k, v in baseline.parsed["proposals"][0].items()
+            if k not in {"period", "evidence", "entity_id"}
+        }
+    assert result.input_tokens == baseline.input_tokens
+    assert result.output_tokens == baseline.output_tokens
+    assert result.estimated_cost_usd == baseline.estimated_cost_usd
 
 
 @pytest.mark.parametrize("kind", ["correct", "comment_only", "wrong_payload", "wrong_id", "error"])
