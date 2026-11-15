@@ -55,10 +55,12 @@ INSERT INTO jobs (id, kind, payload)
 VALUES ('00000000-0000-0000-0000-0000000008f7', 'sec_discovery', '{}'::jsonb);
 
 -- ON DELETE RESTRICT: an organization with audit/usage/job history cannot be
--- silently removed out from under it.
+-- silently removed out from under it. PostgreSQL 17 reports this as 23503
+-- (foreign_key_violation); PostgreSQL 18 reports RESTRICT violations as 23001
+-- (restrict_violation). Either code proves the delete was refused.
 SELECT pg_temp.expect_rejection('organization delete is restricted by references', $sql$
     DELETE FROM organizations WHERE id = '00000000-0000-0000-0000-0000000009f9'
-$sql$, ARRAY['23503']);
+$sql$, ARRAY['23503', '23001']);
 
 -- The M4 placeholder is documented, not constrained.
 DO $$
