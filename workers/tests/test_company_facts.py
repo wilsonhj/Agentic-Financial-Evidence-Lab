@@ -472,24 +472,37 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
     The snapshot is given a publication time earlier than the filing's, so
     the form filter is the only thing that excludes it: without that time
     the ``public_at`` predicate would drop it first and this test could not
-    fail. The snapshot's us-gaap:Assets at 2026-03-31 (5250000.5 USD) shares
-    a fact key with the filing's (8,400 million), so a missing form filter in
-    ``_prior_canonical_facts`` or in the backfill repair query would link it.
+    fail. Companyfacts keys carry provenance dimensions (accn, form, fy, fp,
+    frame), so no snapshot key matches a filing key by itself; the test
+    aligns the snapshot's us-gaap:Assets at 2026-03-31 (5250000.5 USD) with
+    the filing's key (8,400 million). A missing form filter in
+    ``_prior_canonical_facts`` or in the backfill repair query would then
+    link the filing's fact to the snapshot's.
     """
     storage = MockStorageProvider()
     snapshot = ingest_company_facts(
         corpus_conn, storage, cik=CIK, raw=companyfacts_raw(), fetched_at=FETCHED_AT
     )
     assert snapshot.status == "succeeded" and snapshot.facts > 0
-    # raw_store refuses a publication time for this form, so only direct SQL
-    # can set one: all three columns, as the all-or-nothing CHECK requires.
     snapshot_public = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
     filing_public = datetime(2026, 6, 1, 14, 0, tzinfo=UTC)
-    corpus_conn.execute(
-        "UPDATE documents SET accepted_at = %s, public_at = %s,"
-        " public_at_basis = 'acceptance', timestamp_precision = 'second' WHERE id = %s",
-        (snapshot_public, snapshot_public, snapshot.document_id),
-    )
+    shared = "us-gaap:Assets|USD|instant:2026-03-31|"
+    # Setup only, as the table owner (the worker role may lack these grants).
+    # raw_store refuses a publication time for this form, so only direct SQL
+    # can set one: all three columns, as the all-or-nothing CHECK requires.
+    with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as owner:
+        owner.execute(
+            "UPDATE documents SET accepted_at = %s, public_at = %s,"
+            " public_at_basis = 'acceptance', timestamp_precision = 'second' WHERE id = %s",
+            (snapshot_public, snapshot_public, snapshot.document_id),
+        )
+        aligned = owner.execute(
+            "UPDATE financial_facts SET fact_key = %s WHERE document_version_id = %s"
+            " AND concept = 'us-gaap:Assets' AND period_instant = '2026-03-31'"
+            " AND duplicate_of IS NULL RETURNING id",
+            (shared, snapshot.document_version_id),
+        ).fetchall()
+    assert len(aligned) == 1
     # Control: apart from its form, the snapshot passes every other predicate
     # of the restatement-target query and holds the shared key.
     shared_key = corpus_conn.execute(
@@ -498,8 +511,8 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
         " JOIN documents d ON d.id = dv.document_id"
         " WHERE d.id = %s AND dv.status = 'parsed' AND ff.duplicate_of IS NULL"
         " AND ff.entity_id = %s AND d.public_at < %s"
-        " AND ff.fact_key = 'us-gaap:Assets|USD|instant:2026-03-31|'",
-        (snapshot.document_id, ENTITY_ID, filing_public),
+        " AND ff.fact_key = %s",
+        (snapshot.document_id, ENTITY_ID, filing_public, shared),
     ).fetchall()
     assert len(shared_key) == 1 and Decimal(str(shared_key[0][0])) == Decimal("5250000.5")
     # Direction 1: the filing pipeline's restatement-target query must not
@@ -524,6 +537,12 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
         publication=Publication(filing_public, filing_public, "acceptance", "second"),
     )
     assert filing.status == "succeeded" and filing.facts > 0
+    filing_assets = corpus_conn.execute(
+        "SELECT value FROM financial_facts WHERE document_version_id = %s"
+        " AND fact_key = %s AND duplicate_of IS NULL",
+        (filing.document_version_id, shared),
+    ).fetchall()
+    assert len(filing_assets) == 1 and Decimal(str(filing_assets[0][0])) != Decimal("5250000.5")
     filing_restates = corpus_conn.execute(
         "SELECT count(*) FROM financial_facts WHERE document_version_id = %s"
         " AND restates IS NOT NULL",
