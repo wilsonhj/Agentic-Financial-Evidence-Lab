@@ -20,7 +20,7 @@
     }
   },
   "rewrites": [
-    { "source": "/__fel_api/health", "destination": { "service": "api", "path": "/health" } },
+    { "source": "/health", "destination": { "service": "api" } },
     { "source": "/(.*)", "destination": { "service": "web" } }
   ]
 }
