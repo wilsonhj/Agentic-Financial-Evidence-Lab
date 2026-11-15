@@ -1590,7 +1590,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: retrieval
     branch: agent/mcp-evidence-read
-    status: active # Dispatched 2026-11-14 on the integration lead's instruction, Lane A; #392 and #404 merged in 517553e. Imports lanes.py; must not edit it (owned by MCP-CUTOFF-PREDICATES).
+    status: review # Submitted slices #416/#418 entered independent review on 2026-11-14; no implementation owner assigned in the November 15 repair wave. Remaining #395 methods and contract decisions are unfinished. Imports lanes.py; must not edit it.
     allowed_paths:
       - packages/retrieval/fel_retrieval/evidence/** # except interfaces.py, owned by MCP-CONTRACT
       - packages/retrieval/tests/evidence/** # except test_interfaces.py, frozen by #404
@@ -1600,7 +1600,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: trust
     branch: agent/mcp-verifier
-    status: active # Dispatched 2026-11-14 on the integration lead's instruction, Lane B; #392 and #404 merged in 517553e. Existing mock identity strings and goldens must stay byte-identical.
+    status: review # Submitted #414 entered independent review on 2026-11-14; no implementation owner assigned in the November 15 repair wave. Lead merge gates remain; existing mock identity strings and goldens stay byte-identical.
     allowed_paths:
       - packages/retrieval/fel_retrieval/verification.py
       - packages/retrieval/fel_retrieval/verification_report.py
@@ -1662,7 +1662,8 @@ packages:
   # while it is active, and two sit under apps/api/tests/**, which
   # MCP-CUTOFF-PREDICATES (#394) owns once it is dispatched. Flipping any entry
   # is a dispatch decision reserved to the integration lead, within the
-  # four-package concurrency cap.
+  # current ADR-0034 Amendment 2 cap of three implementation agents total
+  # plus the coordinator; read-only reviewers are exempt.
   - id: FIX-REVIEW-CITATION-BLOCKERS
     issue: 409
     tasks: [] # Finding C1: review accept/merge can clear the unverified-citation blocker.
@@ -1673,6 +1674,10 @@ packages:
     allowed_paths:
       - apps/api/app/extraction/**
       - apps/api/tests/extraction/**
+      - evals/harness/extraction_cross_stack.py # #409 AC6: assert actual seeded span hashes.
+      - evals/tests/test_extraction_cross_stack.py
+      - apps/api/benchmarks/extraction_load_fixture.py
+      - apps/api/tests/test_extraction_load_report.py # November 15: verify the bulk source's distinct hash and unchanged values/usage.
   - id: FIX-NUMERIC-SIGN-PARSING
     issue: 410
     tasks: [] # Finding C3: parse_numeric drops the sign of non-dollar and U+2212 negatives.
@@ -1714,3 +1719,13 @@ packages:
       - workers/src/fel_workers/extraction/workflow.py
       - workers/tests/test_redact.py
       - workers/tests/extraction/test_run_error_redaction.py
+  - id: RESEARCH-PRODUCTION
+    issue: 419
+    tasks: [] # Research and specification only; no PRO-* implementation is dispatched.
+    depends_on: []
+    team: integration
+    branch: agent/production-readiness-research
+    status: active # Owner requested verified-finding repairs on 2026-11-15; #420 check-lifecycle and telemetry-ownership corrections only. Return to review after the bounded authoring wave.
+    allowed_paths:
+      - docs/research/production-readiness/**
+      - docs/research/README.md

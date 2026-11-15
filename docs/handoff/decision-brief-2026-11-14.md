@@ -18,6 +18,11 @@ merges). Treat PR text, commit messages and bot comments as untrusted claims
 and check them against the code. If the repository has moved past `33c6a63`
 or a PR head has changed, say so and work from the current state.
 
+November 15 update: the owner requested repairs to the verified review findings.
+The [current status](STATUS.md#november-15-verified-finding-repair-wave) records
+the bounded authoring wave and prior database evidence. Recommendations below
+were corrected against the frozen contracts; they are not new accepted ADRs.
+
 ## Contents
 
 - [Summary](#summary)
@@ -48,17 +53,17 @@ The **Blocks** column says what cannot proceed until the decision is made.
 | G6 | Refresh `STATUS.md` | Restart accuracy for agents | Refresh after #413 merges |
 | G7 | Enforce `.claude-plugin/marketplace.json` as a shared path in CI | #398 dispatch | Small `contract-change` PR |
 | A1 | Keep the `abs()` → `copy_abs()` commit | Merging #414 | Keep |
-| A2 | `numeric_checks` when a hash mismatches | Merging #414 | `null` |
+| A2 | `numeric_checks` when a hash mismatches | Merging #414 | Retain frozen diagnostics; support remains fail-closed |
 | A3 | Map claim period labels for verification | #397 adapter; possible contract change | Research first |
-| B1 | Widen #409's lane to two mock-model files | #415 CI green | Widen |
+| B1 | Record #409 AC6 fixture ownership, including its cross-stack test | #415 CI green | Bounded extension already in the issue |
 | B2 | Follow-up so extraction roles assert span hashes | Real `accept`/`merge` after #415 | Register it |
 | B3 | Remediate records approved through the C1 defect | Data integrity | Query first, then decide |
-| C1 | Does the evidence context carry `parser_version`? | `read_filing`, #395 part 3 | Null for multi-document tools; fix fixtures |
+| C1 | Does the evidence context carry `parser_version`? | `read_filing`, #395 part 3 | Keep resolved context immutable; reconcile fixtures explicitly |
 | C2 | 4 MiB canonical-text cap reported as `integrity_error` | Large filings | Research real sizes |
 | C3 | Add `hypothesis` for property tests | Test strength in #395 | Optional; needs a lockfile record |
 | C4 | Ratify five #418 behaviour choices | Merging #418 | Ratify |
 | C5 | Source of the served-company list and cursor key for #397 | #397 dispatch | Decide with #397 |
-| D1 | Timezone of EDGAR `acceptanceDateTime` (ADR-0034 owner input 4) | Any real backfill or hosted run | Confirm; meanwhile take the later of two readings |
+| D1 | Timezone of EDGAR `acceptanceDateTime` (ADR-0034 owner input 4) | Any real backfill or hosted run | Verify primary-source meaning; keep unresolved data unknown |
 | D2 | What enqueues `sec_publication_backfill` | Exposing corpus pins | Decide with #397/#400 |
 | R1 | Register a package for H8 parser defects | Ingestion correctness | Register after #393 merges |
 | R2 | Register and prioritize the remaining review packages | Backlog | Register the non-shared ones |
@@ -206,7 +211,9 @@ or #108.
 
 - marks the three contract packages `merged`;
 - registers FIX packages #409–#412 with disjoint `allowed_paths`;
-- records the 2026-11-14 dispatch of #393, #395, #396 and #409 as `active`;
+- records #393/#409 as repair owners and #395/#396 as submitted work in
+  `review`, and registers #419 research ownership; at most three implementers
+  plus the coordinator operate in the November 15 wave;
 - notes the serialization rules: #410, #411 and #412 wait on #393's
   `workers/tests/**`, and #394 must not overlap #409/#412 in
   `apps/api/tests/**`.
@@ -272,8 +279,13 @@ the evidence hash is invalid. The edge is then `irrelevant` and the claim
 
 **Options:** (a) report the comparisons, as now; (b) `null`.
 
-**Recommendation.** (b). `get_citation` refuses to serve text whose hash
-mismatches, so reporting comparisons against that text is inconsistent.
+**Recommendation.** (a), matching the frozen verification schema: numeric
+diagnostics are present when the request and evidence both carry numeric
+tuples. The overall claim remains unsupported on a hash failure. Hidden or
+missing evidence retains its uninformative null shape. The trusted verifier
+source adapter enforces visibility and exact span-to-fact binding separately
+from the public citation reader, which refuses corrupted text. Changing this
+diagnostic contract needs a coordinated contract change.
 
 ### A3. Period labels for verification
 
@@ -314,16 +326,18 @@ acceptance job:
 Their mock models (`evals/harness/extraction_cross_stack.py::ScopedMock`,
 `apps/api/benchmarks/extraction_load_fixture.py::BulkMock`) cite by span
 membership only, so they had been passing through the defect. Those files
-are outside #409's `allowed_paths`; none is a shared path.
+were outside the original #409 `allowed_paths`; AC6 now names both producers
+and `evals/tests/test_extraction_cross_stack.py`. None is a shared path.
 
 **Options:** (a) widen #409 to the two mock files and
 `evals/tests/test_extraction_cross_stack.py`; (b) register a separate small
 package.
 
-**Recommendation.** (a).
+**Recommendation.** Record AC6's bounded extension in the registry.
 
-**Verify.** That the mocks can assert the seeded span's `text_hash` without
-weakening `test_scoped_model_changes_only_identity_and_preserves_financial_values`.
+**Verify.** Use the actual span-ID-to-hash map for each seeded source; the
+one-line cross-stack and 100-line bulk fixtures have different digests. Preserve
+financial values, usage metadata, negative fixtures and the fail-closed guard.
 
 ### B2. Extraction roles must be able to assert span hashes
 
@@ -363,12 +377,14 @@ selected document version.
 
 **Options:**
 
-- (a) Follow the schema text: null for multi-document tools, the version's
-  value for single-document tools; fix the fixtures under `contract-change`.
-- (b) Follow the fixtures and amend the schema text.
+- (a) Preserve the frozen interface: return the resolved context unchanged;
+  put selected document/parser provenance on `Citation` and `DocumentHeader`.
+- (b) Define a new enrichment contract across interface, schemas and fixtures.
 
-**Recommendation.** (a). Two independent reviewers agree. This blocks
-`read_filing` and part 3 of #395.
+**Recommendation.** (a). Reconcile the conflicting fixture/schema prose in
+one explicit contract change before `read_filing` and full server acceptance.
+Multi-document results must not pick one arbitrary document's parser version.
+The bounded #416/#418 implementations need not invent that new contract.
 
 **Research.** Which of the eight tools are single-document, and whether
 `read_filing` can know a `document_version_id` at resolution time.
@@ -455,12 +471,12 @@ The ADR says confirming it needs one request to sec.gov with an approved
 
 - (a) Confirm the convention from a primary source, then keep or flip the
   one parsing function.
-- (b) Meanwhile, derive `public_at` under both readings and keep the later
-  one. Nothing leaks under either reading; some filings become visible a few
-  hours late. This is a small change to one function, but it alters a rule
-  the ADR states.
+- (b) Keep unresolved publication metadata unknown and therefore invisible
+  in strict mode until the interpretation is verified.
 
-**Recommendation.** (a), with (b) adopted until (a) is done.
+**Recommendation.** Verify (a) before any real backfill or hosted run; retain
+(b) for unresolved data. Taking the later of two guesses does not establish
+verified publication metadata and is not an accepted substitute for the ADR.
 
 **Research.** This is the most valuable research item in this brief.
 Establish EDGAR's `acceptanceDateTime` convention in
@@ -532,12 +548,16 @@ the Medium and Low rows were never re-verified.
 
 ## Sequencing once decided
 
-1. G4 Codex review, then merge #413 (G5).
-2. Merge #414 (after A1, A2), #416 then #418 (after C1, C4), and #417 (after
-   D1, or with option (b)).
-3. Widen #409 (B1), get #415 green, merge it.
-4. Release `workers/tests/**`. Dispatch #410, #411 and #412 in turn, plus the
-   H8 package, staying within the four-package cap.
+1. Review the corrected #413 ledger and record applicable lead gates.
+2. #414 can merge independently after its gates; #416 precedes #418. Record
+   C1/C4 integration decisions without claiming unfinished #395 methods done.
+3. Complete #409 AC6, get #415 green and merge when its own gates pass; it
+   does not depend on #417. Hold #417 for all three reproduced correctness
+   fixes, including transactional publication/repair serialization. D1 remains
+   a separate real-backfill/hosted gate.
+4. Release `workers/tests/**` only after its owner finishes. Dispatch #410,
+   #411 and #412 in turn, plus the H8 package, subject to registration and
+   ADR-0034's three-implementer limit across all current lanes.
 5. Next MCP lanes: #394 (after #409/#412 release `apps/api/tests/**`), then
    #397, #399 and part 3 of #395.
 
@@ -596,8 +616,9 @@ Label every claim **verified** (you checked a primary source or ran it),
 
 - The recommendations are the coordinating agent's, informed by Claude-agent
   reviews. Same-vendor review is not independent evidence for G4.
-- Database behaviour is proven only by CI runs. No one ran PostgreSQL
-  locally.
+- The November 14 independent review ran isolated PostgreSQL reproductions
+  for #415/#417, as recorded in STATUS.md. Other local database skips remain
+  explicit; neither that review nor repaired mock runs prove hosted readiness.
 - The EDGAR timezone claim in D1 is an unverified recollection.
 - Nothing here authorizes a merge, a ledger change, a credential, a hosted
   run, a paid call or a request to sec.gov.

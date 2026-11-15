@@ -6,6 +6,11 @@ truth: the [source-of-truth order](README.md#source-of-truth) governs, and
 GitHub state may have moved since. Re-read each PR at its current head before
 reviewing it.
 
+November 15 update: the requested independent review completed and the owner
+authorized fixing its verified findings. See the [current repair status](STATUS.md#november-15-verified-finding-repair-wave).
+The dated review instructions below remain historical; they do not replace
+the later owner instruction or imply merge approval.
+
 ## Contents
 
 - [The ask](#the-ask)
@@ -118,7 +123,8 @@ the handoff README.
 - Registers four fix packages from the
   [2026-11-13 code review](../research/2026-11-13-repository-code-review.md#verification-status):
   #409 (C1), #410 (C3), #411 (C4) and #412 (H4).
-- Records the 2026-11-14 dispatch of #393, #395, #396 and #409 as `active`.
+- Records #393/#409 as repair owners, #395/#396 in `review`, and #419 as
+  documentation ownership for the bounded November 15 wave.
 - Notes the serialization rules: #410, #411 and #412 wait for #393 to release
   `workers/tests/**`, and #394 must not overlap #409 or #412 in
   `apps/api/tests/**`.
@@ -129,8 +135,9 @@ the handoff README.
   present-tense claims the merge falsifies, and no reference to its own PR.
 - The four packages' `allowed_paths` are pairwise disjoint.
 - Every `depends_on` resolves.
-- The concurrency counts (four packages, three MCP implementers) are stated
-  correctly.
+- The current wave respects three implementation owners total plus the
+  coordinator; the cap is not limited to MCP writers. Read-only reviewers
+  are exempt, and shared-file writes remain serialized.
 
 Not yet independently reviewed.
 
@@ -341,15 +348,15 @@ defects. Do give a recommendation with reasons.
 | ID | PR | Question | Current recommendation |
 | --- | --- | --- | --- |
 | A1 | #414 | Keep commit `f492762` (`abs()` → `copy_abs()`)? | Keep: 0 differences across 200k random values of 28 digits or fewer; the old code mis-certified longer values |
-| A2 | #414 | `numeric_checks` content on a hash mismatch | `null`, since `get_citation` refuses to serve that text at all |
+| A2 | #414 | `numeric_checks` content on a hash mismatch | Keep diagnostics required by the frozen contract; overall support remains fail-closed |
 | A3 | #414 | How claim period labels such as `FY2024` map for verification | Open: labels exist only in index-versioned `retrieval_items.period`, but a `verify_claim` context has `index_version_id = null`; may need a contract change |
 | B1 | #415 | Widen #409's lane to `evals/harness/extraction_cross_stack.py`, `apps/api/benchmarks/extraction_load_fixture.py` and `evals/tests/test_extraction_cross_stack.py` (none shared), or register a sibling package | Widen |
 | B2 | #415 | Register a follow-up so extraction roles receive and assert span hashes | Yes; without it `accept`/`merge` are unusable for real runs |
-| C1 | #416/#418 | Does the evidence context carry `parser_version`? The frozen interface returns the context unchanged; the `get_citation` and `resolve_company` fixtures show a non-null value; the schema text says null for multi-document tools | Follow the schema text (null for multi-document tools) and fix the fixtures under `contract-change`. Blocks `read_filing` |
+| C1 | #416/#418 | Conflicting context/parser provenance prose and fixtures | Preserve resolved context immutability; selected provenance belongs on citation/document. Reconcile fixtures explicitly before `read_filing` integration |
 | C2 | #416 | Canonical text over 4 MiB is reported as `integrity_error`; the existing reader allows 16 MiB | Open |
 | C3 | #416 | Add `hypothesis` to the lockfile for the property tests the issue asks for | Open; lockfile change needs an authorization record |
 | C4 | #418 | Ratify: `amends` always null; truncation at 20 matches; newest-first order; `invalid_input` for an ambiguous company name; mismatch reported before expiry | Ratify all, and write them into the tool descriptions |
-| D1 | #417 | Timezone of `acceptanceDateTime` (ADR-0034 owner input 4) | Confirm before any real backfill, or adopt a conservative rule: derive under both readings and keep the later `public_at` |
+| D1 | #417 | Timezone of `acceptanceDateTime` (ADR-0034 owner input 4) | Verify before real backfill/hosting; unresolved data stays unknown/invisible, not a guessed verified instant |
 | D2 | #417 | What enqueues `sec_publication_backfill`; nothing does yet | Must run before any corpus pin is exposed |
 
 ## How to run the checks

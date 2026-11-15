@@ -1,5 +1,38 @@
 # Implementation status
 
+## November 15 verified-finding repair wave
+
+Baseline: `main` at `33c6a63`. The owner requested fixes for all verified
+findings from the November 14 independent PR review. The bounded authoring
+lanes are #409/#415 (source-bound acceptance fixtures), #393/#417 (published
+pin immutability, publication ordering and versioned reparsing), and #419/#420
+(security-check lifecycle and explicit telemetry adapter ownership). The
+coordinator owns serialized handoff updates. This uses three implementation
+agents total under ADR-0034 Amendment 2; additional agents perform read-only
+review and isolated verification.
+
+#395's submitted slices #416/#418 and #396's #414 are in `review`, with no new
+implementation dispatched. Remaining #395 methods, context-contract decisions,
+different-vendor review of subsequent fixes, and lead merge gates remain open.
+No PR is marked merged and no canonical task checkbox changes here. #409 AC6
+already names the two fixture producers and their cross-stack test; the registry
+now records that bounded extension. #419 registers documentation ownership only,
+not any proposed `PRO-*` implementation.
+
+The November 14 Sol review reproduced both #415 acceptance failures against
+PostgreSQL (41 other targeted tests passed). For #417, 100 existing scoped tests
+passed and six adversarial assertions exposed three defects, including a real
+two-connection publication race. These are pre-fix results; updated PR evidence
+must establish the repaired heads. #414/#416/#418 had no new actionable defects
+in their bounded review. Their local database skips remain limits, rather than
+new test successes. OpenAI review supplied different-vendor input for the
+Claude-authored heads, but does not supply that distinction for OpenAI-authored
+#420 or for newly OpenAI-authored repairs.
+
+Hosted targets, real SEC timestamp verification, live model binding and all
+earlier release gates below remain separate. Re-query GitHub for current heads
+and checks; this dated record does not authorize merge or hosted execution.
+
 ## October 31 current state
 
 Snapshot base: `main` @ `c3d6f2f` (#365, merged 2026-10-31). The table below

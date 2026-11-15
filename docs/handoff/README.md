@@ -14,9 +14,9 @@ This directory is the restart point for all implementation agents. Fable must be
 Resolve the live queue from GitHub, then read [`STATUS.md`](STATUS.md) and
 [`workstreams.yaml`](workstreams.yaml). Those files include dated evidence;
 do not infer current dispatchability from a historical commit or issue list.
-The newest section of `STATUS.md` is dated October 31, 2026. It carries the
-merged work since September 16, the open integration-lead items, the dependency
-order and the known blockers. Earlier sections are in the
+The newest section of `STATUS.md` is dated November 15, 2026. It records the
+verified-finding repair and review wave; the October snapshot retains the
+earlier dependency order and hosted blockers. Earlier sections are in the
 [archived status history](../archive/handoff/STATUS-history-2026-09.md).
 
 - `main` is the implementation base; `integration/m0` is retired. Use one
@@ -126,7 +126,12 @@ A package is ready only when:
 - any credential requirement has been explicitly fulfilled; and
 - an issue and isolated branch/worktree exist.
 
-Cap concurrency at four packages at all times. Prefer PRs below roughly 600 changed lines and split work that cannot be reviewed independently.
+The general ceiling is four packages. ADR-0034 Amendment 2 imposes the stricter
+limit for the current repair wave: at most three implementation agents total
+plus the coordinator, including non-MCP fix or research writers. Independent
+read-only reviewers do not own implementation packages. Serialize shared-file
+changes through the coordinator. Prefer PRs below roughly 600 changed lines and
+split work that cannot be reviewed independently.
 
 ## Resume sequence
 
