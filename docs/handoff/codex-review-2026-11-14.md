@@ -99,6 +99,10 @@ every database-only claim as proven by CI, not by the authors.
 Intended order, once gates pass: #413, then #414, #416 → #418, #417, and
 #415 last.
 
+That order was superseded in part on 2026-11-15: #414 merged first, as
+`2319c35`, and the owner ruled that #394 merges before #417. See the decision
+brief's [sequencing](decision-brief-2026-11-14.md#sequencing-once-decided).
+
 - #418 is stacked on #416. Review only `git diff b251a01...e3a031e` for #418.
 - Package lanes come from
   [`workstreams.yaml`](workstreams.yaml) (`allowed_paths`); the MCP lanes and

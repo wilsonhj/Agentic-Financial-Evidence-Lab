@@ -1566,7 +1566,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-BACKFILL-PRIVILEGES]
     team: data
     branch: agent/mcp-ingest-accepted-at
-    status: review # November 15 repair authoring completed: retained-pin rejection, publication/repair serialization, known-time ordering and persisted-metadata reparsing. Final independent verification and lead merge gates remain; no hosted timestamp claim.
+    status: review # November 15 repair authoring completed: retained-pin rejection, publication/repair serialization, known-time ordering and persisted-metadata reparsing. On 2026-11-15 the owner authorized fixes for the verified #417 findings on this branch (ownership unchanged) and ruled that #417 merges after MCP-CUTOFF-PREDICATES (#394). Final independent verification and lead merge gates remain; no hosted timestamp claim.
     allowed_paths:
       - workers/src/fel_workers/ingestion/**
       - workers/src/fel_workers/consumer.py
@@ -1578,7 +1578,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: api
     branch: agent/mcp-cutoff-predicates
-    status: blocked # #392 and #404 merged in 517553e; next in Lane B after #396. Must not run concurrently with FIX-REVIEW-CITATION-BLOCKERS (#409) or FIX-RUN-ERROR-REDACTION (#412), which also edit apps/api/tests/**.
+    status: blocked # #392 and #404 merged in 517553e, and #396 (#414) in 2319c35; next in Lane B. Merge order (owner ruling, 2026-11-15): merges before MCP-INGEST-ACCEPTED-AT (#417). Must not run concurrently with FIX-REVIEW-CITATION-BLOCKERS (#409) or FIX-RUN-ERROR-REDACTION (#412), which also edit apps/api/tests/**.
     allowed_paths:
       - apps/api/app/corpus.py
       - apps/api/app/reader.py
@@ -1590,11 +1590,21 @@ packages:
     tasks: [] # MCP-401..407
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: retrieval
-    # One package, stacked slices in the same lane (path_guard reads only the primary branch):
-    #   part 1 agent/mcp-evidence-read   (PR #416)
-    #   part 2 agent/mcp-evidence-read-2 (PR #418, stacked on #416)
+    # Part 1 (PR #416). Part 2 (PR #418, stacked on #416) is registered below as
+    # MCP-EVIDENCE-READ-2 so that path_guard, which reads one branch per package,
+    # also checks its branch.
     branch: agent/mcp-evidence-read
     status: review # Submitted slices #416/#418 entered independent review on 2026-11-14; no implementation owner assigned in the November 15 repair wave. Remaining #395 methods and contract decisions are unfinished. Imports lanes.py; must not edit it.
+    allowed_paths:
+      - packages/retrieval/fel_retrieval/evidence/** # except interfaces.py, owned by MCP-CONTRACT
+      - packages/retrieval/tests/evidence/** # except test_interfaces.py, frozen by #404
+  - id: MCP-EVIDENCE-READ-2
+    issue: 395
+    tasks: [] # Second slice of MCP-401..407; task state stays with MCP-EVIDENCE-READ.
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: retrieval
+    branch: agent/mcp-evidence-read-2
+    status: review # PR #418, stacked on #416 (MCP-EVIDENCE-READ) and merging after it. Registered 2026-11-15 for lane enforcement only; same lane as part 1, never edited concurrently with it; no implementation owner assigned.
     allowed_paths:
       - packages/retrieval/fel_retrieval/evidence/** # except interfaces.py, owned by MCP-CONTRACT
       - packages/retrieval/tests/evidence/** # except test_interfaces.py, frozen by #404
@@ -1604,7 +1614,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: trust
     branch: agent/mcp-verifier
-    status: review # Submitted #414 entered independent review on 2026-11-14; no implementation owner assigned in the November 15 repair wave. Lead merge gates remain; existing mock identity strings and goldens stay byte-identical.
+    status: review # In review from 2026-11-14, when #414 was submitted, until #414 merged in 2319c35 (2026-11-15); no implementation owner was assigned in the November 15 repair wave. The flip to `merged` is reserved to the integration lead. Existing mock identity strings and goldens stay byte-identical.
     allowed_paths:
       - packages/retrieval/fel_retrieval/verification.py
       - packages/retrieval/fel_retrieval/verification_report.py

@@ -106,6 +106,11 @@ specification findings there (rerun invalidation for the
 security-evidence check; unassigned telemetry adapters) belong to #420's
 authors, and #420 still needs a non-OpenAI review.
 
+Later on 2026-11-15: #414 merged to `main` as `2319c35`; this brief does not
+record how A1–A3 were resolved for it. The owner ruled that #394 merges before
+#417 and authorized fixes for the verified #417 findings on #393's existing
+branch, with #393's ownership unchanged.
+
 ## Context in five minutes
 
 **The product.** An evidence-first research workspace for public companies.
@@ -593,17 +598,21 @@ the Medium and Low rows were never re-verified.
 ## Sequencing once decided
 
 1. Record the applicable lead gates for the reconciled ledger (G5, G6).
-2. #414 can merge independently after its gates; #416 precedes #418. Record
+2. #414 merged independently, as `2319c35` on 2026-11-15; #416 precedes #418. Record
    C1/C4 integration decisions without claiming unfinished #395 methods done.
 3. Complete #409 AC6, get #415 green and merge when its own gates pass; it
    does not depend on #417. Hold #417 for all three reproduced correctness
-   fixes, including transactional publication/repair serialization. D1 remains
+   fixes, including transactional publication/repair serialization, and, by
+   the owner's 2026-11-15 ruling, until #394 merges. D1 remains
    a separate real-backfill/hosted gate.
 4. Release `workers/tests/**` only after its owner finishes. Dispatch #410,
    #411 and #412 in turn, plus the H8 package, subject to registration and
    ADR-0034's three-implementer limit across all current lanes.
-5. Next MCP lanes: #394 (after #409/#412 release `apps/api/tests/**`), then
-   #397, #399 and part 3 of #395.
+5. Next MCP lanes: #394, then #397, #399 and part 3 of #395. #394 follows
+   #409's release of `apps/api/tests/**` and merges before #417 (owner
+   ruling, 2026-11-15). Because #412 waits for #393's `workers/tests/**`, the
+   earlier text placing #394 after #412 can no longer hold; #412 follows #394
+   (lead confirmation still pending on 2026-11-15).
 
 ## Research questions
 

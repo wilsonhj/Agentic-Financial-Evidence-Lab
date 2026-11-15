@@ -11,9 +11,11 @@ coordinator owns serialized handoff updates. This uses three implementation
 agents total under ADR-0034 Amendment 2; additional agents perform read-only
 review and isolated verification.
 
-#395's submitted slices #416/#418 and #396's #414 are in `review`, with no new
-implementation dispatched. Remaining #395 methods, context-contract decisions,
-different-vendor review of subsequent fixes, and lead merge gates remain open.
+#395's submitted slices #416/#418 and #396's #414 were in `review` when this
+section was written, with no new implementation dispatched; #414 then merged to
+`main` as `2319c35` on 2026-11-15; the `MCP-VERIFIER` flip to `merged` is
+reserved to the integration lead. Remaining #395 methods, context-contract
+decisions, different-vendor review of subsequent fixes, and lead merge gates remain open.
 No PR is marked merged and no canonical task checkbox changes here. #409 AC6
 already names the two fixture producers and their cross-stack test; the registry
 now records that bounded extension. #393 also owns the single synthetic
@@ -39,6 +41,16 @@ with zero skips. #420 documentation checks passed. These are local results;
 final independent verification, current-head CI and the applicable external
 review/lead gates remain required. The registry therefore has no implementation
 owner still active from this wave.
+
+On 2026-11-15 the owner ruled that #394 (`MCP-CUTOFF-PREDICATES`, `blocked`,
+with no branch or PR at the time) merges before #417, and authorized fixes for
+the verified #417 findings on #393's existing branch; #393's ownership did not
+change. #412 waits for #393's `workers/tests/**`, so it can no longer precede
+#394 in `apps/api/tests/**`; lead confirmation that #412 follows #394 was
+still pending on 2026-11-15.
+#418's branch `agent/mcp-evidence-read-2` was registered as
+`MCP-EVIDENCE-READ-2` in `review`, in #395's lane, so that `path_guard`, which
+reads one branch per package, also checks it.
 
 Outside the wave, #421/#422 (application load-testing specification) is
 owner-requested documentation that an OpenAI agent authored on 2026-11-14,
