@@ -85,17 +85,36 @@ class CursorCodec:
         body = _b64(json.dumps(payload, sort_keys=True).encode())
         return f"{body}.{self._mac(body)}"
 
-    def decode(self, token: str, context: i.EvidenceContext, scope: Mapping[str, Any]) -> list[Any]:
-        """The position, if the token is ours, for this context, and unexpired."""
+    def _payload(self, token: str) -> tuple[str, datetime, list[Any]]:
         body, _, mac = token.partition(".")
         try:
             if not body.isascii() or not hmac.compare_digest(self._mac(body), mac):
                 raise ValueError("signature")
             payload = json.loads(_unb64(body))
             bound, expires = payload["b"], datetime.fromisoformat(payload["e"])
-            position = list(payload["p"])
+            position = payload["p"]
+            if (
+                not isinstance(bound, str)
+                or not bound.isascii()
+                or not isinstance(position, list)
+                or expires.utcoffset() is None
+            ):
+                raise ValueError("payload shape")
         except (ValueError, KeyError, TypeError, binascii.Error):
             raise invalid_input("cursor", "is not a cursor issued by this server") from None
+        return bound, expires, position
+
+    def validate_signature(self, token: str) -> None:
+        """Reject malformed/forged tokens before resolving a visible tool scope.
+
+        This does not authorize pagination: ``decode`` must still check the
+        resolved scope and expiry before any page query uses its position.
+        """
+        self._payload(token)
+
+    def decode(self, token: str, context: i.EvidenceContext, scope: Mapping[str, Any]) -> list[Any]:
+        """The position, if the token is ours, for this context, and unexpired."""
+        bound, expires, position = self._payload(token)
         if not hmac.compare_digest(bound, _binding(context, scope)):
             raise invalid_input("cursor", "was issued for a different context or filters")
         if self._now() >= expires:

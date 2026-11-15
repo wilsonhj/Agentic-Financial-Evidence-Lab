@@ -170,3 +170,80 @@ def test_two_parsed_versions_in_one_corpus_fail_closed(pg_conn: Any, evidence_he
         companies={company.entity_id: company},
     )
     assert resolved.matches[0].coverage.visible_filing_count == 1  # documents, not versions
+
+
+def test_shared_name_cursor_uses_the_visible_issuer_and_can_page_past_the_end(
+    pg_conn: Any, evidence_helpers: Any
+) -> None:
+    corpus = evidence_helpers.new_corpus(pg_conn)
+    company = _company()
+    hidden = i.Company(str(uuid.uuid4()), "0000000396", "HID", company.name)
+    cohort = {c.entity_id: c for c in (company, hidden)}
+    early, late = [
+        evidence_helpers.seed_filing(
+            pg_conn,
+            corpus,
+            public_at=stamp,
+            published_at=stamp - HOUR,
+            entity_id=company.entity_id,
+        )
+        for stamp in (CUTOFF - HOUR, CUTOFF)
+    ]
+    evidence_helpers.seed_filing(
+        pg_conn,
+        corpus,
+        public_at=CUTOFF + MICRO,
+        published_at=CUTOFF - HOUR,
+        entity_id=hidden.entity_id,
+    )
+    context = evidence_helpers.make_context(CUTOFF, corpus)
+
+    def listing(name: str, cursor: str | None = None) -> i.ListFilingsResult:
+        return list_filings(
+            pg_conn,
+            i.ListFilingsRequest(company=name, limit=1, cursor=cursor),
+            context,
+            companies=cohort,
+            cursors=CURSORS,
+        )
+
+    first = listing(company.name)
+    assert [filing.document_id for filing in first.filings] == [late.document_id]
+    assert first.next_cursor is not None
+    for name in (company.name, company.entity_id, company.cik, "tst"):
+        second = listing(name, first.next_cursor)
+        assert [filing.document_id for filing in second.filings] == [early.document_id]
+        assert second.next_cursor is None
+    binding = {"tool": "list_filings", "entities": [company.entity_id], "forms": None}
+    past_end = CURSORS.encode(
+        context, binding, ["1994-01-01T00:00:00+00:00", "00000000-0000-0000-0000-000000000000"]
+    )
+    empty = listing(company.name, past_end)
+    assert (empty.filings, empty.next_cursor) == ((), None)
+    invalid = CURSORS.encode(context, binding, [None, None])
+    with pytest.raises(i.EvidenceReadError, check=lambda e: e.code == "invalid_input"):
+        listing(company.name, invalid)  # must never silently restart at the first page
+
+
+def test_resolution_does_not_drop_visible_issuers_after_a_hidden_candidate_batch(
+    pg_conn: Any, evidence_helpers: Any
+) -> None:
+    corpus = evidence_helpers.new_corpus(pg_conn)
+    cohort = {}
+    for n in range(25):
+        company = i.Company(str(uuid.uuid4()), f"{n:010d}", None, f"Cohort {n:02d}")
+        cohort[company.entity_id] = company
+        # First twenty match by name but have only future evidence.
+        stamp = CUTOFF + MICRO if n < 20 else CUTOFF
+        evidence_helpers.seed_filing(
+            pg_conn,
+            corpus,
+            public_at=stamp,
+            published_at=CUTOFF - HOUR,
+            entity_id=company.entity_id,
+        )
+    context = evidence_helpers.make_context(CUTOFF, corpus)
+    result = resolve_company(
+        pg_conn, i.ResolveCompanyRequest(query="cohort"), context, companies=cohort
+    )
+    assert [match.company.entity_id for match in result.matches] == list(cohort)[20:]

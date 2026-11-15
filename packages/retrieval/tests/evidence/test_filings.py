@@ -355,6 +355,9 @@ def test_the_match_cap_applies_after_visibility(fake_conn: Any, evidence_helpers
     context = evidence_helpers.make_context(AS_OF, CORPUS)
     result = resolve_company(conn, i.ResolveCompanyRequest(query="co"), context, companies=cohort)
     assert [match.company.entity_id for match in result.matches] == visible
+    queried = [params["entities"] for sql, params in conn.statements if "GROUP BY" in sql]
+    assert all(len(batch) <= 20 for batch in queried)
+    assert [entity for batch in queried for entity in batch] == list(cohort)
 
 
 def test_list_filings_takes_no_name_fragment(world: Any) -> None:
@@ -375,3 +378,51 @@ def test_forms_are_upper_cased_and_cursors_bind_the_resolved_company(world: Any)
         world.listing(answers, company=spelling, forms=("8-k", "10-K"), cursor=first.next_cursor)
     with pytest.raises(i.EvidenceReadError, check=lambda e: e.field == "cursor"):
         world.listing(answers, company="NOW", forms=("10-K", "8-K"), cursor=first.next_cursor)
+
+
+def test_shared_name_cursor_continues_by_each_identifier_of_the_visible_company(world: Any) -> None:
+    rows = [_page_row(3, LATE), _page_row(2, EARLY), _page_row(1, EARLY)]
+    first = world.listing({"GROUP BY": _stats(CRM), "LIMIT": rows}, company=CRM.name)
+    assert first.next_cursor is not None
+    for spelling in (CRM.entity_id, CRM.ticker, CRM.cik, CRM.name):
+        page = world.listing(
+            {"GROUP BY": _stats(CRM), "LIMIT": rows[2:]},
+            company=spelling,
+            cursor=first.next_cursor,
+        )
+        assert ([f.document_id for f in page.filings], page.next_cursor) == ([DOCS[1]], None)
+
+
+@pytest.mark.parametrize("company", ["CRM", CRM.name])
+def test_forged_cursors_do_no_database_work_even_for_a_shared_name(
+    world: Any, company: str
+) -> None:
+    with pytest.raises(i.EvidenceReadError, check=lambda e: e.code == "invalid_input"):
+        world.listing({}, company=company, cursor="not-a-signed-cursor")
+    assert world.conn.statements == []
+
+
+@pytest.mark.parametrize(
+    "position",
+    [
+        [],
+        [LATE.isoformat()],
+        [LATE.isoformat(), DOCS[0], "extra"],
+        [None, None],
+        ["not-a-time", DOCS[0]],
+        ["2024-03-06T21:14:09", DOCS[0]],
+        ["0001-01-01T00:00:00+01:00", DOCS[0]],
+        [LATE.isoformat(), "not-a-uuid"],
+        [LATE.isoformat(), None],
+    ],
+)
+def test_signed_invalid_keyset_positions_fail_before_the_page_query(
+    world: Any, position: list[Any]
+) -> None:
+    binding = {"tool": "list_filings", "entities": [CRM.entity_id], "forms": None}
+    token = world.cursors.encode(world.context, binding, position)
+    with pytest.raises(
+        i.EvidenceReadError, check=lambda e: (e.code, e.field) == ("invalid_input", "cursor")
+    ):
+        world.listing({"GROUP BY": _stats(CRM)}, cursor=token)
+    assert not any("LIMIT" in sql for sql in world.conn.sql)

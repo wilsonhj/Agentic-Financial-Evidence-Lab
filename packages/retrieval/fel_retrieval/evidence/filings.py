@@ -20,7 +20,7 @@ from typing import Any, Final
 from fel_retrieval.evidence import interfaces as i
 from fel_retrieval.evidence.citations import _instant, _integrity_error
 from fel_retrieval.evidence.cursors import CursorCodec
-from fel_retrieval.evidence.limits import check_request, invalid_input
+from fel_retrieval.evidence.limits import check_request, check_uuid, invalid_input
 from fel_retrieval.evidence.visibility import (
     VISIBLE_VERSIONS,
     public_read_session,
@@ -97,11 +97,19 @@ def _form_stats(
     conn: DBConnection, visible: dict[str, Any], candidates: list[i.Company]
 ) -> dict[str, dict[str | None, tuple[int, datetime, datetime]]]:
     """Per entity and form, for the candidates that have a visible filing."""
-    scope = {**visible, "entities": [company.entity_id for company in candidates]}
     stats: dict[str, dict[str | None, tuple[int, datetime, datetime]]] = {}
-    for entity_id, form, count, first, last in conn.execute(_FORM_STATS, scope).fetchall():
-        by_form = stats.setdefault(str(entity_id), {})
-        by_form[form] = (int(count), first.astimezone(UTC), last.astimezone(UTC))
+    # Bound each query to a cohort-sized batch without dropping candidates that
+    # sort after hidden issuers. An empty candidate set still takes the same path.
+    for offset in range(0, max(1, len(candidates)), MAX_MATCHES):
+        scope = {
+            **visible,
+            "entities": [
+                company.entity_id for company in candidates[offset : offset + MAX_MATCHES]
+            ],
+        }
+        for entity_id, form, count, first, last in conn.execute(_FORM_STATS, scope).fetchall():
+            by_form = stats.setdefault(str(entity_id), {})
+            by_form[form] = (int(count), first.astimezone(UTC), last.astimezone(UTC))
     return stats
 
 
@@ -144,6 +152,21 @@ def _filing_ref(row: tuple[Any, ...]) -> i.FilingRef:
         public_at=row[5].astimezone(UTC),
         public_at_basis=row[6],
     )
+
+
+def _filing_position(position: list[Any]) -> tuple[str, str]:
+    if len(position) != 2 or not all(isinstance(value, str) for value in position):
+        raise invalid_input("cursor", "has an invalid filing position")
+    public_at, document_id = position
+    try:
+        instant = datetime.fromisoformat(public_at)
+        if instant.utcoffset() is None:
+            raise ValueError("naive position")
+        public_at = instant.astimezone(UTC).isoformat()
+    except (ValueError, OverflowError):
+        raise invalid_input("cursor", "has an invalid filing timestamp") from None
+    check_uuid("cursor", document_id)
+    return public_at, document_id
 
 
 def resolve_company(
@@ -200,12 +223,20 @@ def list_filings(
     # EDGAR form types are upper case; normalise so "10-k" lists 10-K filings.
     forms = None if request.forms is None else sorted({form.upper() for form in request.forms})
     candidates = match_companies(companies, request.company, partial=False)
-    # Bound to the companies the reference resolves to, not to its spelling.
-    entities = [company.entity_id for company in candidates]
-    binding = {"tool": "list_filings", "entities": entities, "forms": forms}
-    after_public, after_id = (
-        (None, None) if request.cursor is None else cursors.decode(request.cursor, context, binding)
-    )
+    position = None
+    if request.cursor is not None:
+        if len(candidates) == 1:
+            # Unique cohort identifiers can reject any invalid cursor before SQL.
+            binding = {
+                "tool": "list_filings",
+                "entities": [candidates[0].entity_id],
+                "forms": forms,
+            }
+            position = _filing_position(cursors.decode(request.cursor, context, binding))
+        else:
+            # Shared names need visibility to resolve the scope, but never send
+            # a forged or malformed token as far as the database boundary.
+            cursors.validate_signature(request.cursor)
     with public_read_session(conn):
         stats = _form_stats(conn, visible, candidates)
         shown = [company for company in candidates if company.entity_id in stats]
@@ -213,6 +244,12 @@ def list_filings(
             raise i.EvidenceReadError.not_found()
         if len(shown) > 1:
             raise invalid_input("company", "names more than one company; use its entity_id or CIK")
+        # Bind the one visible resolved company, so an invisible namesake cannot
+        # make a full name and that issuer's exact identifiers incompatible.
+        binding = {"tool": "list_filings", "entities": [shown[0].entity_id], "forms": forms}
+        if request.cursor is not None and position is None:
+            position = _filing_position(cursors.decode(request.cursor, context, binding))
+        after_public, after_id = (None, None) if position is None else position
         page = {
             **visible,
             "entity": shown[0].entity_id,
@@ -252,8 +289,8 @@ def list_filings(
     next_cursor = None
     if len(rows) > request.limit:
         last_row = rows[request.limit - 1]
-        position = [last_row[5].astimezone(UTC).isoformat(), str(last_row[8])]
-        next_cursor = cursors.encode(context, binding, position)
+        next_position = [last_row[5].astimezone(UTC).isoformat(), str(last_row[8])]
+        next_cursor = cursors.encode(context, binding, next_position)
     return i.ListFilingsResult(
         evidence_context=context,
         coverage_note=_coverage_note(context, shown, searched, ranges),

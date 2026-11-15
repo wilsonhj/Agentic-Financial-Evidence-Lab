@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import dataclasses
+import hashlib
+import hmac
+import json
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
@@ -143,6 +147,32 @@ def test_a_scope_must_name_its_tool(context: i.EvidenceContext) -> None:
         codec.encode(context, untagged, POSITION)
     with pytest.raises(ValueError, match="name its tool"):
         codec.decode(token, context, untagged)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"p": None},
+        {"p": "ab"},
+        {"p": {"first": 1, "second": 2}},
+        {"b": None},
+        {"b": "é"},
+        {"e": "2026-11-14T15:30:00"},
+        {"e": None},
+    ],
+)
+def test_signed_malformed_envelopes_are_typed_invalid_input(
+    context: i.EvidenceContext, change: dict[str, Any]
+) -> None:
+    codec = CursorCodec(KEY, Clock())
+    body, _ = codec.encode(context, SCOPE, POSITION).split(".")
+    payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    payload.update(change)
+    body = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    mac = base64.urlsafe_b64encode(hmac.new(KEY, body.encode(), hashlib.sha256).digest())
+    token = body + "." + mac.decode().rstrip("=")
+    with _error("invalid_input", "cursor"):
+        codec.decode(token, context, SCOPE)
 
 
 def test_the_codec_refuses_unsafe_configuration(context: i.EvidenceContext) -> None:
