@@ -22,6 +22,8 @@ Both steps are idempotent and a rerun does only the work still outstanding.
 Actual metadata or edge changes to active or retained superseded pins are
 rejected atomically (ADR-0034 Amendment 2). Backfill and direct repair share
 publication's transaction lock, held through the caller's outer transaction.
+The submissions index is fetched before that lock is requested, so a slow
+SEC response never blocks publication; only database work runs under it.
 Repair must therefore finish before publishing an affected pin. No retirement
 state is introduced. Nothing here runs automatically at ingest.
 
@@ -33,7 +35,6 @@ Unknown publication times establish no restatement predecessor.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time
 from typing import Any
@@ -156,10 +157,13 @@ def repair_restatement_links(conn: psycopg.Connection[Any], *, entity_id: str) -
 
 
 def _backfill_publication(
-    conn: psycopg.Connection[Any], discovered: Sequence[FilingRef], entity_id: str
+    conn: psycopg.Connection[Any], refs: dict[str, FilingRef], entity_id: str
 ) -> tuple[int, tuple[str, ...]]:
-    """Recheck stored rows under the corpus lock; return (updated, conflicts)."""
-    refs = {ref.accession: ref for ref in discovered}
+    """Set the publication columns still NULL; return (updated, conflicts).
+
+    ``refs`` is the already-fetched index: this runs under the corpus lock,
+    which must never be held across a network call.
+    """
     with conn.cursor(row_factory=dict_row) as cur:
         rows = cur.execute(
             "SELECT id, accession, filed_at, accepted_at, public_at, public_at_basis,"
@@ -219,13 +223,15 @@ def run_publication_backfill_job(
     """Handle a ``sec_publication_backfill`` job for one issuer (``cik``).
 
     The submissions index comes from the injected client: the pinned fixture
-    transport in every mock run. Discovery finishes before opening the job's
-    transaction or taking the corpus lock. Stored metadata and retained pins
-    are then rechecked under the lock; all writes commit together or not at all.
+    transport in every mock run. It is fetched before the corpus lock is
+    requested; the lock then covers only the reads, writes and pin checks.
+    That is safe because the writes fill only NULL columns and report any
+    disagreement with stored values instead of overwriting them. All writes
+    commit together or not at all.
     """
     cik = str(payload.get("cik", ""))
     entity_id = entity_id_for_cik(cik)
-    refs = discover_filings(client, cik)
+    refs = {ref.accession: ref for ref in discover_filings(client, cik)}
     with conn.transaction():
         lock_corpus_mutations(conn)
         updated, conflicts = _backfill_publication(conn, refs, entity_id)

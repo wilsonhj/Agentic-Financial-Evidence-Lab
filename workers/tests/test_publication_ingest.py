@@ -30,7 +30,7 @@ import pytest
 from fel_providers.mocks import MockStorageProvider
 from fel_workers import queue
 from fel_workers.consumer import entity_id_for_cik, handle_sec_filing_fetch, run_worker
-from fel_workers.ingestion import pipeline
+from fel_workers.ingestion import pin_guard, pipeline
 from fel_workers.ingestion.backfill import (
     JOB_KIND_SEC_PUBLICATION_BACKFILL,
     RepairReport,
@@ -39,7 +39,11 @@ from fel_workers.ingestion.backfill import (
 )
 from fel_workers.ingestion.discovery import discover_filings, fetch_job_payload
 from fel_workers.ingestion.fixture_sec_client import FixtureSecClient
-from fel_workers.ingestion.pin_guard import PublishedPinMutationError
+from fel_workers.ingestion.pin_guard import (
+    CorpusLockTimeoutError,
+    PublishedPinMutationError,
+    lock_corpus_mutations,
+)
 from fel_workers.ingestion.pipeline import create_corpus_version, publish_corpus_version
 from fel_workers.ingestion.publication import derive_publication
 from fel_workers.ingestion.raw_store import store_raw_document
@@ -646,6 +650,96 @@ def test_backfill_waits_for_an_uncommitted_publication_then_rejects_it(
     assert blocked and still_waiting, "the backfill did not wait for the uncommitted publication"
     assert _publication(corpus_conn) == {A: UNKNOWN}
     assert len(reports) == 1 and isinstance(reports[0], PublishedPinMutationError), reports
+
+
+class _LockProbeIndex:
+    """The pinned transport, recording whether any backend in this database
+    holds an advisory lock while the submissions index is being fetched."""
+
+    def __init__(self, inner: FixtureSecClient, observer: psycopg.Connection) -> None:
+        self._inner, self._observer = inner, observer
+        self.locks_held_during_fetch: list[int] = []
+
+    def submissions(self, cik: str) -> dict[str, object]:
+        row = self._observer.execute(
+            "SELECT count(*) FROM pg_locks l JOIN pg_database db ON db.oid = l.database"
+            " WHERE l.locktype = 'advisory' AND l.granted"
+            " AND db.datname = current_database()"
+        ).fetchone()
+        assert row is not None
+        self.locks_held_during_fetch.append(int(row[0]))
+        return self._inner.submissions(cik)
+
+    def fetch_document(self, url: str) -> bytes:
+        return self._inner.fetch_document(url)
+
+
+def test_backfill_fetches_the_index_before_taking_the_corpus_lock(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    """A slow SEC response must never block publication: the submissions
+    index is fetched while no corpus lock is held, and the job still fills
+    and repairs exactly as before."""
+    _ingest(corpus_conn, sec, [A, B], legacy=True)
+    with _other_connection() as observer:
+        probe = _LockProbeIndex(sec, observer)
+        report = run_publication_backfill_job(corpus_conn, probe, {"cik": CIK})
+    assert probe.locks_held_during_fetch == [0], "the SEC fetch ran under the corpus lock"
+    assert report.updated == 2
+    assert _publication(corpus_conn) == {A: KNOWN[A], B: KNOWN[B]}
+    assert _links(corpus_conn) == [(B, A, 2)]
+
+
+def test_corpus_lock_wait_is_bounded_and_scoped_to_the_lock_request(
+    corpus_conn: psycopg.Connection,
+) -> None:
+    """A held lock makes a second requester fail fast with a clear, retryable
+    error; once granted, the caller's own lock_timeout is back in force."""
+    with _other_connection() as holder:
+        with holder.transaction():
+            lock_corpus_mutations(holder)
+            started = time.monotonic()
+            with pytest.raises(CorpusLockTimeoutError, match="not granted within 200 ms"):
+                with corpus_conn.transaction():
+                    lock_corpus_mutations(corpus_conn, timeout_ms=200)
+            assert time.monotonic() - started < 5
+    session = corpus_conn.execute("SHOW lock_timeout").fetchone()
+    with corpus_conn.transaction():
+        lock_corpus_mutations(corpus_conn, timeout_ms=200)
+        assert corpus_conn.execute("SHOW lock_timeout").fetchone() == session
+    with pytest.raises(ValueError, match="positive"):
+        with corpus_conn.transaction():
+            lock_corpus_mutations(corpus_conn, timeout_ms=0)
+
+
+def test_backfill_job_retries_instead_of_waiting_forever_on_a_held_lock(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stuck lock holder fails the queued job as retryable (requeued, not
+    dead-lettered) within the bound, and nothing is written."""
+    monkeypatch.setattr(pin_guard, "CORPUS_LOCK_TIMEOUT_MS", 200)
+    _ingest(corpus_conn, sec, [A, B], legacy=True)
+    before = _row_versions(corpus_conn)
+    queue.enqueue(
+        corpus_conn,
+        kind=JOB_KIND_SEC_PUBLICATION_BACKFILL,
+        payload={"cik": CIK},
+        queue="ingestion",
+    )
+    with _other_connection() as holder:
+        with holder.transaction():
+            lock_corpus_mutations(holder)
+            started = time.monotonic()
+            completed = run_worker(
+                corpus_conn, MockStorageProvider(), sec, queue_name="ingestion", max_iterations=1
+            )
+            assert time.monotonic() - started < 10
+    assert completed == 0
+    job = corpus_conn.execute("SELECT status, error::text FROM jobs").fetchone()
+    assert job is not None and job[0] == "queued"
+    assert "corpus mutation lock not granted" in job[1]
+    assert _row_versions(corpus_conn) == before
+    assert _publication(corpus_conn) == {A: UNKNOWN, B: UNKNOWN}
 
 
 @pytest.mark.parametrize("order", [(A, B, C), (B, A, C)], ids=["ABC", "BAC"])
