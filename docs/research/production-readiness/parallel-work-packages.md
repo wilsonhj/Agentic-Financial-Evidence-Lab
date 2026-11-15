@@ -140,6 +140,14 @@ construct fresh request headers; a formatter or proxy-only change cannot provide
 web-to-API correlation. Resolve this exact list before dispatch, and test every
 transport with a downstream header-capture fixture. Keep identity credentials
 separate from validated correlation metadata and never forward it to arbitrary origins.
+PRO-12 must preserve [ADR-0027](../../decisions/ADR-0027-deployment-modes.md):
+missing deployment mode means public, and public web business routes return
+HTTP 503 (`PUBLIC_AUTH_NOT_READY` on guarded API routes) until #324's accepted
+request-scoped session implementation and acceptance proof permit public access.
+Do not bypass `assertDeploymentMode`, change the Proxy matcher as part of this
+correlation package, or substitute a deployment-wide bearer. Correlation changes must
+retain literal HTTP-status and direct source-factory refusal tests; health/static
+access and independently verified public API identities follow the existing ADR.
 
 PRO-14's later issue must name the existing Railway configurations as modifications,
 record their prior builder/commands and effective target settings, and provide a
@@ -161,6 +169,25 @@ change or rollout; actual hosted changes still need their scoped authorization.
 | #203 second CODEOWNER/hosted observability | PRO-13, PRO-18 | Reuse the tracking issue and acceptance evidence rather than duplicate it |
 | #413 dispatch reconciliation | PRO-00 | Read its current merged state before registering work; do not treat its historical prose as a new authorization |
 
+The following production findings were fetched from GitHub on 2026-11-15:
+all seven were open with no comments and explicitly unregistered/non-dispatchable.
+Their proposed fixes are issue context, not accepted architecture or automatic
+ownership. The lead must reconcile each affected path and register one owner
+before the overlapping implementation starts; add any required merge dependencies
+at registration. Offline adapters and fixtures on disjoint paths may proceed.
+Re-fetch issues, comments and current PRs before dispatch. These references add
+no packages to the 24-node proposed graph and amend no canonical ledger.
+
+| Finding / owning issue pending registration | Affected PRO scope | Do not start / acceptance gate |
+| --- | --- | --- |
+| [#423: API login, lane roles and RLS](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/423) | PRO-10 API pools/roles and PRO-14 migration identity/configuration | Agree one runtime-login/lane-role owner and the separate migration package before overlapping API/infra edits; accepted role/schema decisions and migration must merge before consumers; hosted acceptance proves runtime credentials cannot regain owner rights |
+| [#424: retrieval executes inside the request](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/424) | PRO-10 retrieval integration, PRO-11 queue lifecycle, PRO-23 correlation | Register one retrieval/job-lifecycle owner before editing shared retrieval/worker paths; merge the agreed execution/reservation recovery and correlation contracts before consumers; PRO-15/17 cannot treat fast enqueue or mock-only execution as live retrieval completion |
+| [#425: deployed ingestion/index publication path](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/425) | PRO-11 worker jobs, PRO-13 CI integration, PRO-15/17 acceptance | Reconcile queue/index/CI ownership with #177/#201 before integration edits; acceptance needs a deployed authorized ingestion-to-published-index path and searchable corpus proof, not only a library/eval call |
+| [#426: mock provider seams and verifier/cost gaps](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/426) | PRO-08 admission/cost, PRO-10/11 provider integration, PRO-17 hosted proof | Resolve provider/verifier/metering ownership with #195/#177/#191 before seam changes; preserve the accepted provider baseline while ADR-0012 remains Proposed; no live acceptance until approved non-echo provider/verifier and complete spend accounting are demonstrated |
+| [#427: shared canonical-object storage](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/427) | PRO-07 adapter, PRO-10 reader, PRO-11 binding, PRO-16/17 recovery/hosted proof | Agree one storage binding/reader owner with #108 before overlapping changes; merge the approved adapter/interface decisions before consumers; require worker-to-separate-API readback and DB-plus-object restore proof |
+| [#428: hosted build/deployability evidence](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/428) | PRO-05/06 images, PRO-13 build CI, PRO-14 host configuration, PRO-17 hosted proof | Lead resolves host-of-record and build/configuration ownership against accepted ADR-0002 before host-specific integration; build/smoke the selected deployables and verify actual hosted digest/configuration before rollout; research cannot certify a never-observed deployment |
+| [#429: environments, release identity and delivery](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/429) | PRO-10 readiness, PRO-11/12 telemetry, PRO-13/14 delivery, PRO-17 hosted proof | Register one release/environment/migration-order owner before workflow/config edits; require isolated target authorization, release/environment identity, ordered migration, readiness, rollback/restore and non-production proof before promotion |
+
 **Independent acceptance per package**
 
 | ID | Producer output and smallest meaningful acceptance |
@@ -177,7 +204,7 @@ change or rollout; actual hosted changes still need their scoped authorization.
 | PRO-09 | Harness interface, deterministic fixtures/seeds, expected-failure demonstrations and isolated cleanup; imported producer implementations are forbidden |
 | PRO-10 | Real `configure_logging()`/middleware and `configure_error_reporting()` with Sentry transport canaries; API request→job correlation, role/claim reset, bounded pools, safe health, shared quotas/object reads and preserved REST/MCP separation |
 | PRO-11 | Actual extraction `emit()` and calculation `emit(None, ...)`/`LoggingSink` produce bounded, queryable catalogue JSON/context without renamed-key secret leakage; injected recording sink remains compatible; auth-boundary review and role-binding/least-privilege tests; worker crash/reclaim, lease fencing, drain, shared SEC allowance and no production mock mode |
-| PRO-12 | Browser→web→API correlation, bounded telemetry and safe Sentry forwarding; hostile header/body/log injection cases |
+| PRO-12 | Browser→web→API correlation, bounded telemetry and safe Sentry forwarding; hostile header/body/log injection cases; preserve ADR-0027 public HTTP503, matcher/source-factory refusal and no shared bearer until #324 acceptance |
 | PRO-13 | Vulnerable dependency, scanner crash, omitted artifact and archive outage fail correctly; same-SHA hosted rerun test blocks before admission ACK and while archive is paused, with actual App/source-check branch binding; activation blocked until proven |
 | PRO-14 | Build-once deployment manifest, signature/provenance verification, one-shot migration identity, rollback compatibility and rejected digest mismatch using staging fixtures; existing builder/pre-deploy changes require the authorized non-production deploy test and rollback/restore plan above |
 | PRO-15 | Reproducible one/two/overlap-replica results with latency, correctness, connection ceilings, quotas, cursor-key rotation and stream resume |

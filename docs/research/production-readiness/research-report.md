@@ -90,6 +90,11 @@ from hosted prerequisites. Missing auditor scope, budget or cloud permissions
 must not block offline scanner adapters, formatters, container builds or test
 fixtures once their own contracts are accepted. Conversely, elapsed time or
 completed code does not authorize a hosted deployment.
+The [collision register](parallel-work-packages.md)
+also maps production findings #423–#429 to proposed integration and acceptance
+scopes. They require lead registration and ownership reconciliation; this research
+does not dispatch them or close their live-product prerequisites. PRO-12's
+correlation work preserves ADR-0027 public refusal until #324 session acceptance.
 
 **Architecture decisions still owed**
 
