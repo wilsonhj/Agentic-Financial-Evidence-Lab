@@ -18,6 +18,9 @@ activate live providers. Docker Desktop must already be installed and running.
    Docker memory, tool versions and image IDs. Build natively for ARM64.
 2. Run `lab.sh doctor`, `build`, `create`, `deploy`, `test`, `status` and `open`.
    Use explicit `FEL_LAB_STATE` and `FEL_LAB_CLUSTER` values for this run.
+   Run `python3 -m unittest discover -s infra/kubernetes/tests -v` for the
+   credential and committed-build-context checks. Build only from the exported
+   committed tree; the chart generates its disposable DB password at runtime.
 3. Inspect the fixture UI through the loopback port forward. Verify the deployed
    Service smoke and separate real cross-stack acceptance Job both succeed.
    Save timestamped logs and workload/events output before another run.

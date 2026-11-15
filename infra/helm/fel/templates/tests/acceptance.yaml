@@ -26,6 +26,29 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        - name: initialize-db-credential
+          image: {{ include "fel.image" .Values.acceptance.image | quote }}
+          imagePullPolicy: {{ .Values.acceptance.image.pullPolicy }}
+          command: [/workspace/infra/kubernetes/run-acceptance.sh, --initialize-db-credential]
+          env:
+            - name: FEL_ACCEPTANCE_LOCAL
+              value: "1"
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: db-credential
+              mountPath: /run/fel-acceptance
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
         # A native sidecar ends with the runner; a regular postgres container
         # would keep this Job running forever. Requires Kubernetes >= 1.33.
         - name: postgres
@@ -36,8 +59,8 @@ spec:
           env:
             - name: POSTGRES_USER
               value: fel
-            - name: POSTGRES_PASSWORD
-              value: fel-local-only
+            - name: POSTGRES_PASSWORD_FILE
+              value: /run/fel-acceptance/password
             - name: POSTGRES_DB
               value: fel_extraction_acceptance
             - name: PGDATA
@@ -56,6 +79,9 @@ spec:
             timeoutSeconds: 2
             failureThreshold: 60
           volumeMounts:
+            - name: db-credential
+              mountPath: /run/fel-acceptance
+              readOnly: true
             - name: postgres
               mountPath: /var/lib/postgresql/data
           resources:
@@ -69,8 +95,6 @@ spec:
           env:
             - name: FEL_ACCEPTANCE_LOCAL
               value: "1"
-            - name: FEL_DATABASE_URL
-              value: postgresql://fel:fel-local-only@127.0.0.1:5432/fel_extraction_acceptance
             - name: FEL_DEPLOYMENT_MODE
               value: synthetic-http
             - name: FEL_SYNTHETIC_HTTP_TARGET
@@ -96,6 +120,9 @@ spec:
             capabilities:
               drop: [ALL]
           volumeMounts:
+            - name: db-credential
+              mountPath: /run/fel-acceptance
+              readOnly: true
             - name: work
               mountPath: /work
             - name: shm
@@ -103,6 +130,10 @@ spec:
           resources:
             {{- toYaml .Values.acceptance.resources | nindent 12 }}
       volumes:
+        - name: db-credential
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
         - name: postgres
           emptyDir:
             sizeLimit: 2Gi

@@ -115,6 +115,8 @@ Open `http://127.0.0.1:3000`, then stop the port forward with Ctrl-C when done.
 If another application uses port 3000, run
 `FEL_LAB_PORT=13000 bash infra/kubernetes/lab.sh open` and browse port 13000.
 `build` requires a clean checkout and tags both images with its commit SHA.
+It exports the committed Git tree into a temporary Docker context, so ignored
+local logs, environment files and credentials cannot be copied into the images.
 `create` writes only the lab's separate kubeconfig. `deploy` loads images
 directly into the named kind cluster and installs the chart. No registry
 account, Supabase project, SEC request or model-provider credential is needed.
@@ -155,11 +157,20 @@ production-build cross-stack browser test. It uses one Playwright worker.
 The script propagates Helm's exit code and archives timestamped logs, events
 and workload status under `$FEL_LAB_STATE/evidence`.
 
-The database login in the chart is an intentionally public, disposable test
-identity. PostgreSQL listens only on Pod loopback and has no Service. Test
+The database uses a disposable test identity with a new random password for
+each Job. An init container writes it into a memory-backed volume, and the
+database and runner mount it read-only. No password value is committed or
+stored in the Pod specification. PostgreSQL listens only on Pod loopback and
+has no Service. Test
 data and evidence storage use `emptyDir`; no existing database can be supplied
 through chart values. The runner validates its exact local target before
 migrations. Do not inject real credentials into either lab image or Pod.
+
+Run the credential and build-context regression checks without a cluster:
+
+```bash
+python3 -m unittest discover -s infra/kubernetes/tests -v
+```
 
 Logs are available after a Job completes. Browser traces and files inside a
 terminated container are not exported by this first version; `kubectl cp`

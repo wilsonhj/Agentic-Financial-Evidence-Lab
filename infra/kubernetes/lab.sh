@@ -46,14 +46,19 @@ case "$action" in
     printf 'Isolated cluster: %s\nState directory: %s\nImage tag: %s\n' "$cluster" "$state" "$tag"
     ;;
   build)
-    need docker git
+    need docker git tar
     # Tags identify a source commit. Commit deliberate local edits before building.
     [[ -z $(git -C "$root" status --porcelain --untracked-files=normal) ]] || {
       echo 'Build from a clean checkout so image tags identify the tested source.' >&2; exit 2;
     }
     source_sha=$(git -C "$root" rev-parse HEAD)
-    docker build --build-arg "SOURCE_SHA=$source_sha" -f "$root/infra/kubernetes/images/web-fixture.Dockerfile" -t "$web" "$root"
-    docker build --build-arg "SOURCE_SHA=$source_sha" -f "$root/infra/kubernetes/images/acceptance.Dockerfile" -t "$runner" "$root"
+    # Git-ignored local files are invisible to status but visible to Docker.
+    # Export the committed tree so they can never enter this build context.
+    context=$(mktemp -d)
+    trap 'rm -rf "$context"' EXIT
+    git -C "$root" archive --format=tar "$source_sha" | tar -xf - -C "$context"
+    docker build --build-arg "SOURCE_SHA=$source_sha" -f "$context/infra/kubernetes/images/web-fixture.Dockerfile" -t "$web" "$context"
+    docker build --build-arg "SOURCE_SHA=$source_sha" -f "$context/infra/kubernetes/images/acceptance.Dockerfile" -t "$runner" "$context"
     ;;
   create)
     need docker kind

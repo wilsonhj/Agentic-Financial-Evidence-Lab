@@ -17,8 +17,10 @@ Kubernetes >= 1.33 is required. PostgreSQL is a [native sidecar](https://kuberne
 it starts before the runner and stops when the runner exits, allowing the Job to complete.
 All acceptance connections use loopback inside the Pod, preserving the existing
 synthetic deployment guards. PostgreSQL listens only on `127.0.0.1` and has no
-Service. The fixed `fel-local-only` password belongs only to this disposable DB;
-the `extraction-ci` target matches the existing CI acceptance configuration.
+Service. A first init container generates a fresh password in a memory-backed
+volume; PostgreSQL and the runner read that file through read-only mounts.
+No password value is stored in the chart or image. The `extraction-ci` target
+matches the existing CI acceptance configuration.
 An ingress/egress deny policy selects the test Pod; its enforcement depends on
 the cluster CNI, and kind's default kindnet does not enforce NetworkPolicy.
 

@@ -51,6 +51,14 @@
 **/*.key
 **/.npmrc
 **/.pypirc
+**/.netrc
+**/.git-credentials
+**/.docker/**
+**/.vercel/**
+**/.local/**
+**/.cache/**
+**/*.log
+**/coverage/**
 **/node_modules/**
 **/.next/**
 **/test-results/**

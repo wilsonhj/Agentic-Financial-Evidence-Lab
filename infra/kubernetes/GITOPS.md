@@ -72,14 +72,16 @@ test -z "$(git status --porcelain --untracked-files=normal)"
 export FEL_SOURCE_SHA=$(git rev-parse HEAD)
 export FEL_CHART_VERSION=0.1.0
 export FEL_RELEASE_DIR=$(mktemp -d)
+mkdir "$FEL_RELEASE_DIR/source"
+git archive --format=tar "$FEL_SOURCE_SHA" | tar -xf - -C "$FEL_RELEASE_DIR/source"
 export FEL_WEB_REPO=ghcr.io/wilsonhj/fel-web-fixture
 export FEL_ACCEPTANCE_REPO=ghcr.io/wilsonhj/fel-acceptance
 docker buildx build --platform linux/arm64 --build-arg SOURCE_SHA="$FEL_SOURCE_SHA" \
-  -f infra/kubernetes/images/web-fixture.Dockerfile -t "$FEL_WEB_REPO:$FEL_SOURCE_SHA" \
-  --metadata-file "$FEL_RELEASE_DIR/web.json" --push .
+  -f "$FEL_RELEASE_DIR/source/infra/kubernetes/images/web-fixture.Dockerfile" -t "$FEL_WEB_REPO:$FEL_SOURCE_SHA" \
+  --metadata-file "$FEL_RELEASE_DIR/web.json" --push "$FEL_RELEASE_DIR/source"
 docker buildx build --platform linux/arm64 --build-arg SOURCE_SHA="$FEL_SOURCE_SHA" \
-  -f infra/kubernetes/images/acceptance.Dockerfile -t "$FEL_ACCEPTANCE_REPO:$FEL_SOURCE_SHA" \
-  --metadata-file "$FEL_RELEASE_DIR/acceptance.json" --push .
+  -f "$FEL_RELEASE_DIR/source/infra/kubernetes/images/acceptance.Dockerfile" -t "$FEL_ACCEPTANCE_REPO:$FEL_SOURCE_SHA" \
+  --metadata-file "$FEL_RELEASE_DIR/acceptance.json" --push "$FEL_RELEASE_DIR/source"
 export FEL_WEB_DIGEST=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "$FEL_RELEASE_DIR/web.json")
 export FEL_ACCEPTANCE_DIGEST=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "$FEL_RELEASE_DIR/acceptance.json")
 docker buildx imagetools inspect pgvector/pgvector:0.8.5-pg17 \
@@ -343,3 +345,26 @@ That needs no OCI chart publication. The Warehouse/Stage above specifically
 promote **packaged chart versions**; do not point that Warehouse at a Git URL.
 Argo's Helm renderer does not create a Helm-managed release, so use full Argo
 sync and its retained hook evidence for that variant too.
+
+## 6. Separate persistent environment configuration
+
+For persistent/shared environments, use a new private deployment-state
+repository. Keep this reusable chart, image recipes and synthetic lab with the
+application. Put actual environment wrappers, cluster/controller configuration,
+Argo Applications/AppProjects, Kargo promotion policies and secret references
+in the private repository. This follows
+[Argo CD's repository separation guidance](https://argo-cd.readthedocs.io/en/release-3.6/user-guide/best_practices/).
+
+Bootstrap the wrapper from that private repository's own reviewed history.
+Update the Application Git URL, Kargo `gitRepo` variable, credential repository
+URLs and scoped AppProject together. Keep the OCI chart URLs unchanged unless
+moving the registry separately. A private Git repository does not make public
+images/charts private, and it is not a plaintext secret store. Use an external
+secret store or an approved encrypted-secret workflow for persistent secrets.
+
+Confirm branch protections, reviewer access, secret scanning and push
+protection are available under the private repository's owner/plan before
+cutover; these settings are not inherited. If the environment branch requires
+PRs, use Kargo's PR promotion steps and verify the post-merge SHA instead of
+granting the bot a broad bypass. Creating or migrating that repository is a
+separate operation from this local example.
