@@ -37,8 +37,12 @@ def _git(*args: str) -> str:
         "GIT_OBJECT_DIRECTORY",
     ):
         env.pop(key, None)
+    # Replacement refs can swap base blobs while leaving the printed SHA unchanged.
     done = subprocess.run(  # nosec B603 B607
-        ["git", "-C", str(ROOT), *args], capture_output=True, check=False, env=env
+        ["git", "--no-replace-objects", "-C", str(ROOT), *args],
+        capture_output=True,
+        check=False,
+        env=env,
     )
     if done.returncode != 0:
         print(

@@ -143,6 +143,28 @@ def test_git_environment_cannot_redirect_the_check(repo: Path, tmp_path: Path) -
     assert "AGENTS.md is a shared path" in result.stdout
 
 
+@pytest.mark.parametrize("namespace", ["refs/replace/", "refs/custom-replace/"])
+def test_git_replacements_cannot_substitute_the_approved_base_guard(
+    repo: Path, tmp_path: Path, namespace: str
+) -> None:
+    _commit(repo, "AGENTS.md", "changed contract\n")
+    marker = repo / "replacement-executed.txt"
+    replacement = tmp_path / "replacement.py"
+    replacement.write_text(
+        (repo / GUARD).read_text()
+        + f"\nPath({str(marker)!r}).write_text('executed')\n"
+        + "def reasons_for(*args): return []\n"
+    )
+    original = _git(repo, "rev-parse", f"main:{GUARD}")
+    replaced = _git(repo, "hash-object", "-w", str(replacement))
+    _git(repo, "update-ref", namespace + original, replaced)
+    env = {} if namespace == "refs/replace/" else {"GIT_REPLACE_REF_BASE": namespace}
+    result = _check(repo, **env)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert not marker.exists(), "replacement guard code executed under the approved base SHA"
+    assert "AGENTS.md is a shared path" in result.stdout
+
+
 def test_the_candidate_cannot_widen_its_registry(repo: Path) -> None:
     widened = REGISTRY.replace("allowed/**", "**")
     _commit(repo, "docs/handoff/workstreams.yaml", widened)

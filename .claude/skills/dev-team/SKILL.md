@@ -40,15 +40,18 @@ If the implementer reports a blocker, go to step 7.
 
 ## 4. Run the lane check
 
-Require the implementer's worktree to be clean (`git status --porcelain`, including
-untracked files). Resolve the working branch to a full commit SHA and require it
-to equal the head SHA reported by the implementer. A dirty worktree or mismatched
-head is a blocker: stop and request a committed, tested checkpoint.
+Require the implementer's worktree to be clean
+(`git --no-replace-objects status --porcelain`, including untracked files). Resolve
+the working branch to a full commit SHA with `git --no-replace-objects rev-parse`
+and require it to equal the head SHA reported by the implementer. A dirty worktree
+or mismatched head is a blocker: stop and request a committed, tested checkpoint.
 
 Run the checker from the scheduler's trusted checkout, not from the candidate
 worktree. It reads the guard and registry from the approved base and reports the
 exact base/head SHAs it checked. Require its reported head to equal that checkpoint.
 Require its reported base to equal the approved full base SHA also.
+Keep `--no-replace-objects` on every Git review command: a replacement ref can
+otherwise substitute guard/source bytes without changing a printed commit SHA.
 
 ```bash
 python3 -I .claude/skills/dev-team/lane_check.py <base-sha> <working-branch>
@@ -61,11 +64,12 @@ python3 -I .claude/skills/dev-team/lane_check.py <base-sha> <working-branch>
 
 ## 5. Write the diff file
 
-Write `git diff <checked-base-sha>...<checked-head-sha>` to a file in a temporary
-directory outside the repository. Use both fixed checked SHAs, not moving branch
-refs. Record the absolute path and both SHAs.
+Write `git --no-replace-objects diff <checked-base-sha>...<checked-head-sha>` to a
+file in a temporary directory outside the repository. Use both fixed checked
+SHAs, not moving branch refs. Record the absolute path and both SHAs.
 
-Add a detached worktree at that exact checked head in the temporary directory.
+Use `git --no-replace-objects worktree add --detach <snapshot-path> <checked-head-sha>`
+to add a detached worktree at that exact checked head in the temporary directory.
 Both reviewers read this snapshot, not the mutable implementer worktree. Give them
 the exact same diff and snapshot. Any subsequent candidate change requires a new
 checkpoint, acceptance results and steps 4 to 6 again; an old review cannot approve
