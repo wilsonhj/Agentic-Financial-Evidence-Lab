@@ -1,7 +1,8 @@
-"""The acceptance provider changes source identity, never financial fixture data."""
+"""Acceptance replies bind source identity and hashes, preserving financial data."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -18,12 +19,12 @@ from app.db import pool_for
 from app.main import app
 from fel_providers.interfaces import StructuredGenerationRequest
 from fel_providers.mocks import MockStructuredLLMProvider
-from harness.extraction_cross_stack import ScopedMock, main, verify
+from harness.extraction_cross_stack import SOURCE_TEXT, ScopedMock, main, verify
 from migrate import main as migrate
 
 
 @pytest.mark.parametrize("schema_name", ["classifier", "candidates", "kpi"])
-def test_scoped_model_changes_only_identity_and_preserves_financial_values(schema_name):
+def test_scoped_model_binds_source_provenance_and_preserves_financial_values(schema_name):
     manifest = {key: str(uuid4()) for key in ("span", "version", "entity")}
     request = StructuredGenerationRequest(
         messages=[{"role": "user", "content": "Synthetic acceptance evidence"}],
@@ -42,7 +43,14 @@ def test_scoped_model_changes_only_identity_and_preserves_financial_values(schem
 
     def compare(left, right):
         if isinstance(left, dict):
-            assert left.keys() == right.keys()
+            if "source_span_id" in left and "document_version_id" in left:
+                assert right.keys() == left.keys() | {"text_hash"}
+                assert (
+                    right["text_hash"]
+                    == "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()
+                )
+            else:
+                assert left.keys() == right.keys()
             for key, value in left.items():
                 if key in identities:
                     assert right[key] == identities[key]
@@ -59,6 +67,26 @@ def test_scoped_model_changes_only_identity_and_preserves_financial_values(schem
     assert actual.input_tokens == baseline.input_tokens
     assert actual.output_tokens == baseline.output_tokens
     assert actual.estimated_cost_usd == baseline.estimated_cost_usd
+
+
+def test_source_hash_binding_uses_each_cited_span_and_rejects_missing_source():
+    from harness.extraction_cross_stack import asserting_span_hashes
+
+    spans = {str(uuid4()): text for text in ("ARR was $100 million.", "Customers grew 20%.")}
+    hashes = {
+        span: "sha256:" + hashlib.sha256(text.encode()).hexdigest() for span, text in spans.items()
+    }
+    parsed = {
+        "proposals": [{"evidence": [{"source_span_id": span} for span in spans]}],
+        "notes": None,
+    }
+    actual = asserting_span_hashes(parsed, hashes)
+    assert [edge["text_hash"] for edge in actual["proposals"][0]["evidence"]] == list(
+        hashes.values()
+    )
+    assert all("text_hash" not in edge for edge in parsed["proposals"][0]["evidence"])
+    with pytest.raises(KeyError):
+        asserting_span_hashes(parsed, {next(iter(hashes)): next(iter(hashes.values()))})
 
 
 @pytest.fixture
@@ -129,6 +157,19 @@ def test_harness_seeds_source_runs_worker_and_verifies_real_immutable_rows(
     assert proposals.status_code == 200, proposals.text
     assert len(proposals.json()["items"]) == 1
     proposal = proposals.json()["items"][0]
+    with psycopg.connect(acceptance_database) as conn:
+        payload, summary = conn.execute(
+            "SELECT payload,validation_summary FROM extraction_proposals WHERE id=%s",
+            (proposal["id"],),
+        ).fetchone()
+        source_hash, grade = conn.execute(
+            "SELECT s.text_hash,e.citation_status FROM extraction_proposal_evidence e "
+            "JOIN source_spans s ON s.id=e.source_span_id WHERE e.proposal_id=%s",
+            (proposal["id"],),
+        ).fetchone()
+    assert payload["evidence"][0]["text_hash"] == source_hash
+    assert grade == "verified"
+    assert summary["blockers"] == []
     result = client.post(
         "/v1/extractions/review",
         headers={**headers, "Idempotency-Key": str(uuid4())},
@@ -155,6 +196,16 @@ def test_harness_seeds_source_runs_worker_and_verifies_real_immutable_rows(
     )
     assert corrected.status_code == 201, corrected.text
     command("verify", "--run", run, "--record", record)
+    with psycopg.connect(acceptance_database) as conn:
+        manifests = conn.execute(
+            "SELECT evidence_manifest FROM approved_extraction_versions WHERE record_id=%s",
+            (record,),
+        ).fetchall()
+    assert len(manifests) == 2
+    for (edges,) in manifests:
+        assert [(edge["text_hash"], edge["citation_status"]) for edge in edges] == [
+            (source_hash, "verified")
+        ]
     previous = client.get(
         f"/v1/approved-extractions/{record}/versions/{old.json()['version_id']}",
         headers=headers,

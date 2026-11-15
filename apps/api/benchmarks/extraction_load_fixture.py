@@ -28,6 +28,9 @@ DIGEST = "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()
 class BulkMock(ScopedMock):
     """100 distinct dated proposals; mock token counts are not model performance."""
 
+    def __init__(self, manifest: dict[str, str]) -> None:
+        super().__init__(manifest, span_hashes={manifest["span"]: DIGEST})
+
     def generate_structured(self, request: StructuredGenerationRequest) -> StructuredModelResult:
         result = super().generate_structured(request)
         if request.schema_name != "kpi":

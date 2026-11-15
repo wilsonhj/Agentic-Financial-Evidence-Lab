@@ -29,16 +29,42 @@ from fel_workers.storage import LocalDirStorageProvider, apply_worker_db_role
 SOURCE_TEXT = "Annual recurring revenue was $100 million at June 30, 2026."
 
 
-class ScopedMock(MockStructuredLLMProvider):
-    """Bind committed model fixtures to this execution's real evidence IDs."""
+def asserting_span_hashes(parsed: Any, span_hashes: dict[str, str]) -> Any:
+    """Assert each synthetic proposal's actual source hash; unknown spans fail closed."""
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("proposals"), list):
+        return parsed
+    return {
+        **parsed,
+        "proposals": [
+            {
+                **proposal,
+                "evidence": [
+                    {**edge, "text_hash": span_hashes[edge["source_span_id"]]}
+                    for edge in proposal["evidence"]
+                ],
+            }
+            for proposal in parsed["proposals"]
+        ],
+    }
 
-    def __init__(self, manifest: dict[str, str]) -> None:
+
+class ScopedMock(MockStructuredLLMProvider):
+    """Bind committed model fixtures to this execution's source IDs and exact bytes."""
+
+    def __init__(
+        self, manifest: dict[str, str], *, span_hashes: dict[str, str] | None = None
+    ) -> None:
         super().__init__()
         self.identities = {
             "source_span_id": manifest["span"],
             "document_version_id": manifest["version"],
             "entity_id": manifest["entity"],
         }
+        self.span_hashes = (
+            {manifest["span"]: "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()}
+            if span_hashes is None
+            else dict(span_hashes)
+        )
 
     def generate_structured(self, request: StructuredGenerationRequest) -> StructuredModelResult:
         result = super().generate_structured(request)
@@ -50,7 +76,9 @@ class ScopedMock(MockStructuredLLMProvider):
                 return [scoped(item) for item in value]
             return value
 
-        return replace(result, parsed=scoped(result.parsed))
+        return replace(
+            result, parsed=asserting_span_hashes(scoped(result.parsed), self.span_hashes)
+        )
 
 
 def seed(database_url: str, storage_dir: Path) -> dict[str, str]:
