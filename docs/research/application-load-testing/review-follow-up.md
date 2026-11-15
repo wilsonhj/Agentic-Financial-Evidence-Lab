@@ -92,6 +92,14 @@ and #108's `READER-PROD-SMOKE` ownership remain in force. This proposal extends 
 testing program while retaining their gates and ownership; it supersedes neither
 plan and does not reassign either workstream.
 
+Hosted acceptance is still outstanding: [#108](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/108)
+was open when rechecked on 2026-11-15, with its dedicated hosted environment,
+credentials and required browser/hosted evidence unverified. Local worker/API
+or browser checks do not satisfy that hosted row. References to reusing existing
+hosted gates mean preserving their requirements, not that a hosted run has passed.
+Do not begin hosted load or claim hosted capacity before those prerequisites and
+the separate execution authorization are satisfied.
+
 All PRO-xx references in the original delivery sequence are conditional reuse
 candidates from unmerged PR #420, not registered workstream IDs. If #420 is not
 adopted or its interfaces change, the integration lead must name a registered
@@ -140,6 +148,12 @@ specific root-file authorization. Existing trigger/transport decision gates appl
 | 4. Hot-tenant quota arithmetic | Confirmed 8 QPS exceeds the 5 QPS baseline after burst. Required explicit numeric policy and overload classification. The original normal-profile policy-fit rule already prohibited this false normal pass. |
 | 5. Decimal correctness oracle | Verified omission: self-consistent hashes do not prove expected values. Added independent expected Decimal/unit/period fixtures and negative mismatch cases. |
 | 6. Local runner not executed | No source defect verified. The command retains its source-verified status; no isolated PostgreSQL execution is claimed by this supplement. |
+
+The [subsequent Cursor review](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/422#issuecomment-6889192817)
+repeated the provider, ownership, quota, governance and numerical-oracle findings;
+the requirements above address them. Its additional hosted-status finding is
+addressed by the explicit outstanding #108 gate above. The research index now
+describes proposed tests and explicitly disclaims measured capacity certification.
 
 ## Validation scope
 
