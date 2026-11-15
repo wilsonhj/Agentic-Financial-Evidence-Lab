@@ -118,7 +118,10 @@ the handoff README.
 - Registers four fix packages from the
   [2026-11-13 code review](../research/2026-11-13-repository-code-review.md#verification-status):
   #409 (C1), #410 (C3), #411 (C4) and #412 (H4).
-- Records the 2026-11-14 dispatch of #393, #395, #396 and #409 as `active`.
+- Records the 2026-11-14 dispatch of #393, #395, #396 and #409. After the
+  external review that day, only #393 and #409 stay `active`; #395 and #396
+  are in `review`, and #409's lane is widened to three acceptance-fixture
+  files.
 - Notes the serialization rules: #410, #411 and #412 wait for #393 to release
   `workers/tests/**`, and #394 must not overlap #409 or #412 in
   `apps/api/tests/**`.
@@ -129,8 +132,8 @@ the handoff README.
   present-tense claims the merge falsifies, and no reference to its own PR.
 - The four packages' `allowed_paths` are pairwise disjoint.
 - Every `depends_on` resolves.
-- The concurrency counts (four packages, three MCP implementers) are stated
-  correctly.
+- The concurrency limits are applied correctly: at most four packages, and
+  at most three implementation agents in total under ADR-0034 Amendment 2.
 
 Not yet independently reviewed.
 
