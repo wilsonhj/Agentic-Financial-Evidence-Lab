@@ -25,6 +25,7 @@ from fel_retrieval.hashing import content_sha256
 from fel_retrieval.index_build import DBConnection
 
 MAX_CANONICAL_BYTES: Final = 4 * 1024 * 1024  # §7.4: canonical-text bytes per request
+MAX_NOTE_CHARS: Final = 1000  # mcp-get-citation-output: coverage_note.text.maxLength
 _RETRY_AFTER_SECONDS: Final = 30
 _LOG = logging.getLogger(__name__)
 
@@ -168,12 +169,19 @@ def get_citation(
         public_at_basis=row[17],
         timestamp_precision="second",
     )
+    window = (
+        f"public from {_instant(first)} to {_instant(last)}, "
+        f"visible at {_instant(context.effective_as_of)}."
+    )
+    # Issuer names and stored forms are unbounded; past the schema's budget the
+    # note drops them, and the CIK and form stay in issuers[] and forms[].
+    text = f"Searched {form or 'unlabeled'} filings of {company.name} (CIK {company.cik}) {window}"
+    if len(text) > MAX_NOTE_CHARS:
+        text = f"Searched {form or 'unlabeled'} filings of CIK {company.cik} {window}"
+    if len(text) > MAX_NOTE_CHARS:
+        text = f"Searched filings of CIK {company.cik} {window}"
     note = i.CoverageNote(
-        text=(
-            f"Searched {form or 'unlabeled'} filings of {company.name} (CIK {company.cik}) "
-            f"public from {_instant(first)} to {_instant(last)}, "
-            f"visible at {_instant(context.effective_as_of)}."
-        ),
+        text=text,
         issuers=(company.cik,),
         forms=() if form is None else (form,),
         date_range=i.DateRange(from_=first, to=last),

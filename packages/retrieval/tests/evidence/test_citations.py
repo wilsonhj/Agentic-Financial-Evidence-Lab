@@ -24,7 +24,7 @@ COMPANY = i.Company("4b1c3a2e-6f5d-4e8a-9b7c-1d2e3f405162", "0001108524", "CRM",
 KEY = "text/sha256/abc"
 
 
-def _row(start: int, end: int, text_hash: str) -> tuple[Any, ...]:
+def _row(start: int, end: int, text_hash: str, form: str = "10-K") -> tuple[Any, ...]:
     return (
         SPAN,
         start,
@@ -37,7 +37,7 @@ def _row(start: int, end: int, text_hash: str) -> tuple[Any, ...]:
         DOCUMENT,
         COMPANY.entity_id,
         "0001108524-24-000012",
-        "10-K",
+        form,
         "https://www.sec.gov/Archives/edgar/data/1108524/crm.htm",
         content_sha256("raw"),
         date(2024, 3, 6),
@@ -57,6 +57,7 @@ def read(fake_conn: Any, evidence_helpers: Any) -> Any:
         companies = {COMPANY.entity_id: COMPANY}
         context = evidence_helpers.make_context(AS_OF, CORPUS)
         conn: Any = None
+        form = "10-K"
 
         def __call__(
             self,
@@ -70,7 +71,7 @@ def read(fake_conn: Any, evidence_helpers: Any) -> Any:
             stored = content_sha256(text[start:end]) if text_hash is None else text_hash
             self.conn = fake_conn(
                 {
-                    "source_spans": [_row(start, end, stored)] * rows,
+                    "source_spans": [_row(start, end, stored, self.form)] * rows,
                     "min(d.public_at)": [(PUBLIC, PUBLIC)],
                 }
             )
@@ -125,6 +126,38 @@ def test_a_visible_span_is_returned_with_its_recomputed_hash(read: Any) -> None:
         forms=("10-K",),
         date_range=i.DateRange(from_=PUBLIC, to=PUBLIC),
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "form", "expected"),
+    [
+        (
+            "N" * 990,
+            "10-K",
+            "Searched 10-K filings of CIK 0001108524 public from 2024-03-06T21:14:09Z to "
+            "2024-03-06T21:14:09Z, visible at 2024-03-07T14:30:00Z.",
+        ),
+        (
+            "N" * 990,
+            "F" * 990,
+            "Searched filings of CIK 0001108524 public from 2024-03-06T21:14:09Z to "
+            "2024-03-06T21:14:09Z, visible at 2024-03-07T14:30:00Z.",
+        ),
+    ],
+    ids=["long-name", "long-name-and-form"],
+)
+def test_the_coverage_note_stays_within_the_schema_budget(
+    read: Any, name: str, form: str, expected: str
+) -> None:
+    # coverage_note.text.maxLength is 1000; issuer names and stored forms are unbounded.
+    company = i.Company(COMPANY.entity_id, COMPANY.cik, COMPANY.ticker, name)
+    read.companies = {company.entity_id: company}
+    read.form = form
+    note = read().coverage_note
+    assert len(note.text) <= 1000
+    assert note.text == expected
+    assert note.issuers == ("0001108524",)  # the CIK and form stay structured
+    assert note.forms == (form,)
 
 
 @pytest.mark.parametrize(
