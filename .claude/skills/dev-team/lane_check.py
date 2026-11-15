@@ -45,11 +45,13 @@ def main() -> int:
         print(f"lane_check: no package in workstreams.yaml uses branch {branch}", file=sys.stderr)
         return 2
     shared = path_guard.parse_shared_paths(registry)
-    changed = [p for p in _git("diff", "--name-only", f"{base}...{branch}").splitlines() if p]
+    # --no-renames: a rename lists its source too, so moving a shared file into the lane is caught.
+    names = _git("diff", "--name-only", "--no-renames", f"{base}...{branch}")
+    changed = [p for p in names.splitlines() if p]
     reasons = [r for p in changed for r in path_guard.reasons_for(p, branch, packages, shared)]
     for reason in reasons:
         print(reason)
-    print(f"lane_check: {len(changed)} changed path(s), {len(reasons)} outside the lane")
+    print(f"lane_check: {len(changed)} changed path(s), {len(reasons)} finding(s)")
     return 1 if reasons else 0
 
 
