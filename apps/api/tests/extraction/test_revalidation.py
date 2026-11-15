@@ -61,6 +61,7 @@ def test_existing_range_rule_and_real_byte_pins(
                             "source_span_id": source_fixture["span"],
                             "document_version_id": source_fixture["version"],
                             "role": "supports",
+                            "citation_status": "verified",
                         }
                     ],
                 }
@@ -120,6 +121,7 @@ def test_revalidation_does_not_repair_evidence_or_lose_source_identity(
                 "source_span_id": source_fixture["span"],
                 "document_version_id": source_fixture["version"],
                 "role": "supports",
+                "citation_status": "verified",
             }
         ],
     }
