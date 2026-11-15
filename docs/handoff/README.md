@@ -52,9 +52,9 @@ Dated briefs are dispatch context, not sources of truth; the
 - [`codex-review-2026-11-14.md`](codex-review-2026-11-14.md) — brief for an
   external Codex reviewer covering draft PRs #413–#418, written 2026-11-14.
 - [`decision-brief-2026-11-14.md`](decision-brief-2026-11-14.md) — the
-  integration-lead decisions open on 2026-11-14 (G1–G7, A1–A3, B1–B3, C1–C5,
-  D1–D2, R1–R2), with options, recommendations and research questions for
-  external agents.
+  integration-lead decisions open on 2026-11-14 (G1–G8, A1–A3, B1–B3, C1–C5,
+  D1–D3, R1–R2), with options, recommendations and research questions for
+  external agents; G8 and D3 were added after the external review.
 
 Historical records (archived under [`docs/archive/`](../archive/README.md)):
 

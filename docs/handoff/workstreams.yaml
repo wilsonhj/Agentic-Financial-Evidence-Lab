@@ -1590,6 +1590,9 @@ packages:
     tasks: [] # MCP-401..407
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: retrieval
+    # One package, stacked slices in the same lane (path_guard reads only the primary branch):
+    #   part 1 agent/mcp-evidence-read   (PR #416)
+    #   part 2 agent/mcp-evidence-read-2 (PR #418, stacked on #416)
     branch: agent/mcp-evidence-read
     status: review # Submitted slices #416/#418 entered independent review on 2026-11-14; no implementation owner assigned in the November 15 repair wave. Remaining #395 methods and contract decisions are unfinished. Imports lanes.py; must not edit it.
     allowed_paths:
@@ -1612,7 +1615,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: platform
     branch: agent/mcp-server
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Builds against an interface mock; final integration needs MCP-EVIDENCE-READ and MCP-VERIFIER merged.
+    status: blocked # Dependencies #392 and #404 merged in 517553e; awaits a lead dispatch decision within the ADR-0034 Amendment 2 cap. Builds against an interface mock; final integration needs MCP-EVIDENCE-READ and MCP-VERIFIER merged.
     allowed_paths:
       - packages/mcp-server/**
       - apps/api/app/main.py # the /mcp mount only
@@ -1627,7 +1630,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: experience
     branch: agent/mcp-plugin
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Marketplace is shared under ADR-0034 Amendment 2; contract-change and lead review required.
+    status: blocked # Dependencies #392 and #404 merged in 517553e; awaits a lead dispatch decision within the ADR-0034 Amendment 2 cap. Marketplace is shared under ADR-0034 Amendment 2; contract-change and lead review required.
     allowed_paths:
       - plugins/financial-evidence-lab/**
       - .claude-plugin/marketplace.json # Shared; ADR-0034 Amendment 2 records the ruling.
@@ -1638,7 +1641,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: trust
     branch: agent/mcp-evals
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Confined to a new subtree of the evals/** claimed by #62/#67/#68/#108/#177/#201.
+    status: blocked # Dependencies #392 and #404 merged in 517553e; awaits a lead dispatch decision within the ADR-0034 Amendment 2 cap. Confined to a new subtree of the evals/** claimed by #62/#67/#68/#108/#177/#201.
     allowed_paths:
       - evals/mcp/**
       - pyproject.toml # Add only evals/mcp to pytest testpaths when tests land; serialize against #397 scaffold changes.
@@ -1720,6 +1723,10 @@ packages:
       - workers/src/fel_workers/extraction/workflow.py
       - workers/tests/test_redact.py
       - workers/tests/extraction/test_run_error_redaction.py
+  # --- Documentation-only research packages ---
+  # Research and specification only; neither dispatches implementation work.
+  # Both list docs/research/README.md for one index entry each, so their merges
+  # are serialized through the coordinator.
   - id: RESEARCH-PRODUCTION
     issue: 419
     tasks: [] # Research and specification only; no PRO-* implementation is dispatched.
@@ -1730,3 +1737,13 @@ packages:
     allowed_paths:
       - docs/research/production-readiness/**
       - docs/research/README.md
+  - id: LOAD-TESTING-SPEC
+    issue: 421
+    tasks: [] # Research and specification only; no load-testing implementation is dispatched.
+    depends_on: []
+    team: integration
+    branch: agent/421-application-load-testing-spec
+    status: review # PR #422. Owner-requested documentation authored 2026-11-14 outside the dispatch registry, registered afterwards in `review`; no implementation agent is assigned. Shares the docs/research/README.md index with RESEARCH-PRODUCTION (#419): serialize the two merges. External review and lead gates remain.
+    allowed_paths:
+      - docs/research/application-load-testing/**
+      - docs/research/README.md # one index entry; shared with RESEARCH-PRODUCTION

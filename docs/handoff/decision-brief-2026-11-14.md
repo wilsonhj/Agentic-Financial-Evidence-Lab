@@ -49,9 +49,9 @@ The **Blocks** column says what cannot proceed until the decision is made.
 | G1 | Record authorization for ADR-0034 and Amendment 2 | Audit trail only; already on `main` | Add a one-line owner statement |
 | G2 | Authorize the `mcp` dependency pin (#402) | Audit trail only; already on `main` | Add an authorization record |
 | G3 | Waive or register a work package for #403 | Closing a Codex P1 thread | Record a waiver |
-| G4 | Different-vendor review provenance | Merging #413–#418; it is missing for #406/#407 | Done for #413–#418 (OpenAI review, 2026-11-14); #406/#407 still open |
+| G4 | Different-vendor review provenance | Merging #413–#418; it is missing for #406/#407 | Done for the original #413–#418 heads (OpenAI review, 2026-11-14); later OpenAI-authored changes and #406/#407 still open |
 | G5 | Merge ledger PR #413 | Makes today's dispatch and fix packages official | Merge after review |
-| G6 | Refresh `STATUS.md` | Restart accuracy for agents | Refresh after #413 merges |
+| G6 | Refresh `STATUS.md` | Restart accuracy for agents | Folded into the #413 ledger change (its November 15 section) |
 | G7 | Enforce `.claude-plugin/marketplace.json` as a shared path in CI | #398 dispatch | Small `contract-change` PR |
 | A1 | Keep the `abs()` → `copy_abs()` commit | Merging #414 | Keep |
 | A2 | `numeric_checks` when a hash mismatches | Merging #414 | Retain frozen diagnostics; support remains fail-closed |
@@ -85,22 +85,23 @@ recommendations. Lead approval and review of later changes remain required.
 | A1 | Agrees: keep `copy_abs()`; exact 34-digit behaviour checked under several Decimal precisions. |
 | A2 | **Revised to keep reporting `numeric_checks`.** The current schema says numeric diagnostics are present when both request and evidence carry numeric tuples. Switching to `null` would be a contract decision. The claim must still never become `supported` on a hash failure. |
 | A3 | Adds: select facts deterministically by concept and period, and derive fiscal labels from pinned, versioned evidence. Never borrow an unpinned latest index when `index_version_id` is null. |
-| B1 | **Done.** #409's lane was widened on 2026-11-14 to the three original acceptance-fixture files, after the review reproduced both CI failures on real PostgreSQL. The November 15 repair also names the bounded load-report regression test. Registry ratification is in #413. |
+| B1 | **Done.** #409's lane was widened on 2026-11-14 to the three original acceptance-fixture files, after the review reproduced both CI failures on real PostgreSQL. The November 15 repair also names the bounded load-report regression test. Ratifying the registry entry is part of G5. |
 | B2 | Adds: give roles an authenticated evidence envelope that carries the hashes, and require the model to copy the matching content address. Never ask a model to compute SHA-256. A copied hash proves source identity, not correctness. |
 | C1 | **Revised.** Keep the resolved request context immutable, as the frozen interface and replay identity require. Put document and parser provenance on the document or citation. Reconcile the contrary fixtures and spec text in one narrow `contract-change` before `read_filing`. Inject a fresh connection into each read session. |
 | C2 | **Revised.** A valid canonical object over 4 MiB is an availability limit, not corruption. Prefer bounded range or chunk reads with span and hash integrity, or document the restrictive behaviour and its error contract. Keep a request-wide output budget across multi-citation verification. |
 | C4 | Agrees: ratify all five. Describe the 20-result company cap as bounded results, not a complete listing. |
 | C5 | Adds: the server must inject one strong cursor key shared across replicas, plus an agreed clock and rotation policy. |
 | D1 | **Revised. The original guessed-instant option is withdrawn.** A conservative guessed instant is still not verified publication metadata. Keep unresolved publication data unknown and invisible in strict mode until the primary-source interpretation is verified. |
-| D3 | **New, from a reproduced P1 in #417.** Backfill and restatement repair changed already-published corpus pins, including a race in which a corpus is published while a backfill is uncommitted. #417 is being fixed to serialize publication with backfill and repair writes, and to refuse changes to evidence in active or superseded pins. That leaves documents already in a published corpus without publication times, so they stay invisible to strict reads. A versioning or retirement design to backfill them is a lead decision. |
-| G5 | Adds: #413's text described three MCP implementers plus one fix lane. Since 2026-11-14 the ledger keeps #393 and #409 as repair owners, and #395 and #396 in review. The November 15 wave also registers #419 documentation ownership. See G8. |
+| D3 | **New, from a reproduced P1 in #417.** Backfill and restatement repair changed already-published corpus pins, including a race in which a corpus is published while a backfill is uncommitted. The November 15 #417 repair serialized publication with backfill and repair writes and refused changes to evidence in active or superseded pins; it returned to `review` pending independent verification. That leaves documents already in a published corpus without publication times, so they stay invisible to strict reads. A versioning or retirement design to backfill them is a lead decision. |
+| G5 | Adds: #413's text described three MCP implementers plus one fix lane. After the November 15 repair authoring, the ledger records #393 and #409 (repaired) and #395 and #396 (submitted) all in `review`, with no implementation owner active. The wave also registered #419 documentation ownership. See G8. |
 | G8 | **New.** ADR-0034 Amendment 2 says "at most three implementation agents plus the coordinator". The reviewers read that as a limit on all implementers, not only MCP ones. Recommend three in total unless an accepted amendment says otherwise. Reviewers are exempt. |
 
 The same review requested changes on #417 (published-pin serialization;
 restatement order must use known publication instants, never filing date; a
 reparse must use stored, not incoming, metadata) and on #415 (fixture mocks).
-Both are in progress. It found no new defect in #414, #416 or #418. It also
-reviewed #420, the OpenAI-authored production-readiness research PR. Its two
+Both repairs were authored on November 15 and returned to `review`. It found
+no new defect in #414, #416 or #418. It also reviewed #420, the
+OpenAI-authored production-readiness research PR. Its two
 specification findings there (rerun invalidation for the
 security-evidence check; unassigned telemetry adapters) belong to #420's
 authors, and #420 still needs a non-OpenAI review.
@@ -141,7 +142,8 @@ was re-verified. Its top tier: C1 (review can promote uncited proposals), C3
 (sign flip on non-dollar negatives), C4 (per-share XBRL units) and H4
 (unredacted retrieval errors). Issues #409–#412 track them.
 
-**Open draft PRs.** All are Claude-authored and target `main`:
+**Open draft PRs at writing (2026-11-14, about 18:00 UTC).** All were
+Claude-authored and targeted `main`; heads and checks are as of then:
 
 | PR | Package / issue | Head | Checks |
 | --- | --- | --- | --- |
@@ -245,14 +247,14 @@ or #108.
 
 ### G5. Merge ledger PR #413
 
-**Context.** On `main`, `workstreams.yaml` still lists MCP-CONTRACT as
-`active` and #404/#405 in `review`, and it shows #393, #395 and #396 as
-`blocked` even though they have open PRs. #413:
+**Context.** At `33c6a63`, `workstreams.yaml` listed MCP-CONTRACT as
+`active` and #404/#405 in `review`, and showed #393, #395 and #396 as
+`blocked` although they had open PRs. The #413 ledger change:
 
 - marks the three contract packages `merged`;
 - registers FIX packages #409–#412 with disjoint `allowed_paths`;
-- records #393/#409 as repair owners and #395/#396 as submitted work in
-  `review`, and registers #419 research ownership; at most three implementers
+- records #393/#409 repairs and #395/#396 submitted work, all in `review`,
+  and registers #419 research ownership; at most three implementers
   plus the coordinator operate in the November 15 wave;
 - notes the serialization rules: #410, #411 and #412 wait on #393's
   `workers/tests/**`, and #394 must not overlap #409/#412 in
@@ -266,12 +268,14 @@ disjoint.
 
 ### G6. Refresh `docs/handoff/STATUS.md`
 
-**Context.** Its newest section is the October 31 snapshot. It has nothing on
-the MCP contract wave, the 2026-11-14 merges (#388, #390, #391, #403, #408
-and the MCP stack) or the new fix packages. Only the lead edits it, under
-`contract-change`.
+**Context.** At `33c6a63`, its newest section was the October 31 snapshot. It
+had nothing on the MCP contract wave, the 2026-11-14 merges (#388, #390, #391,
+#403, #408 and the MCP stack) or the new fix packages. Only the lead edits it,
+under `contract-change`.
 
-**Recommendation.** Refresh after #413 merges, so both ledgers agree.
+**Recommendation.** Refresh after #413 merges, so both ledgers agree. The
+November 15 section was then added in the same `contract-change` as the
+ledger, so G6 is decided together with G5.
 
 ### G7. Enforce `marketplace.json` as a shared path
 
@@ -588,7 +592,7 @@ the Medium and Low rows were never re-verified.
 
 ## Sequencing once decided
 
-1. Review the corrected #413 ledger and record applicable lead gates.
+1. Record the applicable lead gates for the reconciled ledger (G5, G6).
 2. #414 can merge independently after its gates; #416 precedes #418. Record
    C1/C4 integration decisions without claiming unfinished #395 methods done.
 3. Complete #409 AC6, get #415 green and merge when its own gates pass; it

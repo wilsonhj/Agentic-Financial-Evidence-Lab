@@ -40,6 +40,14 @@ final independent verification, current-head CI and the applicable external
 review/lead gates remain required. The registry therefore has no implementation
 owner still active from this wave.
 
+Outside the wave, #421/#422 (application load-testing specification) is
+owner-requested documentation that an OpenAI agent authored on 2026-11-14,
+before the wave started, without a registry entry. It is registered as
+`LOAD-TESTING-SPEC` in `review` with no implementation owner. It shares the
+`docs/research/README.md` index with #419/#420, so the two merges are
+serialized. #420 and #422 are both OpenAI-authored and still need
+non-OpenAI review.
+
 Hosted targets, real SEC timestamp verification, live model binding and all
 earlier release gates below remain separate. Re-query GitHub for current heads
 and checks; this dated record does not authorize merge or hosted execution.
