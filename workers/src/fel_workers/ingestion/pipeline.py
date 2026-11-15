@@ -21,9 +21,11 @@ different bytes fails closed into quarantine with reason code
 were parsed from.
 
 Corpus versions are published atomically under the same transaction lock as
-publication backfill and restatement repair, preserving retained pins. A
-partial unique index additionally prevents multiple active versions even if
-a nonparticipating writer races; its conflict becomes PublishConflictError.
+publication backfill and restatement repair, preserving retained pins. Two
+publishers therefore serialize and the later one wins: it supersedes the
+earlier version. A partial unique index additionally prevents multiple active
+versions when a writer that does not take the lock activates one; that
+conflict becomes PublishConflictError.
 """
 
 from __future__ import annotations
@@ -64,11 +66,14 @@ from fel_workers.ingestion.xbrl import NORMALIZER_VERSION, PriorFact, normalize_
 
 
 class PublishConflictError(Exception):
-    """A concurrent publisher activated another corpus version first.
+    """A writer that skips the corpus lock activated another corpus version.
 
-    The demote-promote transaction lost the race on the single-active
-    partial unique index; the caller may re-read the active pointer and
-    retry against the new state.
+    Publishers that go through ``publish_corpus_version`` never see this:
+    they serialize on the corpus lock and the later one supersedes the
+    earlier. Only a writer that bypasses the lock can activate a version
+    while this transaction runs; the demote-promote then fails on the
+    single-active partial unique index and rolls back. The caller may
+    re-read the active pointer and retry against the new state.
     """
 
 
@@ -510,9 +515,12 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
 
     Both updates happen in one transaction; readers see either the old or
     the new active pointer, never zero or two. The shared transaction lock
-    serializes publishers with publication/edge repairs until outer commit.
-    The partial unique index also defends against nonparticipating writers;
-    such a conflict surfaces as PublishConflictError.
+    serializes publishers with each other and with publication/edge repairs
+    until outer commit, so of two publishers the later one wins and the
+    earlier version ends superseded. The partial unique index also defends
+    against writers that skip the lock; such a conflict surfaces as
+    PublishConflictError. A lock wait past the bound raises
+    ``pin_guard.CorpusLockTimeoutError``.
     """
     try:
         with conn.transaction():
@@ -532,9 +540,9 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
                 )
     except psycopg.errors.UniqueViolation as exc:
         raise PublishConflictError(
-            f"corpus version {corpus_version_id} lost the publish race: "
-            "another version was activated concurrently; re-read the active "
-            "pointer and retry if still applicable"
+            f"corpus version {corpus_version_id} was not published: a writer that"
+            " does not take the corpus lock activated another version; re-read"
+            " the active pointer and retry if still applicable"
         ) from exc
 
 

@@ -24,6 +24,7 @@ import pytest
 from fel_providers.mocks import MockStorageProvider
 from fel_workers import queue
 from fel_workers.consumer import run_worker
+from fel_workers.ingestion.backfill import RepairReport, repair_restatement_links
 from fel_workers.ingestion.company_facts import (
     COMPANY_FACTS_FORM,
     COMPANY_FACTS_MIME_TYPE,
@@ -42,6 +43,7 @@ from fel_workers.ingestion.company_facts import (
 )
 from fel_workers.ingestion.errors import IngestError, NormalizationError, ParseError
 from fel_workers.ingestion.pipeline import _prior_canonical_facts, ingest_filing
+from fel_workers.ingestion.publication import Publication
 from fel_workers.ingestion.sec_client import SEC_USER_AGENT, LiveSecClient, SecFetchError
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -465,19 +467,48 @@ def test_same_day_refetch_identical_noop_mutated_new_document(
 @requires_db
 def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) -> None:
     """Filing ingestion never restates against companyfacts values, and
-    companyfacts never restates against filing values (issue #83 ruling)."""
+    companyfacts never restates against filing values (issue #83 ruling).
+
+    The snapshot is given a publication time earlier than the filing's, so
+    the form filter is the only thing that excludes it: without that time
+    the ``public_at`` predicate would drop it first and this test could not
+    fail. The snapshot's us-gaap:Assets at 2026-03-31 (5250000.5 USD) shares
+    a fact key with the filing's (8,400 million), so a missing form filter in
+    ``_prior_canonical_facts`` or in the backfill repair query would link it.
+    """
     storage = MockStorageProvider()
     snapshot = ingest_company_facts(
         corpus_conn, storage, cik=CIK, raw=companyfacts_raw(), fetched_at=FETCHED_AT
     )
     assert snapshot.status == "succeeded" and snapshot.facts > 0
+    # raw_store refuses a publication time for this form, so only direct SQL
+    # can set one: all three columns, as the all-or-nothing CHECK requires.
+    snapshot_public = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    filing_public = datetime(2026, 6, 1, 14, 0, tzinfo=UTC)
+    corpus_conn.execute(
+        "UPDATE documents SET accepted_at = %s, public_at = %s,"
+        " public_at_basis = 'acceptance', timestamp_precision = 'second' WHERE id = %s",
+        (snapshot_public, snapshot_public, snapshot.document_id),
+    )
+    # Control: apart from its form, the snapshot passes every other predicate
+    # of the restatement-target query and holds the shared key.
+    shared_key = corpus_conn.execute(
+        "SELECT ff.value FROM financial_facts ff"
+        " JOIN document_versions dv ON dv.id = ff.document_version_id"
+        " JOIN documents d ON d.id = dv.document_id"
+        " WHERE d.id = %s AND dv.status = 'parsed' AND ff.duplicate_of IS NULL"
+        " AND ff.entity_id = %s AND d.public_at < %s"
+        " AND ff.fact_key = 'us-gaap:Assets|USD|instant:2026-03-31|'",
+        (snapshot.document_id, ENTITY_ID, filing_public),
+    ).fetchall()
+    assert len(shared_key) == 1 and Decimal(str(shared_key[0][0])) == Decimal("5250000.5")
     # Direction 1: the filing pipeline's restatement-target query must not
-    # see ANY companyfacts fact, even though the snapshot was published
-    # before the cutoff for the same entity.
+    # see ANY companyfacts fact, even though the snapshot was public before
+    # the cutoff for the same entity.
     prior = _prior_canonical_facts(
         corpus_conn,
         entity_id=ENTITY_ID,
-        public_before=datetime(2026, 6, 1, tzinfo=UTC),
+        public_before=filing_public,
         document_id=str(uuid.uuid4()),
     )
     assert prior == {}, "companyfacts documents must be excluded from restatement targets"
@@ -490,6 +521,7 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
         raw=fixture_bytes("synthetic_10q.html"),
         published_at=datetime(2026, 6, 1, tzinfo=UTC),
         form="10-Q",
+        publication=Publication(filing_public, filing_public, "acceptance", "second"),
     )
     assert filing.status == "succeeded" and filing.facts > 0
     filing_restates = corpus_conn.execute(
@@ -498,6 +530,13 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
         (filing.document_version_id,),
     ).fetchone()
     assert filing_restates is not None and filing_restates[0] == 0
+    # The backfill's restatement repair applies the same exclusion.
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY_ID) == RepairReport()
+    linked = corpus_conn.execute(
+        "SELECT count(*) FROM financial_facts WHERE entity_id = %s AND restates IS NOT NULL",
+        (ENTITY_ID,),
+    ).fetchone()
+    assert linked == (0,)
     # Direction 2: a companyfacts snapshot fetched AFTER the filing records
     # no restatement linkage either (normalization never consults priors).
     later = ingest_company_facts(
