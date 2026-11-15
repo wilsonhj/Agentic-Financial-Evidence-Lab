@@ -9,7 +9,8 @@
 
 </details>
 
-Source references verified against commit `f4b1197`.
+Source verification is recorded per note. The original index was checked against
+`f4b1197`; later additions retain their own dated baselines and review records.
 
 This directory holds research notes, audits, proposals, and frozen
 implementation contracts written while planning work. They are inputs to
