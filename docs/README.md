@@ -63,7 +63,7 @@ GitHub. Terms are defined in the [glossary](glossary.md).
 | [Handoff README](handoff/README.md) | Restart point: source-of-truth order, ledger review rules, dispatch checklist | **core** |
 | [`STATUS.md`](handoff/STATUS.md) | Current implementation state, open lead items and blockers; the live status source | **core** |
 | [`workstreams.yaml`](handoff/workstreams.yaml) | Work-package registry: dependencies, branches, status, `allowed_paths` | **core** |
-| [Fable orchestration](handoff/FABLE_ORCHESTRATION.md) | Scheduling loop, worker prompt, and reassignment rules | supporting |
+| [Fable orchestration](handoff/FABLE_ORCHESTRATION.md) | Scheduling loop, agent team, worker prompt, and reassignment rules | supporting |
 | [Contract freeze protocol](handoff/CONTRACTS.md) | What the M0 contract freeze covers | supporting |
 | [Credential registry](handoff/CREDENTIALS.md) | Credential names and ownership only, never values | supporting |
 | [Production auth notes](handoff/production-auth.md) | Configuring the ADR-0025 Supabase token verifier | supporting |
