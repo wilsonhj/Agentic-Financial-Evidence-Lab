@@ -1,0 +1,36 @@
+# Dockerfile-specific allowlist; root .dockerignore is owned by a separate lane.
+**
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+!.node-version
+!apps/
+!apps/web/
+!apps/web/**
+!packages/
+!packages/contracts/
+!packages/contracts/**
+# These exclusions win even inside an allowed source tree.
+**/.env*
+**/.git
+**/.git/**
+**/.aws/**
+**/.ssh/**
+**/.codex/**
+**/.agents/**
+**/*credentials*
+**/*secret*
+**/*.pem
+**/*.key
+**/.npmrc
+**/.pypirc
+**/node_modules/**
+**/.next/**
+**/test-results/**
+**/playwright-report/**
+**/.venv/**
+**/__pycache__/**
+**/*.pyc
+**/*.tsbuildinfo
+**/worktrees/**

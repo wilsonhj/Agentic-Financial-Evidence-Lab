@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tests", "web", "acceptance"],
+  "properties": {
+    "global": {"type": "object", "additionalProperties": false},
+    "tests": {
+      "type": "object", "additionalProperties": false,
+      "required": ["hookMode"],
+      "properties": {"hookMode": {"type": "string", "enum": ["helm", "argocd"]}}
+    },
+    "web": {
+      "type": "object", "additionalProperties": false,
+      "required": ["image", "resources"],
+      "properties": {
+        "image": {"$ref": "#/definitions/image"},
+        "resources": {"$ref": "#/definitions/resources"}
+      }
+    },
+    "acceptance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enabled", "image", "activeDeadlineSeconds", "resources", "postgres"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"$ref": "#/definitions/image"},
+        "activeDeadlineSeconds": {"type": "integer", "minimum": 300, "maximum": 3600},
+        "resources": {"$ref": "#/definitions/resources"},
+        "postgres": {
+          "type": "object", "additionalProperties": false,
+          "required": ["image", "resources"],
+          "properties": {
+            "image": {"$ref": "#/definitions/image"},
+            "resources": {"$ref": "#/definitions/resources"}
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "image": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "tag", "digest", "pullPolicy"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1, "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$"},
+        "tag": {"type": "string", "pattern": "^$|^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$"},
+        "digest": {"type": "string", "pattern": "^$|^sha256:[a-f0-9]{64}$"},
+        "pullPolicy": {"type": "string", "enum": ["Never", "IfNotPresent", "Always"]}
+      },
+      "anyOf": [
+        {"properties": {"tag": {"minLength": 1}}},
+        {"properties": {"digest": {"minLength": 1}}}
+      ]
+    },
+    "resources": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": {"$ref": "#/definitions/quantities"},
+        "limits": {"$ref": "#/definitions/quantities"}
+      }
+    },
+    "quantities": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cpu", "memory"],
+      "properties": {
+        "cpu": {"type": "string", "minLength": 1},
+        "memory": {"type": "string", "minLength": 1},
+        "ephemeral-storage": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

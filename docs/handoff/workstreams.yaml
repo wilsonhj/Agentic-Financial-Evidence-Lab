@@ -99,7 +99,7 @@ packages:
     depends_on: []
     team: integration
     branch: agent/435-helm-lab
-    status: active # Owner authorized local lab enablement and research on 2026-11-15; draft for lead review.
+    status: review # Owner-requested lab packaging and guide in #436; local ARM64 acceptance passed, external review and lead gates remain.
     allowed_paths:
       - infra/kubernetes/**
       - infra/helm/fel/**

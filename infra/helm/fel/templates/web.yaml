@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fel.fullname" . }}-web
+  labels:
+    {{- include "fel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fixture-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: fixture-web
+  template:
+    metadata:
+      labels:
+        {{- include "fel.labels" . | nindent 8 }}
+        app.kubernetes.io/component: fixture-web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: {{ include "fel.image" .Values.web.image | quote }}
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          env:
+            - name: FEL_DEPLOYMENT_MODE
+              value: fixture
+            - name: FEL_EVIDENCE_SOURCE
+              value: fixture
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fel.fullname" . }}-web
+  labels:
+    {{- include "fel.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: fixture-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

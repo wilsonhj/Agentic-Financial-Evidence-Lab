@@ -26,6 +26,7 @@ date it was first committed is used and marked "(committed)".
 
 | Document | Date | Status | Summary |
 | --- | --- | --- | --- |
+| [Kubernetes and Helm local lab](2026-11-15-kubernetes-helm-lab.md) | 2026-11-15 | Optional lab implementation and reproducible guide | Apple Silicon profiles, fixture UI and real synthetic acceptance, Argo CD/Kargo handoff (#435) |
 | [Application load testing and load balancing](application-load-testing/README.md) | 2026-11-14 | Proposed implementation specification | Proposed tests for 1,000/5,000/10,000-user workloads and balancing; no measured capacity certification (#421) |
 | [Production readiness research and proposal](production-readiness/README.md) | 2026-11-14 | Proposed for external review | Source-backed production, SOC 2, security evidence, logging, container and scaling design with independently verifiable parallel work packages (#419) |
 | [RECONCILIATION-2026-07-16.md](../archive/research/RECONCILIATION-2026-07-16.md) | 2026-07-16 | Archived audit | Recovery of the PR #74 benchmark seed and PR #75 ontology research into `main`, with remaining promotion gates |

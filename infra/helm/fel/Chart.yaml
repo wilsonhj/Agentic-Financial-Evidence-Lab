@@ -1,0 +1,7 @@
+apiVersion: v2
+name: fel
+description: Local-only FEL fixture UI and isolated synthetic extraction acceptance
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.33.0-0"
