@@ -2,7 +2,8 @@
 
 ## November 15 verified-finding repair wave
 
-Baseline: `main` at `33c6a63`. The owner requested fixes for all verified
+Baseline: this section was written against `main` at `33c6a63` (2026-11-14);
+`main` was `2319c35` after #414 merged on 2026-11-15. The owner requested fixes for all verified
 findings from the November 14 independent PR review. The bounded authoring
 lanes are #409/#415 (source-bound acceptance fixtures), #393/#417 (published
 pin immutability, publication ordering and versioned reparsing), and #419/#420
@@ -16,7 +17,9 @@ section was written, with no new implementation dispatched; #414 then merged to
 `main` as `2319c35` on 2026-11-15; the `MCP-VERIFIER` flip to `merged` is
 reserved to the integration lead. Remaining #395 methods, context-contract
 decisions, different-vendor review of subsequent fixes, and lead merge gates remain open.
-No PR is marked merged and no canonical task checkbox changes here. #409 AC6
+The registry change that carried this section recorded `MCP-CONTRACT`,
+`MCP-REPLAY-CONTRACT` and `MCP-BACKFILL-PRIVILEGES` as `merged` (merge `517553e`).
+It recorded no other package as `merged` and changed no canonical task checkbox. #409 AC6
 already names the two fixture producers and their cross-stack test; the registry
 now records that bounded extension. #393 also owns the single synthetic
 corpus-QA producer file needed to supply explicit fixture acceptance timestamps
