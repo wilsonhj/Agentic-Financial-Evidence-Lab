@@ -14,7 +14,7 @@ transaction, using only the columns migration 0013 grants ``fel_worker``:
    excluded by form in both the read and the write.
 
 2. **Repair.** Recompute every filing fact's ``restates`` from the stored
-   rows, with the ordering ingest uses (``pipeline._prior_canonical_facts``),
+   rows, with the rule ingest uses (``pipeline._prior_canonical_facts``),
    and write only the facts whose link is wrong. The result depends on the
    set of filings, not on the order they were ingested in.
 
@@ -73,13 +73,13 @@ class BackfillReport:
 # The expected target of a fact is the canonical fact with the same key in
 # the latest parsed version of the latest earlier filing, when its value
 # differs: exactly what ingest links (``pipeline._prior_canonical_facts``).
-# Earlier means an earlier filing date, or the same filing date with both
-# public_at set and ordered; a same-day pair with either side unresolved is
-# never linked. A link already pointing at the expected filing through an
-# older parse of it is the same edge and is kept.
+# A predecessor needs a known public_at strictly before the fact's own
+# known public_at; the filing date never orders a pair. A link already
+# pointing at the expected filing through an older parse of it is the same
+# edge and is kept.
 _REPAIR_SQL = """
 WITH filing AS (
-    SELECT d.id, d.accession, d.published_at, d.public_at,
+    SELECT d.id, d.accession, d.public_at,
            (SELECT dv.id FROM document_versions dv
             WHERE dv.document_id = d.id AND dv.status = 'parsed'
             ORDER BY dv.created_at DESC, dv.id DESC
@@ -103,9 +103,8 @@ expected AS (
         WHERE p.entity_id = f.entity_id
           AND p.fact_key = f.fact_key
           AND p.duplicate_of IS NULL
-          AND (pd.published_at < fd.published_at
-               OR (pd.published_at = fd.published_at AND pd.public_at < fd.public_at))
-        ORDER BY pd.published_at DESC, pd.public_at DESC NULLS LAST, pd.accession DESC, p.id
+          AND pd.public_at < fd.public_at
+        ORDER BY pd.public_at DESC, pd.accession DESC, p.id
         LIMIT 1
     ) target ON target.value <> f.value
     LEFT JOIN financial_facts held ON held.id = f.restates

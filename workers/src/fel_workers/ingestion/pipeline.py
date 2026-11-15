@@ -117,27 +117,26 @@ def _prior_canonical_facts(
     conn: psycopg.Connection[Any],
     *,
     entity_id: str,
-    published_before: datetime,
-    public_before: datetime | None = None,
+    public_before: datetime | None,
+    exclude_document_id: str | None = None,
 ) -> dict[str, PriorFact]:
-    """Latest canonical fact per key from filings published before another.
+    """Latest canonical fact per key from filings public before an instant.
 
     Deterministic restatement targets: only the LATEST successfully parsed
     version of each prior document is consulted, and candidates are totally
-    ordered (published_at DESC, public_at DESC NULLS LAST, accession DESC,
-    fact id) so reruns always link ``restates`` to the same fact row,
-    whatever order the prior filings were ingested in.
+    ordered (public_at DESC, accession DESC, fact id) so reruns always link
+    ``restates`` to the same fact row, whatever order the prior filings were
+    ingested in.
 
-    A prior filing is earlier than the one being ingested (published at
-    ``published_before``, public at ``public_before``) when its filing date
-    is earlier, or when both share a filing date and BOTH have a
-    ``public_at`` that orders them (#393). An original and an amendment
-    accepted later the same day therefore link, while a same-day pair with
-    either side unresolved does not link at all: a missing ``public_at`` is
-    unknown, not midnight. Ordering by filing date first keeps the relation
-    a strict partial order, so a single sort can choose the latest earlier
-    filing. ``backfill.repair_restatement_links`` uses the same relation for
-    rows already stored.
+    One conservative temporal rule, shared with
+    ``backfill.repair_restatement_links`` (#393, review of #417): a filing is
+    a predecessor only if both its ``public_at`` and ``public_before`` are
+    known and its ``public_at`` is strictly earlier. The filing date never
+    orders a pair, and an unresolved publication time never links: with
+    ``public_before`` unknown there are no predecessors at all. Filings
+    public at the same instant are not ordered; the accession tie-break only
+    chooses among equally recent predecessors.
+    ``exclude_document_id`` keeps a re-parsed document from restating itself.
 
     Companyfacts snapshot documents (``form = 'COMPANYFACTS'``) are excluded
     (issue #83 ruling — cross-channel restatement isolation): filing
@@ -145,6 +144,8 @@ def _prior_canonical_facts(
     restatement target; cross-channel value reconciliation is a QA-report
     concern, not a restatement edge.
     """
+    if public_before is None:
+        return {}
     with conn.cursor(row_factory=dict_row) as cur:
         rows = cur.execute(
             """
@@ -155,9 +156,8 @@ def _prior_canonical_facts(
             WHERE ff.entity_id = %(entity_id)s
               AND ff.duplicate_of IS NULL
               AND dv.status = 'parsed'
-              AND (d.published_at < %(published_at)s
-                   OR (d.published_at = %(published_at)s
-                       AND d.public_at < %(public_at)s::timestamptz))
+              AND d.public_at < %(public_at)s
+              AND d.id IS DISTINCT FROM %(document_id)s::uuid
               AND d.form IS DISTINCT FROM %(company_facts)s
               AND dv.id = (
                   SELECT dv2.id FROM document_versions dv2
@@ -165,13 +165,12 @@ def _prior_canonical_facts(
                   ORDER BY dv2.created_at DESC, dv2.id DESC
                   LIMIT 1
               )
-            ORDER BY ff.fact_key, d.published_at DESC, d.public_at DESC NULLS LAST,
-                     d.accession DESC, ff.id
+            ORDER BY ff.fact_key, d.public_at DESC, d.accession DESC, ff.id
             """,
             {
                 "entity_id": entity_id,
-                "published_at": published_before,
                 "public_at": public_before,
+                "document_id": exclude_document_id,
                 "company_facts": COMPANY_FACTS_FORM,
             },
         ).fetchall()
@@ -288,11 +287,16 @@ def ingest_filing(
                 publication=publication,
             )
             parsed = parse_filing(raw, id_seed=version_id, content_hash=content_hash)
+            # Order by the STORED row: a re-parse of a known accession keeps
+            # the existing document, whatever this job's payload carried.
+            stored_public = conn.execute(
+                "SELECT public_at FROM documents WHERE id = %s", (stored.document_id,)
+            ).fetchone()
             prior = _prior_canonical_facts(
                 conn,
                 entity_id=entity_id,
-                published_before=published_at,
-                public_before=publication.public_at,
+                public_before=stored_public[0] if stored_public else None,
+                exclude_document_id=stored.document_id,
             )
             facts = normalize_facts(
                 parsed,

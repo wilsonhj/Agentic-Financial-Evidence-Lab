@@ -476,7 +476,7 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
     prior = _prior_canonical_facts(
         corpus_conn,
         entity_id=ENTITY_ID,
-        published_before=datetime(2026, 6, 1, tzinfo=UTC),
+        public_before=datetime(2026, 6, 1, tzinfo=UTC),
     )
     assert prior == {}, "companyfacts documents must be excluded from restatement targets"
     filing = ingest_filing(

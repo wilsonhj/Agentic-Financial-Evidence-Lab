@@ -334,8 +334,8 @@ def test_backfill_as_fel_worker_fills_repairs_and_never_rewrites(
     _seed_company_facts_snapshot(corpus_conn)
     _ingest(corpus_conn, sec, [C, D], legacy=True)
     _ingest(corpus_conn, sec, [D], legacy=True, accession=UNLISTED)
-    # Date-only rows: the same-day amendment B never linked to A.
-    assert _links(corpus_conn) == [(C, B, 2)]
+    # Without publication times nothing is ordered, so nothing links.
+    assert _links(corpus_conn) == []
     assert set(_publication(corpus_conn).values()) == {UNKNOWN}
 
     first = run_publication_backfill_job(
@@ -353,12 +353,12 @@ def test_backfill_as_fel_worker_fills_repairs_and_never_rewrites(
         E: UNKNOWN,  # the company-facts snapshot, never touched
     }
     assert _links(corpus_conn) == LINKS
-    assert (second.repair.linked, second.repair.relinked, second.repair.cleared) == (2, 0, 0)
-    assert len(second.repair.document_version_ids) == 1
+    assert (second.repair.linked, second.repair.relinked, second.repair.cleared) == (4, 0, 0)
+    assert len(second.repair.document_version_ids) == 2
     after_second = _row_versions(corpus_conn)
-    # Resumed, not redone: only documents A and B and B's two revenue facts were
-    # written. C, set by the first pass, kept its row version.
-    assert len({key for key, xmin in after_second.items() if after_first[key] != xmin}) == 4
+    # Resumed, not redone: only documents A and B and the four revenue facts of
+    # B and C were written. Document C, set by the first pass, kept its version.
+    assert len({key for key, xmin in after_second.items() if after_first[key] != xmin}) == 6
 
     third = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
     assert (third.updated, third.unresolved, third.conflicts) == (0, 2, ())
