@@ -5,6 +5,8 @@ slicing and hash recomputation. Unit level, with a fake at the connection bounda
 
 from __future__ import annotations
 
+import logging
+import time
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -67,6 +69,7 @@ def read(fake_conn: Any, evidence_helpers: Any) -> Any:
             text_hash: str | None = None,
             ref: i.SpanRef | None = None,
             rows: int = 1,
+            timeout: float | None = None,
         ) -> i.CitationResult:
             stored = content_sha256(text[start:end]) if text_hash is None else text_hash
             self.conn = fake_conn(
@@ -75,12 +78,14 @@ def read(fake_conn: Any, evidence_helpers: Any) -> Any:
                     "min(d.public_at)": [(PUBLIC, PUBLIC)],
                 }
             )
+            extra: dict[str, Any] = {} if timeout is None else {"timeout": timeout}
             return get_citation(
                 self.conn,
                 ref or i.SpanIdRef(SPAN),
                 self.context,
                 companies=self.companies,
                 texts=self.texts,
+                **extra,
             )
 
     return Read()
@@ -160,13 +165,24 @@ def test_the_coverage_note_stays_within_the_schema_budget(
     assert note.forms == (form,)
 
 
-def test_a_pathological_cohort_cik_cannot_overflow_the_note(read: Any) -> None:
-    company = i.Company(COMPANY.entity_id, "9" * 2000, COMPANY.ticker, COMPANY.name)
+def test_a_pathological_cohort_cik_cannot_overflow_the_note(
+    read: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    # mcp-citation requires a 10-digit CIK. A longer cohort value is a stored
+    # fault: integrity_error, and nothing that copies the value is returned.
+    cik = "9" * 2000
+    company = i.Company(COMPANY.entity_id, cik, COMPANY.ticker, COMPANY.name)
     read.companies = {company.entity_id: company}
-    note = read().coverage_note
-    assert len(note.text) <= 1000
-    assert note.text.startswith("Searched filings of 1 issuer public from ")
-    assert note.issuers == (company.cik,)
+    with caplog.at_level(logging.DEBUG, logger="fel_retrieval.evidence.citations"):
+        with pytest.raises(i.EvidenceReadError) as raised:
+            read()
+    error = raised.value
+    assert error.code == "integrity_error"
+    assert error.retryable is False
+    assert cik not in error.message
+    assert cik not in caplog.text
+    read.companies = {COMPANY.entity_id: COMPANY}
+    assert read().citation.company.cik == COMPANY.cik
 
 
 @pytest.mark.parametrize(("start", "end"), [(-1, 403), (-2, -1), (403, 402)])
@@ -251,16 +267,30 @@ def test_integrity_failures_fail_closed(read: Any) -> None:
     read.texts.objects[KEY] = b"\xff" + read.texts.objects[KEY]
     with _raises("integrity_error"):
         read()  # canonical text is not UTF-8
-    read.texts.objects[KEY] = b"x" * (MAX_CANONICAL_BYTES + 1)
-    with _raises("integrity_error"):
-        read(0, 1)  # one byte past the 4 MiB read cap
-    read.texts.objects[KEY] = b"x" * MAX_CANONICAL_BYTES
-    assert read(0, 1).citation.text == "x"
     del read.texts.objects[KEY]
     with pytest.raises(i.EvidenceReadError) as raised:
         read()  # the canonical object is gone
     assert raised.value.code == "integrity_error"
     assert "x" * 8 not in raised.value.message  # never filing text
+
+
+def test_canonical_text_past_the_read_cap_is_invalid_input(read: Any) -> None:
+    # §7.4 caps canonical-text bytes at 4 MiB. That is invalid_input, not a hash mismatch.
+    payload = b"x" * (MAX_CANONICAL_BYTES + 1)
+    read.texts.objects[KEY] = payload
+    with pytest.raises(i.EvidenceReadError) as raised:
+        read(0, 1)
+    error = raised.value
+    assert (error.code, error.retryable, error.retry_after_seconds) == (
+        "invalid_input",
+        False,
+        None,
+    )
+    assert error.field == "canonical_text_bytes"
+    assert str(MAX_CANONICAL_BYTES) in error.message
+    assert "x" * 8 not in error.message
+    read.texts.objects[KEY] = b"x" * MAX_CANONICAL_BYTES
+    assert read(0, 1).citation.text == "x"
 
 
 def test_a_storage_outage_is_retryable_unavailable(read: Any) -> None:
@@ -269,6 +299,29 @@ def test_a_storage_outage_is_retryable_unavailable(read: Any) -> None:
         read()
     assert (raised.value.code, raised.value.retryable) == ("unavailable", True)
     assert raised.value.retry_after_seconds is not None
+
+
+def test_a_blocked_object_read_is_deadline_exceeded(read: Any) -> None:
+    # The store blocks on the caller. The read path must abandon it on a daemon
+    # thread so a timed-out read cannot hang this test.
+    original = read.texts
+
+    class Blocking:
+        def read(self, key: str, limit: int) -> bytes:
+            time.sleep(2)
+            return original.read(key, limit)
+
+    read.texts = Blocking()
+    started = time.monotonic()
+    with pytest.raises(i.EvidenceReadError) as raised:
+        read(timeout=0.05)
+    error = raised.value
+    assert error.code == "deadline_exceeded"
+    assert error.retryable is True
+    assert error.retry_after_seconds is None
+    assert time.monotonic() - started < 1
+    assert "\U0001f600" not in error.message
+    assert "x" * 40 not in error.message
 
 
 def test_a_statement_timeout_is_deadline_exceeded(fake_conn: Any, read: Any) -> None:
