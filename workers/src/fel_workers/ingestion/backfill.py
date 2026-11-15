@@ -24,10 +24,16 @@ rejected atomically (ADR-0034 Amendment 2). Backfill and direct repair share
 publication's transaction lock, held through the caller's outer transaction.
 Repair must therefore finish before publishing an affected pin. No retirement
 state is introduced. Nothing here runs automatically at ingest.
+
+Discovery currently reads ``filings.recent`` only, not the older
+``filings.files`` pages. Stored filings absent from that bounded index stay
+unresolved; this job does not claim to backfill the issuer's full history.
+Unknown publication times establish no restatement predecessor.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time
 from typing import Any
@@ -37,7 +43,7 @@ from psycopg.rows import dict_row
 
 from fel_providers.interfaces import SecClient
 from fel_workers.ingestion.company_facts import entity_id_for_cik
-from fel_workers.ingestion.discovery import discover_filings
+from fel_workers.ingestion.discovery import FilingRef, discover_filings
 from fel_workers.ingestion.pin_guard import lock_corpus_mutations, reject_retained_pin_changes
 from fel_workers.ingestion.publication import Publication, derive_publication
 from fel_workers.ingestion.raw_store import COMPANY_FACTS_FORM
@@ -150,10 +156,10 @@ def repair_restatement_links(conn: psycopg.Connection[Any], *, entity_id: str) -
 
 
 def _backfill_publication(
-    conn: psycopg.Connection[Any], client: SecClient, cik: str, entity_id: str
+    conn: psycopg.Connection[Any], discovered: Sequence[FilingRef], entity_id: str
 ) -> tuple[int, tuple[str, ...]]:
-    """Set the publication columns still NULL; return (updated, conflicts)."""
-    refs = {ref.accession: ref for ref in discover_filings(client, cik)}
+    """Recheck stored rows under the corpus lock; return (updated, conflicts)."""
+    refs = {ref.accession: ref for ref in discovered}
     with conn.cursor(row_factory=dict_row) as cur:
         rows = cur.execute(
             "SELECT id, accession, filed_at, accepted_at, public_at, public_at_basis,"
@@ -213,13 +219,16 @@ def run_publication_backfill_job(
     """Handle a ``sec_publication_backfill`` job for one issuer (``cik``).
 
     The submissions index comes from the injected client: the pinned fixture
-    transport in every mock run. All writes commit together or not at all.
+    transport in every mock run. Discovery finishes before opening the job's
+    transaction or taking the corpus lock. Stored metadata and retained pins
+    are then rechecked under the lock; all writes commit together or not at all.
     """
     cik = str(payload.get("cik", ""))
     entity_id = entity_id_for_cik(cik)
+    refs = discover_filings(client, cik)
     with conn.transaction():
         lock_corpus_mutations(conn)
-        updated, conflicts = _backfill_publication(conn, client, cik, entity_id)
+        updated, conflicts = _backfill_publication(conn, refs, entity_id)
         repair = repair_restatement_links(conn, entity_id=entity_id)
         remaining = conn.execute(
             "SELECT count(*) FROM documents"

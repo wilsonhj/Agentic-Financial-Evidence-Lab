@@ -187,10 +187,12 @@ def _add_parse(conn: psycopg.Connection, document_id: Any, value: str) -> None:
     )
 
 
-def _seed_company_facts_snapshot(conn: psycopg.Connection) -> None:
+def _seed_company_facts_snapshot(
+    conn: psycopg.Connection, *, known_publication: bool = False
+) -> None:
     """A COMPANYFACTS snapshot under listed accession E, dated between B and
-    C, with a different value for the restated revenue key. Only its form
-    marks it: every other backfill and repair check would accept it."""
+    C, with a different value for the restated revenue key. When publication
+    is known, only its form excludes it from restatement repair."""
     document_id, when = str(uuid.uuid4()), _t("2026-05-06T00:00:00Z")
     conn.execute(
         "INSERT INTO documents (id, entity_id, accession, form, source_url, content_hash,"
@@ -198,6 +200,14 @@ def _seed_company_facts_snapshot(conn: psycopg.Connection) -> None:
         " 'https://example.invalid/companyfacts', %s, 'raw/companyfacts', %s, %s)",
         (document_id, ENTITY, E, "sha256:" + "cf" * 32, when, when),
     )
+    if known_publication:
+        # Deliberately seed legacy/corrupt metadata so temporal filtering
+        # cannot hide a missing COMPANYFACTS exclusion in the repair query.
+        conn.execute(
+            "UPDATE documents SET accepted_at = %s, public_at = %s,"
+            " public_at_basis = 'acceptance', timestamp_precision = 'second' WHERE id = %s",
+            (when, when, document_id),
+        )
     _add_parse(conn, document_id, "999")
 
 
@@ -488,6 +498,48 @@ def _blocked_on_advisory_lock(observer: psycopg.Connection, worker: threading.Th
             return True
         worker.join(timeout=0.05)
     return False
+
+
+def test_discovery_finishes_before_transaction_and_rechecks_newly_published_pin(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    """A publisher can commit during SEC discovery; subsequent writes see its pin."""
+    _ingest(corpus_conn, sec, [A], legacy=True)
+    draft = create_corpus_version(
+        corpus_conn,
+        label="published-during-discovery",
+        document_version_ids=[_version(corpus_conn, A)],
+    )
+    before = _row_versions(corpus_conn)
+
+    def publish_during_discovery(recent: dict[str, list[Any]]) -> None:
+        assert corpus_conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+        with _other_connection() as publisher:
+            publish_corpus_version(publisher, draft)
+
+    with pytest.raises(PublishedPinMutationError):
+        run_publication_backfill_job(
+            corpus_conn, _EditedIndex(sec, publish_during_discovery), {"cik": CIK}
+        )
+    assert pipeline.active_corpus_version(corpus_conn) == draft
+    assert _publication(corpus_conn) == {A: UNKNOWN}
+    assert _row_versions(corpus_conn) == before
+
+
+def test_repair_excludes_companyfacts_even_with_known_earlier_publication(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    _ingest(corpus_conn, sec, [A, B, C])
+    _seed_company_facts_snapshot(corpus_conn, known_publication=True)
+    assert _publication(corpus_conn)[E][:3] == (
+        _t("2026-05-06T00:00:00Z"),
+        _t("2026-05-06T00:00:00Z"),
+        "acceptance",
+    )
+    before = _row_versions(corpus_conn)
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+    assert _links(corpus_conn) == LINKS
+    assert _row_versions(corpus_conn) == before
 
 
 def test_backfill_never_changes_a_published_pin(

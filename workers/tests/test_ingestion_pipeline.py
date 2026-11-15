@@ -410,12 +410,13 @@ def test_concurrent_identical_jobs_converge_without_unique_violation(
     assert run_status is not None and run_status[0] == "succeeded"
 
 
-def test_publish_race_surfaces_domain_error_not_db_error(
+def test_nonparticipating_writer_conflict_surfaces_domain_error_not_db_error(
     corpus_conn: psycopg.Connection,
 ) -> None:
-    """Finding 11: a publisher that loses the single-active race gets
-    PublishConflictError (documented domain error), and its transaction
-    rolls back cleanly — the competing version stays active."""
+    """A raw writer bypassing the corpus lock still cannot activate two pins.
+
+    The cooperating publisher gets a domain error and rolls back completely.
+    """
     outcome = _ingest(corpus_conn, MockStorageProvider())
     assert outcome.document_version_id is not None
     draft = create_corpus_version(
@@ -466,7 +467,7 @@ def test_publish_race_surfaces_domain_error_not_db_error(
         thread.join(timeout=30)
     assert not failures, f"raw database errors escaped the publish path: {failures!r}"
     assert len(conflicts) == 1, "the losing publisher must see PublishConflictError"
-    assert "publish race" in str(conflicts[0])
+    assert "does not take the corpus lock" in str(conflicts[0])
     assert active_corpus_version(corpus_conn) == competitor
     draft_status = corpus_conn.execute(
         "SELECT status FROM corpus_versions WHERE id = %s", (draft,)
@@ -474,6 +475,58 @@ def test_publish_race_surfaces_domain_error_not_db_error(
     assert (
         draft_status is not None and draft_status[0] == "draft"
     ), "the losing publish must roll back completely"
+
+
+def test_two_real_publishers_serialize_until_outer_commit(
+    corpus_conn: psycopg.Connection,
+) -> None:
+    outcome = _ingest(corpus_conn, MockStorageProvider())
+    assert outcome.document_version_id is not None
+    first, second = (
+        create_corpus_version(
+            corpus_conn, label=label, document_version_ids=[outcome.document_version_id]
+        )
+        for label in ("first-publisher", "second-publisher")
+    )
+    errors: list[BaseException] = []
+    completed = threading.Event()
+    second_pid: list[int] = []
+
+    def publish_second() -> None:
+        try:
+            with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as conn:
+                second_pid.append(conn.info.backend_pid)
+                publish_corpus_version(conn, second)
+                completed.set()
+        except BaseException as exc:  # noqa: BLE001 — surfaced below
+            errors.append(exc)
+
+    thread = threading.Thread(target=publish_second)
+    with corpus_conn.transaction():
+        publish_corpus_version(corpus_conn, first)
+        thread.start()
+        deadline = time.monotonic() + 10
+        blocked = False
+        while time.monotonic() < deadline and thread.is_alive():
+            blocked = corpus_conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory'"
+                " AND NOT granted AND pid = ANY(%s))",
+                (second_pid,),
+            ).fetchone() == (True,)
+            if blocked:
+                break
+            thread.join(timeout=0.02)
+        first_active = active_corpus_version(corpus_conn)
+        waiting = not completed.is_set()
+    thread.join(timeout=30)
+    assert blocked and waiting, "the second real publisher must wait on the first's corpus lock"
+    assert first_active == first
+    assert not thread.is_alive() and not errors, errors
+    assert completed.is_set()
+    assert active_corpus_version(corpus_conn) == second
+    assert corpus_conn.execute(
+        "SELECT id::text, status, is_active FROM corpus_versions ORDER BY label"
+    ).fetchall() == [(first, "superseded", False), (second, "active", True)]
 
 
 def test_restatement_targets_latest_parsed_version_total_order(

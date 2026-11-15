@@ -45,7 +45,8 @@ def reject_retained_pin_changes(
     Publication metadata is shared by every parse of a document, so check all
     versions for those changes. Fact edges are owned by the changed version.
     Call after UPDATE RETURNING, inside the mutation's transaction/savepoint:
-    raising rolls back every write even if the caller catches this error.
+    callers must let this error leave that enclosing transaction/savepoint
+    block so its writes roll back, even if the error is then caught outside.
     Both active and superseded corpora remain replayable under ADR-0034.
     """
     if not document_ids and not document_version_ids:

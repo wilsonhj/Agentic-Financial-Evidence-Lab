@@ -42,6 +42,7 @@ from fel_workers.ingestion.company_facts import (
 )
 from fel_workers.ingestion.errors import IngestError, NormalizationError, ParseError
 from fel_workers.ingestion.pipeline import _prior_canonical_facts, ingest_filing
+from fel_workers.ingestion.publication import Publication
 from fel_workers.ingestion.sec_client import SEC_USER_AGENT, LiveSecClient, SecFetchError
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -471,6 +472,13 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
         corpus_conn, storage, cik=CIK, raw=companyfacts_raw(), fetched_at=FETCHED_AT
     )
     assert snapshot.status == "succeeded" and snapshot.facts > 0
+    # Simulate legacy metadata that violates the normal raw-store policy.
+    # The temporal predicate must pass, leaving the form filter load-bearing.
+    corpus_conn.execute(
+        "UPDATE documents SET accepted_at = %s, public_at = %s,"
+        " public_at_basis = 'acceptance', timestamp_precision = 'second' WHERE id = %s",
+        (FETCHED_AT, FETCHED_AT, snapshot.document_id),
+    )
     # Direction 1: the filing pipeline's restatement-target query must not
     # see ANY companyfacts fact, even though the snapshot was published
     # before the cutoff for the same entity.
@@ -489,6 +497,12 @@ def test_restatement_isolation_both_directions(corpus_conn: psycopg.Connection) 
         source_url="https://example.invalid/synthetic_10q.htm",
         raw=fixture_bytes("synthetic_10q.html"),
         published_at=datetime(2026, 6, 1, tzinfo=UTC),
+        publication=Publication(
+            datetime(2026, 6, 1, tzinfo=UTC),
+            datetime(2026, 6, 1, tzinfo=UTC),
+            "acceptance",
+            "second",
+        ),
         form="10-Q",
     )
     assert filing.status == "succeeded" and filing.facts > 0

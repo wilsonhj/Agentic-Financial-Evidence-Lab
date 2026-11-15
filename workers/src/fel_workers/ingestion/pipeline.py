@@ -64,11 +64,12 @@ from fel_workers.ingestion.xbrl import NORMALIZER_VERSION, PriorFact, normalize_
 
 
 class PublishConflictError(Exception):
-    """A concurrent publisher activated another corpus version first.
+    """A writer that does not take the corpus lock activated another version.
 
-    The demote-promote transaction lost the race on the single-active
-    partial unique index; the caller may re-read the active pointer and
-    retry against the new state.
+    Supported publishers serialize under the lock and supersede the previous
+    active version. The single-active partial unique index also protects
+    against nonparticipating writers; on conflict the caller may re-read the
+    active pointer and retry against the new state.
     """
 
 
@@ -532,8 +533,8 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
                 )
     except psycopg.errors.UniqueViolation as exc:
         raise PublishConflictError(
-            f"corpus version {corpus_version_id} lost the publish race: "
-            "another version was activated concurrently; re-read the active "
+            f"corpus version {corpus_version_id} conflicts with a writer that "
+            "does not take the corpus lock and activated another version; re-read the active "
             "pointer and retry if still applicable"
         ) from exc
 
