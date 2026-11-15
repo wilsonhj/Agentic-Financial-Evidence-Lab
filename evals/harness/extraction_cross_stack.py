@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -27,44 +28,33 @@ from fel_workers.consumer import run_worker
 from fel_workers.storage import LocalDirStorageProvider, apply_worker_db_role
 
 SOURCE_TEXT = "Annual recurring revenue was $100 million at June 30, 2026."
+DIGEST = "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()
 
 
-def asserting_span_hashes(parsed: Any, span_hashes: dict[str, str]) -> Any:
-    """Assert each synthetic proposal's actual source hash; unknown spans fail closed."""
-    if not isinstance(parsed, dict) or not isinstance(parsed.get("proposals"), list):
-        return parsed
-    return {
-        **parsed,
-        "proposals": [
-            {
-                **proposal,
-                "evidence": [
-                    {**edge, "text_hash": span_hashes[edge["source_span_id"]]}
-                    for edge in proposal["evidence"]
-                ],
-            }
-            for proposal in parsed["proposals"]
-        ],
-    }
+def seeded_span_hashes(manifest: Mapping[str, Any]) -> dict[str, str]:
+    """Content address of the one span `seed` inserts, keyed by its id."""
+    return {manifest["span"]: DIGEST}
 
 
 class ScopedMock(MockStructuredLLMProvider):
-    """Bind committed model fixtures to this execution's source IDs and exact bytes."""
+    """Bind committed model fixtures to this execution's real evidence IDs.
 
-    def __init__(
-        self, manifest: dict[str, str], *, span_hashes: dict[str, str] | None = None
-    ) -> None:
+    Each proposal citation also asserts the ``text_hash`` of the span it cites,
+    taken from ``span_hashes`` (span id -> hash of the span as seeded). That is
+    what a role that actually read the span can assert, and it is the only
+    citation the worker grades ``verified``; review refuses to promote a
+    proposal whose citations are membership-only. A cited span missing from
+    the map is a fixture error, not a reason to fall back to membership.
+    """
+
+    def __init__(self, manifest: Mapping[str, Any], span_hashes: Mapping[str, str]) -> None:
         super().__init__()
         self.identities = {
             "source_span_id": manifest["span"],
             "document_version_id": manifest["version"],
             "entity_id": manifest["entity"],
         }
-        self.span_hashes = (
-            {manifest["span"]: "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()}
-            if span_hashes is None
-            else dict(span_hashes)
-        )
+        self.span_hashes = dict(span_hashes)
 
     def generate_structured(self, request: StructuredGenerationRequest) -> StructuredModelResult:
         result = super().generate_structured(request)
@@ -76,9 +66,19 @@ class ScopedMock(MockStructuredLLMProvider):
                 return [scoped(item) for item in value]
             return value
 
-        return replace(
-            result, parsed=asserting_span_hashes(scoped(result.parsed), self.span_hashes)
-        )
+        return replace(result, parsed=self._assert_span_hashes(scoped(result.parsed)))
+
+    def _assert_span_hashes(self, parsed: Any) -> Any:
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("proposals"), list):
+            return parsed
+        proposals = []
+        for item in parsed["proposals"]:
+            evidence = [
+                {**edge, "text_hash": self.span_hashes[edge["source_span_id"]]}
+                for edge in item["evidence"]
+            ]
+            proposals.append({**item, "evidence": evidence})
+        return {**parsed, "proposals": proposals}
 
 
 def seed(database_url: str, storage_dir: Path) -> dict[str, str]:
@@ -98,7 +98,7 @@ def seed(database_url: str, storage_dir: Path) -> dict[str, str]:
             "corpus",
         )
     }
-    digest = "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()
+    digest = DIGEST
     key = "canonical/" + ids["version"]
     LocalDirStorageProvider(storage_dir).put(key, SOURCE_TEXT.encode())
     with psycopg.connect(database_url) as conn:
@@ -159,7 +159,7 @@ def work(database_url: str, storage_dir: Path, manifest: dict[str, str]) -> None
             MockSecClient(),
             queue_name="extraction",
             max_iterations=1,
-            structured_llm=ScopedMock(manifest),
+            structured_llm=ScopedMock(manifest, seeded_span_hashes(manifest)),
         )
     if completed != 1:
         raise RuntimeError("Expected exactly one successfully processed extraction job")

@@ -1,4 +1,4 @@
-"""Acceptance replies bind source identity and hashes, preserving financial data."""
+"""The acceptance provider changes source identity, never financial fixture data."""
 
 from __future__ import annotations
 
@@ -19,59 +19,109 @@ from app.db import pool_for
 from app.main import app
 from fel_providers.interfaces import StructuredGenerationRequest
 from fel_providers.mocks import MockStructuredLLMProvider
-from harness.extraction_cross_stack import SOURCE_TEXT, ScopedMock, main, verify
+from harness.extraction_cross_stack import (
+    DIGEST,
+    ScopedMock,
+    main,
+    seeded_span_hashes,
+    verify,
+)
 from migrate import main as migrate
 
 
-@pytest.mark.parametrize("schema_name", ["classifier", "candidates", "kpi"])
-def test_scoped_model_binds_source_provenance_and_preserves_financial_values(schema_name):
-    manifest = {key: str(uuid4()) for key in ("span", "version", "entity")}
-    request = StructuredGenerationRequest(
+def _request(schema_name):
+    return StructuredGenerationRequest(
         messages=[{"role": "user", "content": "Synthetic acceptance evidence"}],
         json_schema={},
         schema_name=schema_name,
         schema_version="acceptance/v1",
         max_output_tokens=1000,
     )
-    baseline = MockStructuredLLMProvider().generate_structured(request)
-    actual = ScopedMock(manifest).generate_structured(request)
+
+
+def _changed_only_identity_and_asserted_hash(baseline, actual, manifest, span_hashes):
+    """Fail on any difference except scoped identities and a seeded-span hash.
+
+    Returns the span ids whose citations gained a ``text_hash``.
+    """
     identities = {
         "source_span_id": manifest["span"],
         "document_version_id": manifest["version"],
         "entity_id": manifest["entity"],
     }
+    asserted = []
 
-    def compare(left, right):
+    def compare(left, right, *, citation=False):
         if isinstance(left, dict):
-            if "source_span_id" in left and "document_version_id" in left:
-                assert right.keys() == left.keys() | {"text_hash"}
-                assert (
-                    right["text_hash"]
-                    == "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()
-                )
+            # The one permitted addition: a proposal citation asserts the
+            # content address of the seeded span it cites. Nothing is removed
+            # and every other key and value must match exactly.
+            added = right.keys() - left.keys()
+            if citation and added == {"text_hash"}:
+                assert right["text_hash"] == span_hashes[right["source_span_id"]]
+                asserted.append(right["source_span_id"])
             else:
                 assert left.keys() == right.keys()
             for key, value in left.items():
                 if key in identities:
                     assert right[key] == identities[key]
                 else:
-                    compare(value, right[key])
+                    compare(value, right[key], citation=key == "evidence")
         elif isinstance(left, list):
             assert len(left) == len(right)
             for before, after in zip(left, right, strict=True):
-                compare(before, after)
+                compare(before, after, citation=citation)
         else:
             assert left == right
 
-    compare(baseline.parsed, actual.parsed)
+    compare(baseline, actual)
+    return asserted
+
+
+@pytest.mark.parametrize("schema_name", ["classifier", "candidates", "kpi"])
+def test_scoped_model_changes_only_identity_and_preserves_financial_values(schema_name):
+    manifest = {key: str(uuid4()) for key in ("span", "version", "entity")}
+    span_hashes = seeded_span_hashes(manifest)
+    request = _request(schema_name)
+    baseline = MockStructuredLLMProvider().generate_structured(request)
+    actual = ScopedMock(manifest, span_hashes).generate_structured(request)
+    asserted = _changed_only_identity_and_asserted_hash(
+        baseline.parsed, actual.parsed, manifest, span_hashes
+    )
+    # Only proposal envelopes cite evidence; classifier sections and fact-table
+    # candidates name spans but are not citations and stay unchanged.
+    assert asserted == ([manifest["span"]] if schema_name == "kpi" else [])
     assert actual.input_tokens == baseline.input_tokens
     assert actual.output_tokens == baseline.output_tokens
     assert actual.estimated_cost_usd == baseline.estimated_cost_usd
 
 
-def test_source_hash_binding_uses_each_cited_span_and_rejects_missing_source():
-    from harness.extraction_cross_stack import asserting_span_hashes
+@pytest.mark.parametrize("tamper", ["value", "wrong_hash", "extra_key"])
+def test_scoped_model_comparison_still_fails_on_any_other_change(tamper):
+    manifest = {key: str(uuid4()) for key in ("span", "version", "entity")}
+    span_hashes = seeded_span_hashes(manifest)
+    baseline = MockStructuredLLMProvider().generate_structured(_request("kpi"))
+    actual = ScopedMock(manifest, span_hashes).generate_structured(_request("kpi"))
+    proposal = actual.parsed["proposals"][0]
+    if tamper == "value":
+        proposal["value"] = str(int(proposal["value"]) + 1)
+    elif tamper == "wrong_hash":
+        proposal["evidence"][0]["text_hash"] = "sha256:" + "0" * 64
+    else:
+        proposal["evidence"][0]["citation_status"] = "verified"
+    with pytest.raises(AssertionError):
+        _changed_only_identity_and_asserted_hash(
+            baseline.parsed, actual.parsed, manifest, span_hashes
+        )
 
+
+def test_scoped_model_refuses_to_assert_a_hash_for_an_unseeded_span():
+    manifest = {key: str(uuid4()) for key in ("span", "version", "entity")}
+    with pytest.raises(KeyError):
+        ScopedMock(manifest, {str(uuid4()): DIGEST}).generate_structured(_request("kpi"))
+
+
+def test_source_hash_binding_uses_each_cited_span_and_rejects_missing_source():
     spans = {str(uuid4()): text for text in ("ARR was $100 million.", "Customers grew 20%.")}
     hashes = {
         span: "sha256:" + hashlib.sha256(text.encode()).hexdigest() for span, text in spans.items()
@@ -80,13 +130,17 @@ def test_source_hash_binding_uses_each_cited_span_and_rejects_missing_source():
         "proposals": [{"evidence": [{"source_span_id": span} for span in spans]}],
         "notes": None,
     }
-    actual = asserting_span_hashes(parsed, hashes)
+    manifest = {key: str(uuid4()) for key in ("span", "version", "entity")}
+    model = ScopedMock(manifest, hashes)
+    actual = model._assert_span_hashes(parsed)
     assert [edge["text_hash"] for edge in actual["proposals"][0]["evidence"]] == list(
         hashes.values()
     )
     assert all("text_hash" not in edge for edge in parsed["proposals"][0]["evidence"])
     with pytest.raises(KeyError):
-        asserting_span_hashes(parsed, {next(iter(hashes)): next(iter(hashes.values()))})
+        ScopedMock(manifest, {next(iter(hashes)): next(iter(hashes.values()))})._assert_span_hashes(
+            parsed
+        )
 
 
 @pytest.fixture
@@ -162,11 +216,12 @@ def test_harness_seeds_source_runs_worker_and_verifies_real_immutable_rows(
             "SELECT payload,validation_summary FROM extraction_proposals WHERE id=%s",
             (proposal["id"],),
         ).fetchone()
-        source_hash, grade = conn.execute(
-            "SELECT s.text_hash,e.citation_status FROM extraction_proposal_evidence e "
+        span_id, source_hash, grade = conn.execute(
+            "SELECT s.id::text,s.text_hash,e.citation_status FROM extraction_proposal_evidence e "
             "JOIN source_spans s ON s.id=e.source_span_id WHERE e.proposal_id=%s",
             (proposal["id"],),
         ).fetchone()
+    assert span_id == manifest["span"]
     assert payload["evidence"][0]["text_hash"] == source_hash
     assert grade == "verified"
     assert summary["blockers"] == []
@@ -203,9 +258,9 @@ def test_harness_seeds_source_runs_worker_and_verifies_real_immutable_rows(
         ).fetchall()
     assert len(manifests) == 2
     for (edges,) in manifests:
-        assert [(edge["text_hash"], edge["citation_status"]) for edge in edges] == [
-            (source_hash, "verified")
-        ]
+        assert [
+            (edge["source_span_id"], edge["text_hash"], edge["citation_status"]) for edge in edges
+        ] == [(manifest["span"], source_hash, "verified")]
     previous = client.get(
         f"/v1/approved-extractions/{record}/versions/{old.json()['version_id']}",
         headers=headers,

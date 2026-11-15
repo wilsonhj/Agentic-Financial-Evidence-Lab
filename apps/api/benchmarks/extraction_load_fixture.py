@@ -25,11 +25,20 @@ SOURCE_TEXT = "\n".join(f"Annual recurring revenue was $100 million at {day}." f
 DIGEST = "sha256:" + hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()
 
 
+def seeded_span_hashes(manifest: dict[str, str]) -> dict[str, str]:
+    """Content address of the one span `seed` inserts, keyed by its id."""
+    return {manifest["span"]: DIGEST}
+
+
 class BulkMock(ScopedMock):
-    """100 distinct dated proposals; mock token counts are not model performance."""
+    """100 distinct dated proposals; mock token counts are not model performance.
+
+    Every citation asserts the text_hash of the span `seed` inserts, which is
+    the 100-line SOURCE_TEXT here, not the cross-stack harness's one line.
+    """
 
     def __init__(self, manifest: dict[str, str]) -> None:
-        super().__init__(manifest, span_hashes={manifest["span"]: DIGEST})
+        super().__init__(manifest, seeded_span_hashes(manifest))
 
     def generate_structured(self, request: StructuredGenerationRequest) -> StructuredModelResult:
         result = super().generate_structured(request)
