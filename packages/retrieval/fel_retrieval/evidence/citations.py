@@ -102,7 +102,7 @@ def _verified_text(
         canonical = raw.decode("utf-8")
     except UnicodeDecodeError:
         raise _integrity_error("canonical text is not UTF-8", span_id) from None
-    if end > len(canonical):
+    if not 0 <= start <= end <= len(canonical):
         raise _integrity_error("span offsets lie outside the canonical text", span_id)
     text = canonical[start:end]
     if content_sha256(text) != text_hash:
@@ -180,6 +180,8 @@ def get_citation(
         text = f"Searched {form or 'unlabeled'} filings of CIK {company.cik} {window}"
     if len(text) > MAX_NOTE_CHARS:
         text = f"Searched filings of CIK {company.cik} {window}"
+    if len(text) > MAX_NOTE_CHARS:
+        text = f"Searched filings of 1 issuer {window}"
     note = i.CoverageNote(
         text=text,
         issuers=(company.cik,),

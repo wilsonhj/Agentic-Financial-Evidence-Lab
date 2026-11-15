@@ -120,7 +120,9 @@ def check_request(request: object) -> None:
         check_uuid("document_version_id", request.document_version_id)
         for field in ("start_char", "end_char"):
             offset = getattr(request, field)
-            if type(offset) is not int or offset > MAX_OFFSET:
+            if type(offset) is not int or not 0 <= offset <= MAX_OFFSET:
                 raise invalid_input(field, f"must be an integer from 0 to {MAX_OFFSET}")
+        if request.end_char < request.start_char:
+            raise invalid_input("end_char", "must not precede start_char")
     else:
         raise TypeError(f"no request limits are defined for {type(request).__name__}")
