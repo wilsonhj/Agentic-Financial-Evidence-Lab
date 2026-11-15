@@ -17,6 +17,8 @@ import itertools
 import json
 import os
 import pathlib
+import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import date, datetime
@@ -28,6 +30,7 @@ import pytest
 from fel_providers.mocks import MockStorageProvider
 from fel_workers import queue
 from fel_workers.consumer import entity_id_for_cik, handle_sec_filing_fetch, run_worker
+from fel_workers.ingestion import pipeline
 from fel_workers.ingestion.backfill import (
     JOB_KIND_SEC_PUBLICATION_BACKFILL,
     RepairReport,
@@ -36,6 +39,7 @@ from fel_workers.ingestion.backfill import (
 )
 from fel_workers.ingestion.discovery import discover_filings, fetch_job_payload
 from fel_workers.ingestion.fixture_sec_client import FixtureSecClient
+from fel_workers.ingestion.pipeline import create_corpus_version, publish_corpus_version
 from fel_workers.ingestion.publication import derive_publication
 from fel_workers.ingestion.raw_store import store_raw_document
 
@@ -424,3 +428,209 @@ def test_company_facts_snapshot_can_never_be_given_a_publication_time(
             publication=derive_publication("2026-05-06T13:00:00Z", date(2026, 5, 6)),
         )
     assert corpus_conn.execute("SELECT count(*) FROM documents").fetchone() == (0,)
+
+
+# --- Review round 2 (#417): published pins, publication-time order, reparse ---
+
+
+def _version(conn: psycopg.Connection, accession: str) -> str:
+    row = conn.execute(
+        "SELECT v.id FROM document_versions v JOIN documents d ON d.id = v.document_id"
+        " WHERE d.accession = %s ORDER BY v.created_at DESC, v.id DESC LIMIT 1",
+        (accession,),
+    ).fetchone()
+    assert row is not None
+    return str(row[0])
+
+
+def _publish(conn: psycopg.Connection, *accessions: str) -> str:
+    corpus = create_corpus_version(
+        conn, label="pin", document_version_ids=[_version(conn, a) for a in accessions]
+    )
+    publish_corpus_version(conn, corpus)
+    return corpus
+
+
+def _strictly_visible(conn: psycopg.Connection, corpus: str, cutoff: datetime) -> int:
+    """Documents of a pin visible under the strict MCP rule at a cutoff."""
+    row = conn.execute(
+        "SELECT count(DISTINCT d.id) FROM corpus_version_documents c"
+        " JOIN document_versions v ON v.id = c.document_version_id"
+        " JOIN documents d ON d.id = v.document_id"
+        " WHERE c.corpus_version_id = %s AND d.public_at <= %s",
+        (corpus, cutoff),
+    ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def _other_connection() -> psycopg.Connection:
+    url = os.environ.get("TEST_DATABASE_URL")
+    assert url is not None
+    return psycopg.connect(url, autocommit=True)
+
+
+def _blocked_on_advisory_lock(observer: psycopg.Connection, worker: threading.Thread) -> bool:
+    """True once another backend waits on an advisory lock while ``worker`` runs."""
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and worker.is_alive():
+        row = observer.execute(
+            "SELECT count(*) FROM pg_locks l JOIN pg_database db ON db.oid = l.database"
+            " WHERE l.locktype = 'advisory' AND NOT l.granted"
+            " AND db.datname = current_database()"
+        ).fetchone()
+        if row is not None and row[0] > 0:
+            return True
+        worker.join(timeout=0.05)
+    return False
+
+
+def test_backfill_never_changes_a_published_pin(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    """Active and superseded pins keep their publication metadata; only the
+    unpinned filing is backfilled, and the rejected ones are reported."""
+    _ingest(corpus_conn, sec, [A, B, C], legacy=True)
+    superseded = _publish(corpus_conn, A)
+    active = _publish(corpus_conn, C)
+    cutoff = _t("2026-06-01T00:00:00Z")
+    assert (
+        _strictly_visible(corpus_conn, superseded, cutoff),
+        _strictly_visible(corpus_conn, active, cutoff),
+    ) == (0, 0)
+
+    report = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+
+    assert _publication(corpus_conn) == {A: UNKNOWN, B: KNOWN[B], C: UNKNOWN}
+    assert (
+        _strictly_visible(corpus_conn, superseded, cutoff),
+        _strictly_visible(corpus_conn, active, cutoff),
+    ) == (0, 0)
+    assert (report.updated, report.rejected) == (1, (A, C))
+
+
+def test_repair_preserves_restates_edges_inside_a_published_pin(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    """C -> A is published; B arriving later between them must not move it."""
+    _ingest(corpus_conn, sec, [A, C])
+    assert _links(corpus_conn) == [(C, A, 2)]
+    _publish(corpus_conn, A, C)
+    _ingest(corpus_conn, sec, [B])  # unpinned; restates A at ingest
+
+    report = repair_restatement_links(corpus_conn, entity_id=ENTITY)
+
+    assert _links(corpus_conn) == [(B, A, 2), (C, A, 2)]
+    assert (report.relinked, report.rejected_versions) == (0, (_version(corpus_conn, C),))
+
+
+def test_publication_waits_for_an_uncommitted_backfill(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    """Publishing during an uncommitted backfill must wait for it, so the pin is
+    published over the backfilled rows and is never changed afterwards."""
+    _ingest(corpus_conn, sec, [A], legacy=True)
+    draft = create_corpus_version(
+        corpus_conn, label="race", document_version_ids=[_version(corpus_conn, A)]
+    )
+    errors: list[BaseException] = []
+
+    def publish() -> None:
+        try:
+            with _other_connection() as conn:
+                publish_corpus_version(conn, draft)
+        except BaseException as exc:  # noqa: BLE001 — surfaced below
+            errors.append(exc)
+
+    publisher = threading.Thread(target=publish)
+    with _other_connection() as observer:
+        with corpus_conn.transaction():
+            run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+            publisher.start()
+            blocked = _blocked_on_advisory_lock(observer, publisher)
+            still_waiting = publisher.is_alive()
+        publisher.join(timeout=30)
+    assert not errors
+    assert blocked and still_waiting, "publication did not wait for the uncommitted backfill"
+    status = corpus_conn.execute(
+        "SELECT status FROM corpus_versions WHERE id = %s", (draft,)
+    ).fetchone()
+    assert status == ("active",)
+    assert _publication(corpus_conn) == {A: KNOWN[A]}
+    after = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+    assert (after.updated, after.rejected, after.repair) == (0, (), RepairReport())
+
+
+def test_backfill_waits_for_an_uncommitted_publication_then_rejects_it(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    """The other order: a backfill that starts while a publication is
+    uncommitted must see the new pin once it commits, and leave it alone."""
+    _ingest(corpus_conn, sec, [A], legacy=True)
+    draft = create_corpus_version(
+        corpus_conn, label="race", document_version_ids=[_version(corpus_conn, A)]
+    )
+    reports: list[Any] = []
+
+    def backfill() -> None:
+        try:
+            reports.append(run_publication_backfill_job(corpus_conn, sec, {"cik": CIK}))
+        except BaseException as exc:  # noqa: BLE001 — surfaced below
+            reports.append(exc)
+
+    worker = threading.Thread(target=backfill)
+    with _other_connection() as publisher:
+        with publisher.transaction():
+            publish_corpus_version(publisher, draft)
+            worker.start()
+            blocked = _blocked_on_advisory_lock(publisher, worker)
+            still_waiting = worker.is_alive()
+        worker.join(timeout=30)
+    assert blocked and still_waiting, "the backfill did not wait for the uncommitted publication"
+    assert _publication(corpus_conn) == {A: UNKNOWN}
+    assert len(reports) == 1 and not isinstance(reports[0], BaseException), reports
+    assert (reports[0].updated, reports[0].rejected) == (0, (A,))
+
+
+@pytest.mark.parametrize("order", [(A, B, C), (B, A, C)], ids=["ABC", "BAC"])
+def test_publication_time_not_filing_date_orders_restatements(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, order: tuple[str, ...]
+) -> None:
+    """A filed May 4 but public May 7; B filed and public May 5; C public May 11.
+    By publication B < A < C, so A restates B and C restates A. Ordering by
+    filing date made B restate the not-yet-public A and C restate B."""
+    overrides = {
+        A: {"filed_on": "2026-05-04", "acceptance_datetime": "2026-05-07T14:00:00.000Z"},
+        B: {"filed_on": "2026-05-05", "acceptance_datetime": "2026-05-05T14:00:00.000Z"},
+        C: {},
+    }
+    for accession in order:
+        _ingest(corpus_conn, sec, [accession], **overrides[accession])
+    may7, may5 = _t("2026-05-07T14:00:00Z"), _t("2026-05-05T14:00:00Z")
+    assert _publication(corpus_conn)[A] == (may7, may7, "acceptance", "second")
+    assert _publication(corpus_conn)[B] == (may5, may5, "acceptance", "second")
+    repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert _links(corpus_conn) == [(A, B, 2), (C, A, 2)]
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+
+
+def test_reparse_orders_by_stored_publication_time(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parser-version bump re-parses B through a legacy payload with no
+    acceptance time. The stored document keeps its public_at, and the new parse
+    must be ordered by it: B still restates A."""
+    _ingest(corpus_conn, sec, [A, B])
+    monkeypatch.setattr(pipeline, "PARSER_VERSION", "fel-parser/reparse-test")
+    _ingest(corpus_conn, sec, [B], legacy=True)
+    reparsed = _version(corpus_conn, B)
+    targets = corpus_conn.execute(
+        "SELECT td.accession, count(*)::int FROM financial_facts f"
+        " JOIN financial_facts t ON t.id = f.restates"
+        " JOIN document_versions tv ON tv.id = t.document_version_id"
+        " JOIN documents td ON td.id = tv.document_id"
+        " WHERE f.document_version_id = %s GROUP BY 1",
+        (reparsed,),
+    ).fetchall()
+    assert _publication(corpus_conn)[B] == KNOWN[B]
+    assert targets == [(A, 2)]
