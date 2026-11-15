@@ -10,12 +10,14 @@ mismatch fails closed with ``integrity_error`` and nothing is returned.
 from __future__ import annotations
 
 import logging
+import re
+import threading
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Final, Protocol
 
 from fel_retrieval.evidence import interfaces as i
-from fel_retrieval.evidence.limits import check_request
+from fel_retrieval.evidence.limits import check_request, invalid_input
 from fel_retrieval.evidence.visibility import (
     VISIBLE_VERSIONS,
     public_read_session,
@@ -25,7 +27,9 @@ from fel_retrieval.hashing import content_sha256
 from fel_retrieval.index_build import DBConnection
 
 MAX_CANONICAL_BYTES: Final = 4 * 1024 * 1024  # §7.4: canonical-text bytes per request
+READ_TIMEOUT_SECONDS: Final = 10.0  # §7.4: one tool call's total deadline
 MAX_NOTE_CHARS: Final = 1000  # mcp-get-citation-output: coverage_note.text.maxLength
+_CIK: Final = re.compile(r"^[0-9]{10}$")  # mcp-citation company.cik
 _RETRY_AFTER_SECONDS: Final = 30
 _LOG = logging.getLogger(__name__)
 
@@ -80,12 +84,53 @@ def _instant(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def _read_with_deadline(
+    texts: CanonicalTextStore, key: str, limit: int, *, timeout: float
+) -> bytes:
+    """Read off the caller thread. A store that blocks past ``timeout`` is ``deadline_exceeded``.
+
+    The worker is a daemon: abandoning it must not keep the process, or pytest, alive.
+    ``statement_timeout`` does not cover this read, and the SQL transaction has
+    already ended, so the deadline lives here.
+    """
+    outcome: list[bytes | BaseException] = []
+    finished = threading.Event()
+
+    def _target() -> None:
+        try:
+            outcome.append(texts.read(key, limit))
+        except BaseException as error:
+            outcome.append(error)
+        finally:
+            finished.set()
+
+    threading.Thread(target=_target, name="canonical-text-read", daemon=True).start()
+    if not finished.wait(timeout):
+        raise i.EvidenceReadError(
+            "deadline_exceeded",
+            "The request exceeded its time limit.",
+            retryable=True,
+            recovery="Narrow the request, then retry.",
+        )
+    result = outcome[0]
+    if isinstance(result, BaseException):
+        raise result
+    return result
+
+
 def _verified_text(
-    texts: CanonicalTextStore, key: str, start: int, end: int, text_hash: str, span_id: str
+    texts: CanonicalTextStore,
+    key: str,
+    start: int,
+    end: int,
+    text_hash: str,
+    span_id: str,
+    *,
+    timeout: float = READ_TIMEOUT_SECONDS,
 ) -> str:
     """The span's text, sliced by code points, once its recomputed hash matches."""
     try:
-        raw = texts.read(key, MAX_CANONICAL_BYTES + 1)
+        raw = _read_with_deadline(texts, key, MAX_CANONICAL_BYTES + 1, timeout=timeout)
     except LookupError:
         raise _integrity_error("canonical text object is absent", span_id) from None
     except OSError as error:
@@ -97,7 +142,11 @@ def _verified_text(
             retry_after_seconds=_RETRY_AFTER_SECONDS,
         ) from error
     if len(raw) > MAX_CANONICAL_BYTES:
-        raise _integrity_error("canonical text exceeds the per-request read cap", span_id)
+        # §7.4 read cap. A limit violation is invalid_input, not a hash mismatch.
+        raise invalid_input(
+            "canonical_text_bytes",
+            f"must be at most {MAX_CANONICAL_BYTES} bytes",
+        )
     try:
         canonical = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -117,6 +166,7 @@ def get_citation(
     *,
     companies: Mapping[str, i.Company],
     texts: CanonicalTextStore,
+    timeout: float = READ_TIMEOUT_SECONDS,
 ) -> i.CitationResult:
     """One verified Citation, or ``not_found`` for a hidden, stale or missing reference.
 
@@ -146,7 +196,10 @@ def get_citation(
     span_id, start, end = str(row[0]), int(row[1]), int(row[2])
     if len(rows) > 1:
         raise _integrity_error("more than one stored span answers the reference", span_id)
-    text = _verified_text(texts, str(row[7]), start, end, str(row[3]), span_id)
+    # Reject before Citation or CoverageNote. The value stays out of the log and the message.
+    if not isinstance(company.cik, str) or _CIK.fullmatch(company.cik) is None:
+        raise _integrity_error("served cohort issuer is not a 10-digit CIK", span_id)
+    text = _verified_text(texts, str(row[7]), start, end, str(row[3]), span_id, timeout=timeout)
     form = None if row[11] is None else str(row[11])
     citation = i.Citation(
         span_id=span_id,
