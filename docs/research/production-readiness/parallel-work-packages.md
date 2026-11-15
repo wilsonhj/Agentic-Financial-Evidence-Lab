@@ -47,11 +47,22 @@ should be retained where sufficient. Shared schemas belong to their registered
 contract owner, not to every consumer.
 
 Cloud provider, immutable-retention duration and hosted budget decisions may remain
-open while offline adapters and fixture tests proceed. Changes to the frozen
-application/storage contracts, database migrations, architecture or `specs/**`
-need the applicable accepted ADR and lead review. Root dependency/configuration
-changes follow their specific authorization rule. Never claim this research PR
-itself accepted those decisions.
+open while offline adapters and fixture tests proceed. Apply the
+[AGENTS.md shared-path rules](../../../AGENTS.md#shared-paths) at registration:
+contracts, migrations, `specs/**` and `docs/decisions/**` require `contract-change`,
+an accepted ADR and integration-lead review. Changes to `.github/**` require
+`contract-change` and lead review, with an accepted ADR when the change also
+adopts architecture or changes a shared contract; workflow ownership alone does
+not imply an ADR requirement. Advisory/lockfile/workspace pins require the label
+and the lead's PR authorization record. Other root/configuration changes follow
+their applicable shared-path rule. Never claim this research PR accepted those
+decisions.
+
+If PRO-08 or PRO-23 needs a schema migration, the integration lead owns one
+separately registered migration package with exact `db/migrations/` files in its
+`allowed_paths`, the required `contract-change` label, accepted ADR and lead
+review. Merge it before the consuming implementation. PRO-00 freezes the metadata
+contract; neither PRO-00 nor a consumer gains migration ownership from this table.
 
 **Dependency and ownership table**
 
@@ -70,13 +81,13 @@ authorization.
 | PRO-05 | Python API/worker image and fixture smoke | PRO-00 | New `infra/containers/python/**`, `infra/containers/tests/python/**`; existing installer changes only in a separately assigned follow-up |
 | PRO-06 | Web image and standalone tracing | PRO-00 | New `infra/containers/web/**`, `infra/containers/tests/web/**`; `apps/web/next.config.ts` |
 | PRO-07 | Shared immutable object-store adapter | PRO-00 | New `workers/src/fel_workers/object_storage.py`, `workers/tests/test_object_storage.py`; existing storage protocol remains frozen |
-| PRO-08 | Shared admission/cost reservation prototype | PRO-00 | New `packages/admission/**`; any schema migration is separately registered and merged before implementation requiring it |
+| PRO-08 | Shared admission/cost reservation prototype | PRO-00 | New `packages/admission/**`; any schema migration is a separately registered integration-lead package under the gate above, merged before its consumer |
 | PRO-09 | Independent acceptance harness and adversarial fixtures | PRO-00 | New `evals/production/**`; collection/configuration wired only by lead |
 | PRO-10 | API logging/Sentry, storage-reader, pool/role, health and admission integration | PRO-03, PRO-07, PRO-08, PRO-23 | `apps/api/app/observability.py`, `apps/api/tests/test_observability.py`, new `apps/api/tests/test_structured_logging.py` and `apps/api/tests/fixtures/logging/**`; named API `main.py`, `db.py`, `ratelimit.py`, `retrieval.py`, `reader.py`, `extraction/evidence.py`, `config.py` files and named tests; narrow sub-PRs |
 | PRO-11 | Worker and calculation telemetry adapters, storage/admission binding and drain | PRO-03, PRO-07, PRO-08, PRO-23 | `workers/src/fel_workers/{__main__,consumer,health,storage,http}.py`, `ingestion/sec_client.py`, `extraction/telemetry.py` under that package; `packages/calculation-engine/fel_calculation_engine/telemetry.py`, `packages/calculation-engine/tests/test_telemetry.py`; exact additional worker tests and fixtures listed below; narrow sequential sub-PRs |
 | PRO-12 | Web request correlation and safe telemetry integration | PRO-04 | `apps/web/src/proxy.ts`, named telemetry route/validation/tests; `lib/data/http-source.ts`, `lib/observatory/http-source.ts`, `lib/extraction/transport.ts` and their tests under `apps/web/src/`; named server route bindings; do not edit `next.config.ts` |
 | PRO-13 | CI scan/evidence wiring, admission handshake and required-gate activation proof | PRO-01, PRO-02, PRO-05, PRO-06, PRO-22 | Named `.github/workflows/ci.yml`, `advisories.yml`, new security workflow/collector/reconciliation wiring, required-check documentation; sole CI writer; local acceptance does not establish real archival or hosted merge enforcement |
-| PRO-14 | Release orchestration and migration separation | PRO-05, PRO-06, PRO-10, PRO-11, PRO-12, PRO-13 | New named release workflow/scripts and `infra/railway/{api,web,worker}.json`; serialize all `.github/**` and root edits after PRO-13 |
+| PRO-14 | Release orchestration and migration separation | PRO-05, PRO-06, PRO-10, PRO-11, PRO-12, PRO-13 | New named release workflow/scripts; later authorized modifications to existing `infra/railway/{api,web,worker}.json`; serialize all `.github/**` and root edits after PRO-13; rollout prerequisites below |
 | PRO-15 | Multi-replica acceptance results | PRO-05, PRO-06, PRO-09, PRO-10, PRO-11, PRO-12 | New result reports under `docs/research/production-readiness/acceptance/scale/`; fixture defects returned to PRO-09 owner |
 | PRO-16 | Restore and failure-recovery acceptance results | PRO-05, PRO-06, PRO-07, PRO-09, PRO-10, PRO-11 | New result reports under `docs/research/production-readiness/acceptance/recovery/`; fixture defects returned to PRO-09 owner |
 | PRO-17 | Authorized hosted pilot acceptance | PRO-14, PRO-15, PRO-16, PRO-19, PRO-20 | Named `docs/runbooks/production/**` and sanitized hosted evidence receipts; actual cloud changes only with scoped authorization |
@@ -85,7 +96,7 @@ authorization.
 | PRO-20 | Real evidence archive, publisher deployment, identity and reconciliation acceptance | PRO-02, PRO-18 | New `infra/security-evidence/**`, cloud archive adapter under `scripts/security/archive-cloud/**`, matching isolated tests and named archive/publisher runbook; scoped cloud/budget/retention authorization required |
 | PRO-21 | Independent post-pilot release review | PRO-17 | New `docs/research/production-readiness/acceptance/review/post-pilot/**`; read-only verification of actual hosted evidence before a separate production promotion decision |
 | PRO-22 | SAST language coverage and controlled DAST adapters/fixtures | PRO-00 | New `scripts/security/analysis/**` and its tests; reusable CodeQL configuration and local synthetic DAST target here; PRO-13 exclusively owns workflow wiring |
-| PRO-23 | Durable request-to-job correlation propagation | PRO-00, PRO-03 | `workers/src/fel_workers/queue.py`, `apps/api/app/extraction/runs.py` and specifically named queue/enqueue tests; approved schema migration is a separate PRO-00-owned prerequisite if needed |
+| PRO-23 | Durable request-to-job correlation propagation | PRO-00, PRO-03 | `workers/src/fel_workers/queue.py`, `apps/api/app/extraction/runs.py` and specifically named queue/enqueue tests; any schema migration is a separately registered integration-lead package under the gate above, merged before its consumer |
 
 The real API configuration, middleware and Sentry initialization live together in
 `apps/api/app/observability.py` at the baseline; PRO-10 owns that file explicitly.
@@ -108,6 +119,12 @@ telemetry test above. It also owns new `workers/src/fel_workers/log_context.py`,
 `workers/tests/test_log_context.py`, `workers/tests/fixtures/logging/**` and existing
 `workers/tests/test_entrypoint.py`/`workers/tests/test_health.py` for logging/Sentry
 regressions. Other lifecycle/storage test files must be named at registration.
+`workers/src/fel_workers/storage.py` is also an authentication boundary: preserve
+`apply_worker_db_role`, strict role validation and the role binding on job and
+heartbeat connections. PRO-11 owns the existing
+`workers/tests/test_worker_db_role.py` and entrypoint role-binding tests for this
+checkpoint; require auth-boundary review and retain the DB-backed least-privilege
+assertion.
 The emitter inventory and actual-entrypoint acceptance in
 [structured logging](structured-logging.md#emitter-migration-inventory-and-integrated-owners)
 are mandatory registration inputs. Calculation `TelemetrySink`/`RecordingSink`
@@ -123,6 +140,13 @@ construct fresh request headers; a formatter or proxy-only change cannot provide
 web-to-API correlation. Resolve this exact list before dispatch, and test every
 transport with a downstream header-capture fixture. Keep identity credentials
 separate from validated correlation metadata and never forward it to arbitrary origins.
+
+PRO-14's later issue must name the existing Railway configurations as modifications,
+record their prior builder/commands and effective target settings, and provide a
+rollback/restore plan plus a pre-deploy migration/identity and compatibility plan.
+Test builder or pre-deploy changes in an explicitly authorized non-production
+deployment before rollout. This documentation merge authorizes no configuration
+change or rollout; actual hosted changes still need their scoped authorization.
 
 **Existing-work collision register**
 
@@ -152,10 +176,10 @@ separate from validated correlation metadata and never forward it to arbitrary o
 | PRO-08 | Two-process global quota and cost reservation invariants, retries, clock/backend faults and recovery; measured contention; no unapproved paid call |
 | PRO-09 | Harness interface, deterministic fixtures/seeds, expected-failure demonstrations and isolated cleanup; imported producer implementations are forbidden |
 | PRO-10 | Real `configure_logging()`/middleware and `configure_error_reporting()` with Sentry transport canaries; API request→job correlation, role/claim reset, bounded pools, safe health, shared quotas/object reads and preserved REST/MCP separation |
-| PRO-11 | Actual extraction `emit()` and calculation `emit(None, ...)`/`LoggingSink` produce bounded, queryable catalogue JSON/context without renamed-key secret leakage; injected recording sink remains compatible; worker crash/reclaim, lease fencing, drain, shared SEC allowance and no production mock mode |
+| PRO-11 | Actual extraction `emit()` and calculation `emit(None, ...)`/`LoggingSink` produce bounded, queryable catalogue JSON/context without renamed-key secret leakage; injected recording sink remains compatible; auth-boundary review and role-binding/least-privilege tests; worker crash/reclaim, lease fencing, drain, shared SEC allowance and no production mock mode |
 | PRO-12 | Browser→web→API correlation, bounded telemetry and safe Sentry forwarding; hostile header/body/log injection cases |
 | PRO-13 | Vulnerable dependency, scanner crash, omitted artifact and archive outage fail correctly; same-SHA hosted rerun test blocks before admission ACK and while archive is paused, with actual App/source-check branch binding; activation blocked until proven |
-| PRO-14 | Build-once deployment manifest, signature/provenance verification, one-shot migration identity, rollback compatibility and rejected digest mismatch using staging fixtures |
+| PRO-14 | Build-once deployment manifest, signature/provenance verification, one-shot migration identity, rollback compatibility and rejected digest mismatch using staging fixtures; existing builder/pre-deploy changes require the authorized non-production deploy test and rollback/restore plan above |
 | PRO-15 | Reproducible one/two/overlap-replica results with latency, correctness, connection ceilings, quotas, cursor-key rotation and stream resume |
 | PRO-16 | Timed isolated DB+object restoration, key/config/role reconstruction, verified citations and retained-pin replay; partial/missing-object recovery fails acceptance |
 | PRO-17 | Platform-observed digest/roles/health/grace, production identity/provider/storage proof and selected product's live gates; no code-only substitute |

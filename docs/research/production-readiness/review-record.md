@@ -37,6 +37,8 @@ penetration test, deployment or production access was performed.
 | Old same-run collector preference contradicted selected topology | Removed stale preference; same-run design is explicitly a separate reviewed alternative |
 | Round-two #420: same-SHA rerun could reuse old archive success; stale collectors could publish last | Added exact-attempt invalidation/admission acknowledgement, one serialized App publisher, durable generations/execution slots, stale/late-write fencing and cancellation/reconciliation semantics; SEC-08 blocks activation pending actual same-SHA native-check/App-bound branch-rule acceptance before ACK and while archival is paused |
 | Round-two #420: real API initialization and extraction/calculation telemetry were absent from the integrated ownership map | PRO-10 explicitly owns `observability.py`/Sentry tests; PRO-11 owns both telemetry adapters and existing/new tests, with actual-entrypoint canaries, recording-sink compatibility and full emitter inventory under LOG-08; existing dependencies carry those checkpoints into release/scale/recovery |
+| Claude review of `6eb191b`: migration ownership and existing Railway configuration were ambiguous | One separately registered integration-lead migration package owns exact migration files before consumers; PRO-14 names existing configuration modifications and requires authorized non-production deployment, rollback/restore and pre-deploy migration plans |
+| Same review: shared-path wording, Railway manifest inventory and worker role-binding acceptance needed precision | Applied the AGENTS shared-path classes, corrected the manifest inventory and retained explicit PRO-11 role-binding tests/auth-boundary review; recorded SEC-08 publisher identity/key custody as a decision still owed |
 
 Terra and Astra re-review confirmed their original material findings were addressed
 in the proposed design; the remaining stale preference was then removed. Sol
@@ -55,13 +57,28 @@ criterion, including individual/failed-job reruns; no automatic invalidation or
 zero-window same-SHA guarantee is claimed. An unsuccessful experiment requires a
 separately reviewed authority design before enabling this topology.
 
+The [Claude review of `6eb191b`](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/420#issuecomment-6888355580)
+provides different-vendor review input and requests the bounded documentation
+corrections above; its clearance is conditional on fixes and required checks,
+with lead review still required. An OpenAI reviewer verified the ownership and
+configuration findings against the pinned baseline and implemented the mechanical
+corrections; that verification is not fresh different-vendor or merge approval.
+A 2026-11-15 independent Tavily recheck
+retrieved 13 official pages without extraction failures across its four source
+questions: the AICPA announcement/date/comment deadline, GitHub rerun/check
+semantics, current Railway URLs, and AWS OIDC/Object Lock. The cited AICPA
+proposal remains conditional, and the GitHub pre-ACK behavior still needs the
+hosted activation experiment. Original source dates remain in the topic notes;
+the Railway note records the replacement URLs. No source check establishes a
+live configuration, cloud trust policy or operational control.
+
 **Local documentation checks**
 
 - Markdownlint CLI2 0.18.1, using the repository configuration: passed for all
   ten research documents on the 2026-11-15 revision; the initial publication
   previously checked all 11 changed Markdown files including the parent index.
 - JSON parse checks: both fenced JSON examples parsed.
-- Relative file-link/anchor check: all 109 relative links across the ten research
+- Relative file-link/anchor check: all 110 relative links across the ten research
   documents resolved on the 2026-11-15 revision.
 - Dependency validation: all 24 PRO package IDs resolve; graph is acyclic.
 - Repository documentation index: 178 tracked Markdown files reachable, 18

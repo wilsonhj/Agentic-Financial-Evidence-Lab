@@ -113,8 +113,13 @@ changing orchestration. Do not give the runtime processes migration credentials.
 
 These primary sources were accessed 2026-11-14. The initially attempted Railway
 `/deployments/deployments` URL returned 404; `/deployments/teardown` and
-`/deployments/dockerfiles` returned not-found pages. No teardown timing claim is
-based on those pages. Confirm platform capabilities and current URLs at rollout.
+`/deployments/dockerfiles` returned not-found pages. On 2026-11-15, Tavily
+re-extraction confirmed the healthcheck, pre-deploy and scaling links above and
+the current [deployment teardown](https://docs.railway.com/deployments/deployment-teardown)
+and [Dockerfile](https://docs.railway.com/builds/dockerfiles) pages, with no failed
+URLs. Teardown documents configurable overlap and SIGTERM-to-SIGKILL draining;
+it does not establish this account's configured grace period or deployed digest.
+Confirm effective platform capabilities in the authorized target at rollout.
 
 ## Proposed image and release design
 

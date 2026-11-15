@@ -20,10 +20,12 @@ signature, cloud credential exchange or production DAST was executed for this no
 | `scripts/runtime/install.sh`, `scripts/runtime/build.lock` | Runtime and build dependencies use separate hashed locks; first-party wheels build with `--no-deps --no-build-isolation`. Human-edited `.txt` floors are not deployed versions. |
 | `AGENTS.md`, `.github/workflows/shared-paths.yml`, `docs/decisions/ADR-0002-mvp-stack.md` | Future `.github/**` and shared config/lock changes require `contract-change` and integration-lead review. Advisory/pin changes need the lead's PR authorization record; framework/tool/stack or shared-contract changes need an accepted ADR where the repository rules apply. |
 
-No production Dockerfile, Railway build manifest, image registry/digest inventory, CodeQL workflow,
-SBOM/signature gate or DAST workflow was found in the inspected tracked paths. The accepted host is
-Railway (ADR-0002). Confirm how that host exposes the deployed image and builder before choosing an
-OCI build/promotion path; a scan of a locally rebuilt image cannot certify Railway's deployed image.
+No production Dockerfile, container image build/digest manifest, image registry/digest
+inventory, CodeQL workflow, SBOM/signature gate or DAST workflow was found in the
+inspected tracked paths. Existing `infra/railway/{api,web,worker}.json` manifests
+select `RAILPACK`; the accepted host is Railway (ADR-0002). Confirm how that host
+exposes the deployed image and builder before choosing an OCI build/promotion
+path; a scan of a locally rebuilt image cannot certify Railway's deployed image.
 If immutable deployed images or attestations cannot be retrieved, record coverage as incomplete and
 register the hosting/build decision; do not claim image assurance from source locks alone.
 

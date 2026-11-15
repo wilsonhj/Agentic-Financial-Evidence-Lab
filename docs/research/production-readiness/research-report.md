@@ -97,6 +97,7 @@ completed code does not authorize a hosted deployment.
 | --- | --- |
 | Production service scope, customer commitments and control owners | Product launch scope, data-flow diagram, access and vendor inventory |
 | Security-evidence retention/archive provider | Classification against §17.2; legal/auditor needs; access model, cost, recovery and key-retention plan |
+| SEC-08 publisher App identity and key custody | Named identity/owner, minimum permissions, protected key storage/rotation/recovery and expected-App branch binding; retain the hosted pre-ACK activation proof |
 | Exact-image hosting/promotion mechanism | Demonstration that the selected deployment uses the verified digest without rebuilding |
 | Shared quota implementation | Measured throughput/latency; correctness under replica concurrency and backend failure; existing-stack option evaluated first |
 | Shared object-storage binding | Immutable concurrent-write semantics, role separation, compatibility and restore proof |
