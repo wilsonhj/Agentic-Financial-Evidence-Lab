@@ -9,7 +9,8 @@
 
 </details>
 
-Source references verified against commit `f4b1197`.
+Source verification is recorded per note. The original index was checked against
+`f4b1197`; later additions retain their own dated baselines and review records.
 
 This directory holds research notes, audits, proposals, and frozen
 implementation contracts written while planning work. They are inputs to
@@ -26,6 +27,7 @@ date it was first committed is used and marked "(committed)".
 | Document | Date | Status | Summary |
 | --- | --- | --- | --- |
 | [Application load testing and load balancing](application-load-testing/README.md) | 2026-11-14 | Proposed implementation specification | Proposed tests for 1,000/5,000/10,000-user workloads and balancing; no measured capacity certification (#421) |
+| [Production readiness research and proposal](production-readiness/README.md) | 2026-11-14 | Proposed for external review | Source-backed production, SOC 2, security evidence, logging, container and scaling design with independently verifiable parallel work packages (#419) |
 | [RECONCILIATION-2026-07-16.md](../archive/research/RECONCILIATION-2026-07-16.md) | 2026-07-16 | Archived audit | Recovery of the PR #74 benchmark seed and PR #75 ontology research into `main`, with remaining promotion gates |
 | [ontology/README.md](ontology/README.md) | 2026-07-16 | Research draft | Method and reconciliation status of the B2B SaaS disclosure ontology research (issue #73) |
 | [ontology/saas-disclosure-survey.md](ontology/saas-disclosure-survey.md) | 2026-07-16 | Research draft | Raw per-issuer survey of nine SaaS metric families, preserved for provenance |

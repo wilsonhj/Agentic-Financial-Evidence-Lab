@@ -101,8 +101,9 @@ Do not begin hosted load or claim hosted capacity before those prerequisites and
 the separate execution authorization are satisfied.
 
 All PRO-xx references in the original delivery sequence are conditional reuse
-candidates from unmerged PR #420, not registered workstream IDs. If #420 is not
-adopted or its interfaces change, the integration lead must name a registered
+candidates from PR #420, not registered workstream IDs. Its research merged on
+2026-11-15; that does not adopt or dispatch the proposed implementation packages.
+If their design is not adopted or its interfaces change, the integration lead must name a registered
 owner, reconcile exact allowed paths and freeze equivalent interfaces before any
 slice is dispatched. Do not create competing harness or integration implementations.
 In particular, proposed `evals/load/` ownership must be reconciled with the

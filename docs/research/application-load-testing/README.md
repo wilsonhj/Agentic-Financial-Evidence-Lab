@@ -30,13 +30,18 @@ Read in order:
    or live execution; the original evidence remains frozen at its reviewed head.
 
 Related [PR #420](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/420)
-is an **unmerged proposal**, observed at
+was an **unmerged proposal at the original research snapshot**, observed at
 `1ab36715cb6f229e58bcf4716b630fe9fa74a32b`. Its
 [scaling design](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/blob/1ab36715cb6f229e58bcf4716b630fe9fa74a32b/docs/research/production-readiness/containers-and-scaling.md)
 and [ownership map](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/blob/1ab36715cb6f229e58bcf4716b630fe9fa74a32b/docs/research/production-readiness/parallel-work-packages.md)
 cover storage, admission, lifecycle and telemetry. This package specializes their
 capacity-testing protocol. Reconcile both proposals before assigning one owner
 per implementation path; do not dispatch two implementations of the same change.
+
+PR #420 merged on 2026-11-15 as `85e9556`. Its research merge does not register
+the proposed PRO packages or authorize their implementation. The pinned links
+above preserve the original research provenance; use the merged ownership map
+and later review dispositions when reconciling a future dispatch.
 
 At this baseline, the evidence supports neither a 1,000-, 5,000- nor 10,000-user
 capacity claim. The current extraction benchmark is a local synthetic 25-client
