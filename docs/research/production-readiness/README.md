@@ -40,6 +40,12 @@ it does not modify the dispatch registry.
 - [Structured logging](structured-logging.md).
 - [Containers and horizontal scaling](containers-and-scaling.md).
 
+The 2026-11-15 [round-two review revisions](review-record.md)
+add the [trusted check lifecycle and hosted activation gate](security-ci.md#required-check-lifecycle-and-activation-gate)
+and [existing-emitter migration ownership](structured-logging.md#emitter-migration-inventory-and-integrated-owners).
+Same-SHA rerun/branch-rule enforcement and hosted logging remain acceptance work,
+not verified deployed guarantees.
+
 All claims about existing code refer to the pinned baseline, not to an
 unverified hosted deployment. External sources are dated in the topic documents.
 Open PRs can supersede a baseline finding; agents must reconcile them before

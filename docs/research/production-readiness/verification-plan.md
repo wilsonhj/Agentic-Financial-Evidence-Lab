@@ -44,8 +44,10 @@ are checked for secret-like material before publication.
 | SEC-01/02/03 | Check all locks, languages, runtime image platforms and deployed/rollback inventory; distinguish SAST/secrets/dependency/image results | PRO-01/09/13; complete target inventory and reports |
 | SEC-04/05/07 | Inject malformed, missing, cancelled, stale, zero-scope and expired-exception cases; demonstrate failing final check while retaining outputs | PRO-09/13; expected-failure transcript and receipt |
 | SEC-06 | Deny fork/unauthorized OIDC and overwrite/delete; reject forged artifact provenance and hostile archive contents; collector never executes artifact code | PRO-02/20; local threat fixtures plus separately authorized permission proof |
+| SEC-08 | Same evaluated SHA: rerun after prior success, block before admission ACK and after local gate passes with archival paused; stale collectors and late publisher writes never restore success | PRO-02/13/20; generation/attempt fixtures plus actual source-check/App-bound branch-rule and merge experiment; activation pending |
 | LOG-01/04/05/07 | Parse every log line as JSON; check schema/limits, Python/TS fixtures and human event explanations; pretty renderer preserves identifiers | PRO-03/04/09; parity/redaction/golden tests |
 | LOG-02/03/06 | Concurrent mixed-tenant requests/jobs, durable enqueue/claim metadata, cancellation, retries and logging outage; no context or secret leakage; audit-write failure retains its separate behavior | PRO-23/10/11/12/15; sanitized trace and fault results |
+| LOG-08 | Actual extraction `emit()`, calculation `LoggingSink`/default engine sink and API initialization/Sentry transport; typed queryable fields, context, one bounded JSON line, no unknown/renamed-key secret; recording sink compatible | PRO-10/11/09; adapter/transport byte captures and existing recording-sink regressions |
 | IMG-01/02/03/04 | Final-image imports/assets/resources; non-root, explicit writable paths and PID1; inspect layers/build arguments/bundles for forbidden content | PRO-05/06/09; image inspect/SBOM/smoke artifacts |
 | SCALE-01 | Two-client object races, checksum tamper, migration verification, authorization denial and cross-replica reads | PRO-07/16; storage invariant report |
 | SCALE-02/03 | Race quotas/cost reservations across replicas and overlap; coordinator outage; connection saturation and tenant rollback/reuse | PRO-08/10/11/15; invariants, metrics and connection budget |
@@ -66,9 +68,22 @@ production promotion; a pre-pilot review cannot establish hosted behavior.
 - Archived bytes/hash/commit/signer/run attempt mismatch: receipt verification
   fails. A PR-provided destination, traversal member, symlink, oversized archive
   or executable payload is rejected without executing artifact content.
+- Same-SHA rerun after archived success: pause/delay admission before ACK, then
+  allow local success but pause archival. The actual required checks must block
+  merge in both intervals. Repeat full, failed-jobs-only and individual-job reruns,
+  queued/force cancellation, duplicate/dropped/reordered delivery, a second allowed
+  workflow, stale collector and old in-flight publisher write across restart.
+  Inspect evaluated/head SHA, App binding and native source check in a test PR;
+  receipt tests alone cannot establish branch protection. If pre-ACK native gating
+  fails or a rerun skips exact-attempt admission, the proposed topology stays inactive.
 - Secret canaries across header, URL, nested object, exception, logging format
   failure and Sentry event: no canary survives output. Quotes/newlines produce one
   valid JSON event, not forged lines. Overflow is counted and bounded.
+- Invoke the real extraction and calculation default log adapters with unknown
+  event names/renamed keys; secrets must not survive dictionary stringification.
+  Inject the calculation recording sink separately and preserve its event contract.
+  API canaries must traverse `observability.configure_error_reporting()` and an
+  in-memory Sentry transport, including exception/request/extras/breadcrumb payloads.
 - Two tenants reuse the same pooled connection after exception/cancellation:
   role, claims, request/job context and cached data remain isolated.
 - Two replicas consume one quota and cost allowance: admission/reservation totals

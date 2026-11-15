@@ -73,6 +73,17 @@ path ownership and shared-path approvals described in the
 - SEC-07: Exceptions name exact advisory/package scope, reason, owner, approving
   authority, compensating controls and expiration. Keep original findings and
   rescans. Scanner/service errors are not vulnerability exceptions.
+- SEC-08: A single App-bound trusted publisher owns the required evidence check.
+  Require exact-attempt admission only after durable generation registration and
+  verified invalidation of prior success; the source local gate waits for this
+  acknowledgement, then completes without waiting for downstream archival.
+  Serialize publication, fence stale collectors/late writes and fail cancellation
+  without reusing old receipts. Freeze interfaces in PRO-00 and implement in
+  PRO-02/13/20 under the [check lifecycle](security-ci.md#required-check-lifecycle-and-activation-gate).
+  Activation requires actual same-SHA branch-rule tests showing merge blocked
+  before acknowledgement as well as during archival. Asynchronous invalidation
+  alone provides no such guarantee; if native source-check rerun behavior fails
+  that test, keep the topology inactive pending a reviewed authority alternative.
 
 **Evidence interchange contract to freeze before coding**
 
@@ -84,6 +95,10 @@ trigger/trust class; scanner identity/version/configuration hash; target lockfil
 hashes or image digest; start/finish time; advisory database snapshot or query time;
 scan status/completeness; findings and aliases; exception/policy version; tool exit
 status; report hashes; archive object versions; retention policy identifier.
+
+Admission/check receipts also bind publisher generation, required execution slots,
+check ID and expected publisher App; run/attempt fields alone do not establish
+which commit check branch protection will evaluate.
 
 The final schema owner must publish valid/invalid and malicious fixtures before
 parallel consumers start. Receipts are produced by the trusted archive boundary;
@@ -119,6 +134,14 @@ A checksum detects changed bytes but does not authenticate the producer.
   [logging research](structured-logging.md), with Python/TypeScript parity fixtures.
   Existing Sentry/JSON support is the first implementation; full OTel infrastructure
   remains outside scope absent a separately accepted decision.
+- LOG-08: Migrate actual emitter entrypoints, not only the new formatter. PRO-10
+  owns API `observability.py` configuration/middleware/Sentry initialization;
+  PRO-11 owns extraction `telemetry.emit()` and calculation `LoggingSink`/default
+  sink and their tests. Preserve the injectable calculation sink contract.
+  Accept only typed catalogue fields before encoding; arbitrary dictionaries
+  rendered into messages cannot be made safe by later key masking. Maintain the
+  [emitter inventory](structured-logging.md#emitter-migration-inventory-and-integrated-owners)
+  and verify actual adapters and Sentry transport with renamed-key secret canaries.
 
 **Containers and release identity**
 

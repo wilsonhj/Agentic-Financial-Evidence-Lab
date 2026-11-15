@@ -72,14 +72,15 @@ protected-branch and scheduled runs use one scanner definition. Separate credent
 5. Each scanner writes its result even on failure and uploads evidence with `if: always()`.
    An unprivileged `collect-local` job has `needs` on all applicable scanner/build/DAST jobs
    in its workflow and `if: always()`; it records absent/skipped/cancelled targets as incomplete.
-   A local scan gate checks those outcomes and then the source workflow completes. It does
-   **not** wait for a receipt from the downstream collector.
+   A local scan gate checks those outcomes and the exact-attempt admission acknowledgement
+   below, then the source workflow completes. It waits only for check invalidation, **not**
+   for a receipt from the downstream collector.
 6. A separate trusted `workflow_run: completed` collector validates and archives the completed
    run, then publishes a distinct required `Security evidence verified` check on the exact
    evaluated commit SHA. For PR merge tests, bind both PR head and evaluated merge SHA and
    publish on the SHA the repository's branch rules actually evaluate; prove this in a test PR.
-   Record upstream run ID and attempt; old-attempt receipts cannot satisfy a newer run.
-   Use a narrowly scoped trusted check-publisher identity and GitHub API validation. The
+   Record upstream run ID, attempt and publisher generation; use the lifecycle below rather
+   than assuming those receipt fields alone invalidate an existing green commit check. The
    release controller verifies all applicable receipts and checks before promotion; it never
    relies on cross-workflow `needs`, which GitHub does not support. Missing checks block;
    an independent monitor marks overdue collection failed and alerts under an approved deadline.
@@ -89,6 +90,78 @@ protected-branch and scheduled runs use one scanner definition. Separate credent
    `issues: write` job. Deduplicate incidents by advisory + component + image digest; distinguish
    findings from scanner outages. Notification delivery failure remains visible and cannot clear
    the failed gate. Never provide write tokens to package-install/scanner jobs merely for notification.
+
+### Required-check lifecycle and activation gate
+
+PRO-00 freezes the admission, publisher-state and receipt interfaces. PRO-02 owns their
+trusted implementation under `scripts/security/evidence/**`; PRO-13 owns source-gate and
+event wiring, required-check names and branch-rule configuration. PRO-20 owns the separately
+authorized publisher/archive deployment and recovery acceptance. One narrowly scoped GitHub
+App is the **only** writer of `Security evidence verified`; collectors submit candidate results
+to that publisher and hold no check-write credentials. Pin its App ID as the branch rule's
+expected source. Require the native source local-gate check too, with unique names across
+workflows. Never use a collector's default-branch `GITHUB_SHA` as the evaluated commit [S10].
+
+The proposed implementable protocol is:
+
+1. Trusted `workflow_run: in_progress` handling and periodic API reconciliation discover
+   executions; they are early invalidation aids, not an atomic start barrier. `requested`
+   does **not** occur on reruns [S10]. The source local gate also calls an admission endpoint
+   with repository/workflow/run/attempt and head/evaluated SHA. The endpoint authenticates
+   the caller with a short-lived job identity, validates those values through GitHub's API
+   and the frozen workflow/ref/event allowlist, and never accepts a scanner's success claim.
+   The scanner job receives neither App credentials nor archive credentials.
+2. The publisher serializes all begin/finish operations for `(repository, evaluated SHA)`
+   in durable state. Each newly observed eligible execution increments a monotonic generation
+   and records the expected workflow/run/attempt set. API-confirmed `run_attempt`, never
+   webhook arrival order, selects a run's current attempt. Distinct eligible runs at one SHA
+   are separate required slots; a new run cannot overwrite another required workflow's slot.
+   Duplicate admissions are idempotent; old/out-of-order events cannot roll state backward.
+3. Before acknowledging admission, the single writer changes every previously successful
+   evidence check it owns for that SHA to a blocking `queued`/`in_progress` state, creates
+   the current check if needed, and reads back check ID, SHA, App and state. If a completed
+   check cannot be reset through the selected Checks API, the implementation must use and
+   verify a blocking replacement with the actual branch rule before activation. Persist the
+   generation/check binding; acknowledge only after durable state and GitHub agree. An API
+   failure or timeout leaves admission unacknowledged and the source gate failing/pending.
+   The local gate may pass only with the acknowledgement for **its exact current attempt**.
+4. Source completion still triggers the archive collector. Before success, the publisher
+   validates receipts for every required slot and re-queries GitHub for current attempts,
+   conclusions and evaluated SHA. A candidate must match the current generation and all
+   current slots. A newer admission invalidates prior candidates; stale/duplicate collectors
+   may retain historical evidence but cannot mutate the current check. Cancellation, failure,
+   missing output or overdue collection blocks; never fall back to an older successful attempt.
+   Publish a blocking failure/cancelled conclusion for cancellation, never `neutral` or
+   `skipped`, which protected branches may accept as passing [S11].
+   A second allowlisted workflow at the same SHA uses this same writer and slot policy.
+5. Keep the lock through each external check mutation and use a durable outbox for retries;
+   database compare-and-swap alone cannot fence a late GitHub API write. Recovery must stop
+   or fence the old writer and resolve in-flight writes before another writer publishes.
+   No automatic lease-expiry takeover by a potentially concurrent publisher. Reconcile
+   persisted generation, live run attempts and check state after crashes; uncertainty blocks
+   admission/publication. Test a delayed old success write across restart, not only stale
+   receipt rejection. The independent monitor detects dropped events and overdue runs.
+
+**Unresolved hosted activation criterion:** this handshake guarantees invalidation before
+an acknowledged source gate passes. It does **not** prove a zero-length stale-green window
+between clicking rerun and admission acknowledgement. GitHub's native required-source-check
+behavior must be demonstrated to block merging during that interval on the **same evaluated
+SHA**, including full, failed-jobs-only and individual-job reruns. Every supported rerun form
+must execute/revalidate exact-attempt admission; no skipped/neutral gate may stand in for it.
+If the old native source success remains mergeable, or a rerun bypasses admission, keep this
+topology inactive until a separately reviewed controller-only execution/merge authority design
+closes that gap. Asynchronous events, a receipt validator, a freshness deadline and App binding
+alone do not establish this property. No such hosted test or branch-rule change was performed
+for this research revision; production enforcement remains pending [S10, S11].
+
+Activation acceptance uses a test PR with fixed head **and evaluated merge SHA**: obtain
+attempt-1 success, rerun, delay admission delivery and observe blocked merge before ACK;
+then let the new local gate pass while pausing archive collection and observe blocked merge
+again. Deliver attempt 1's collector after attempt 2 remains pending or fails; success must
+not return. Repeat with queued/force cancellation, duplicate/dropped/reordered events,
+publisher restart/late writes, and a second eligible workflow at that SHA. Inspect the actual
+branch rule, native source check, App ID and check IDs/statuses, and attempt a merge without
+bypass privileges. Local protocol fixtures cannot satisfy this hosted acceptance.
 
 Do not put sequential scanners behind shell `set -e`, `&&`, a successful predecessor requirement,
 or matrix fail-fast. A wrapper captures each subprocess exit then continues independent targets.
@@ -227,3 +300,5 @@ All accessed 2026-11-14. Moving documentation must be rechecked against chosen p
 - [S7: SLSA provenance v1.1](https://slsa.dev/spec/v1.1/provenance): provenance describes build claims; consumer verification policy is still required.
 - [S8: GitHub secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use), [untrusted workflow/artifact boundaries](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target) and [OIDC permissions](https://docs.github.com/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-cloud-providers).
 - [S9: ZAP baseline scan behavior and options](https://www.zaproxy.org/docs/docker/baseline-scan/).
+- [S10: GitHub workflow events, including rerun limits and workflow-run SHA](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows). Rechecked 2026-11-15 via Tavily; `requested` excludes reruns.
+- [S11: Protected branches, required checks and expected publisher App](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches). Rechecked 2026-11-15 via Tavily; native rerun/merge behavior still requires the hosted experiment above.

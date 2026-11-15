@@ -38,7 +38,8 @@ Do not put secret values in the handoff. Only the lead updates canonical state.
 **Contract freeze and decision gates**
 
 PRO-00 must freeze five small, independently versioned interfaces before consumers
-start: logging envelope/privacy fixtures; scanner result and evidence receipt;
+start: logging envelope/privacy fixtures; scanner result, evidence receipt and
+exact-attempt admission/publisher generation protocol;
 runtime/release manifest; storage/admission behavior; and durable queue correlation
 metadata (enqueue, claim and retry propagation without changing evidence hashes).
 Existing interfaces
@@ -63,7 +64,7 @@ authorization.
 | --- | --- | --- | --- |
 | PRO-00 | Minimal interfaces, fixtures and decision records | None | Named new logging/evidence/release schemas and fixtures under `packages/contracts/`; applicable named ADR/spec files; integration lead owns registry/root registration |
 | PRO-01 | Locked-dependency and image scanner adapters | PRO-00 | New `scripts/security/scans/**`, matching `scripts/security/tests/scans/**`; narrow JSON-output extension to `scripts/audit-bulk.mjs` and its existing tests |
-| PRO-02 | Evidence validation, local archive adapter and receipt verification | PRO-00 | New `scripts/security/evidence/**`, `scripts/security/tests/evidence/**` |
+| PRO-02 | Evidence validation, local archive adapter, receipt verification and serialized check publisher/admission core | PRO-00 | New `scripts/security/evidence/**`, `scripts/security/tests/evidence/**` |
 | PRO-03 | Python logging core and pretty renderer | PRO-00 | New `packages/observability/**`; package registration only by lead in a serialized shared-file change |
 | PRO-04 | TypeScript logging core | PRO-00 | New `apps/web/src/lib/observability/**` and tests within that subtree |
 | PRO-05 | Python API/worker image and fixture smoke | PRO-00 | New `infra/containers/python/**`, `infra/containers/tests/python/**`; existing installer changes only in a separately assigned follow-up |
@@ -71,28 +72,49 @@ authorization.
 | PRO-07 | Shared immutable object-store adapter | PRO-00 | New `workers/src/fel_workers/object_storage.py`, `workers/tests/test_object_storage.py`; existing storage protocol remains frozen |
 | PRO-08 | Shared admission/cost reservation prototype | PRO-00 | New `packages/admission/**`; any schema migration is separately registered and merged before implementation requiring it |
 | PRO-09 | Independent acceptance harness and adversarial fixtures | PRO-00 | New `evals/production/**`; collection/configuration wired only by lead |
-| PRO-10 | API logging, storage-reader, pool/role, health and admission integration | PRO-03, PRO-07, PRO-08, PRO-23 | Named API `logging.py`, `middleware.py`, `main.py`, `db.py`, `ratelimit.py`, `retrieval.py`, `reader.py`, `extraction/evidence.py`, `config.py` files and named tests; narrow sub-PRs |
-| PRO-11 | Worker logging, storage/admission binding and drain | PRO-03, PRO-07, PRO-08, PRO-23 | Named worker `__main__.py`, `consumer.py`, `health.py`, `http.py`, `ingestion/sec_client.py` and named tests; narrow sub-PRs |
+| PRO-10 | API logging/Sentry, storage-reader, pool/role, health and admission integration | PRO-03, PRO-07, PRO-08, PRO-23 | `apps/api/app/observability.py`, `apps/api/tests/test_observability.py`, new `apps/api/tests/test_structured_logging.py` and `apps/api/tests/fixtures/logging/**`; named API `main.py`, `db.py`, `ratelimit.py`, `retrieval.py`, `reader.py`, `extraction/evidence.py`, `config.py` files and named tests; narrow sub-PRs |
+| PRO-11 | Worker and calculation telemetry adapters, storage/admission binding and drain | PRO-03, PRO-07, PRO-08, PRO-23 | `workers/src/fel_workers/{__main__,consumer,health,storage,http}.py`, `ingestion/sec_client.py`, `extraction/telemetry.py` under that package; `packages/calculation-engine/fel_calculation_engine/telemetry.py`, `packages/calculation-engine/tests/test_telemetry.py`; exact additional worker tests and fixtures listed below; narrow sequential sub-PRs |
 | PRO-12 | Web request correlation and safe telemetry integration | PRO-04 | `apps/web/src/proxy.ts`, named telemetry route/validation/tests; `lib/data/http-source.ts`, `lib/observatory/http-source.ts`, `lib/extraction/transport.ts` and their tests under `apps/web/src/`; named server route bindings; do not edit `next.config.ts` |
-| PRO-13 | CI scan/evidence wiring and required gate | PRO-01, PRO-02, PRO-05, PRO-06, PRO-22 | Named `.github/workflows/ci.yml`, `advisories.yml`, new security workflow/collector, required-check documentation; sole CI writer; local acceptance does not establish real archival |
+| PRO-13 | CI scan/evidence wiring, admission handshake and required-gate activation proof | PRO-01, PRO-02, PRO-05, PRO-06, PRO-22 | Named `.github/workflows/ci.yml`, `advisories.yml`, new security workflow/collector/reconciliation wiring, required-check documentation; sole CI writer; local acceptance does not establish real archival or hosted merge enforcement |
 | PRO-14 | Release orchestration and migration separation | PRO-05, PRO-06, PRO-10, PRO-11, PRO-12, PRO-13 | New named release workflow/scripts and `infra/railway/{api,web,worker}.json`; serialize all `.github/**` and root edits after PRO-13 |
 | PRO-15 | Multi-replica acceptance results | PRO-05, PRO-06, PRO-09, PRO-10, PRO-11, PRO-12 | New result reports under `docs/research/production-readiness/acceptance/scale/`; fixture defects returned to PRO-09 owner |
 | PRO-16 | Restore and failure-recovery acceptance results | PRO-05, PRO-06, PRO-07, PRO-09, PRO-10, PRO-11 | New result reports under `docs/research/production-readiness/acceptance/recovery/`; fixture defects returned to PRO-09 owner |
 | PRO-17 | Authorized hosted pilot acceptance | PRO-14, PRO-15, PRO-16, PRO-19, PRO-20 | Named `docs/runbooks/production/**` and sanitized hosted evidence receipts; actual cloud changes only with scoped authorization |
 | PRO-18 | Organizational controls, ownership and evidence operations | PRO-00 | New `docs/security/controls/**` for public-safe policy metadata; restricted personnel/auditor evidence stays outside the public repo |
 | PRO-19 | Independent pre-pilot readiness and evidence-population review | PRO-13, PRO-14, PRO-15, PRO-16, PRO-18, PRO-20 | New review records under `docs/research/production-readiness/acceptance/review/pre-pilot/`; read-only producer access; authorizes no production release |
-| PRO-20 | Real evidence archive, identity and reconciliation acceptance | PRO-02, PRO-18 | New `infra/security-evidence/**`, cloud archive adapter under `scripts/security/archive-cloud/**`, matching isolated tests and named archive runbook; scoped cloud/budget/retention authorization required |
+| PRO-20 | Real evidence archive, publisher deployment, identity and reconciliation acceptance | PRO-02, PRO-18 | New `infra/security-evidence/**`, cloud archive adapter under `scripts/security/archive-cloud/**`, matching isolated tests and named archive/publisher runbook; scoped cloud/budget/retention authorization required |
 | PRO-21 | Independent post-pilot release review | PRO-17 | New `docs/research/production-readiness/acceptance/review/post-pilot/**`; read-only verification of actual hosted evidence before a separate production promotion decision |
 | PRO-22 | SAST language coverage and controlled DAST adapters/fixtures | PRO-00 | New `scripts/security/analysis/**` and its tests; reusable CodeQL configuration and local synthetic DAST target here; PRO-13 exclusively owns workflow wiring |
 | PRO-23 | Durable request-to-job correlation propagation | PRO-00, PRO-03 | `workers/src/fel_workers/queue.py`, `apps/api/app/extraction/runs.py` and specifically named queue/enqueue tests; approved schema migration is a separate PRO-00-owned prerequisite if needed |
 
-The exact existing filenames in PRO-10/11/12 must be resolved from current main
-during issue registration. Their scopes are intentionally integration-owned;
+The real API configuration, middleware and Sentry initialization live together in
+`apps/api/app/observability.py` at the baseline; PRO-10 owns that file explicitly.
+Candidate API `logging.py`/`middleware.py` files do not exist and are not substitutes.
+Reconcile the enumerated paths against current main during issue registration and
+resolve the remaining named tests before dispatch. Their scopes are integration-owned;
 authors of PRO-03/04/07/08 must not preemptively wire themselves into those files.
 PRO-10/11 each require separate reviewable PR checkpoints if the owned integration
 cannot fit a small change. The coordinator owns root build contexts/ignore files,
 workspace/package lists, dependency locks and shared test collection. Those
 mechanical changes must land before consumers need them, without parallel writers.
+
+PRO-11 owns **both** existing dictionary-to-message telemetry sinks, including the
+calculation package, after PRO-03. Its logging checkpoint owns new
+`workers/tests/extraction/test_telemetry.py`, existing
+`workers/tests/extraction/test_consumer_terminal_run.py` and
+`workers/tests/extraction/test_terminal_run_not_requeued.py`, existing
+`workers/tests/extraction/test_mock_e2e_workflow.py`, and the calculation
+telemetry test above. It also owns new `workers/src/fel_workers/log_context.py`,
+`workers/tests/test_log_context.py`, `workers/tests/fixtures/logging/**` and existing
+`workers/tests/test_entrypoint.py`/`workers/tests/test_health.py` for logging/Sentry
+regressions. Other lifecycle/storage test files must be named at registration.
+The emitter inventory and actual-entrypoint acceptance in
+[structured logging](structured-logging.md#emitter-migration-inventory-and-integrated-owners)
+are mandatory registration inputs. Calculation `TelemetrySink`/`RecordingSink`
+injection stays compatible; the default `LoggingSink` maps typed catalogue fields
+before encoding. There is no separately dispatched topic-local telemetry package.
+PRO-14/15/16 already depend on PRO-11, so release/scale/recovery cannot omit either
+adapter checkpoint; the integrated dependency graph remains 24 nodes.
 
 PRO-12's issue must enumerate every outbound HTTP transport and server binding
 that propagates correlation, including extraction catch-all and event routes and
@@ -121,7 +143,7 @@ separate from validated correlation metadata and never forward it to arbitrary o
 | --- | --- |
 | PRO-00 | Versioned schemas/examples, error/status enums, compatibility rules and an approved decision register; valid, malformed, malicious and missing-field fixtures |
 | PRO-01 | Identical adapter envelope for JS/Python/image scans; simulated vulnerable/clean/unreachable/malformed/timeout/no-packages fixtures; all adapters attempted after one failure |
-| PRO-02 | Validated reports and detached trusted receipts; reject forged run/commit/destination, traversal, zip bomb, bad hashes and missing reports; recover idempotently from duplicate delivery |
+| PRO-02 | Validated reports, receipts and durable generation-bound admission/publisher core; reject forged run/commit/destination, traversal, zip bomb, bad hashes and missing reports; suppress stale collectors and late writes across restart; idempotent duplicates |
 | PRO-03 | Python event formatter/context API; concurrent tenant tasks, cancellation, newline injection, redaction failure and queue saturation tests; pretty output must preserve identifiers |
 | PRO-04 | TypeScript parity for the same fixtures; no browser secrets, no raw body/URL/error leakage; asynchronous context reset |
 | PRO-05 | Final-image isolated imports/resources, migration runner and SQL assets with apply/check fixture, non-root user, no build tools/secrets, declared writable paths, configured port and signal smoke; record digest |
@@ -129,17 +151,17 @@ separate from validated correlation metadata and never forward it to arbitrary o
 | PRO-07 | Two-client identical/conflicting-write races, cross-client reads, checksum corruption, permission denial, migration checksum and restore fixtures |
 | PRO-08 | Two-process global quota and cost reservation invariants, retries, clock/backend faults and recovery; measured contention; no unapproved paid call |
 | PRO-09 | Harness interface, deterministic fixtures/seeds, expected-failure demonstrations and isolated cleanup; imported producer implementations are forbidden |
-| PRO-10 | API request→job correlation, role/claim reset after errors, bounded pools, safe health, shared quota enforcement, shared-object reader/extraction reads and preserved REST/MCP separation |
-| PRO-11 | Worker crash/reclaim, stale-lease denied writes, signal drain, idempotent side effects, shared SEC allowance and no mock mode on a production-target fixture |
+| PRO-10 | Real `configure_logging()`/middleware and `configure_error_reporting()` with Sentry transport canaries; API request→job correlation, role/claim reset, bounded pools, safe health, shared quotas/object reads and preserved REST/MCP separation |
+| PRO-11 | Actual extraction `emit()` and calculation `emit(None, ...)`/`LoggingSink` produce bounded, queryable catalogue JSON/context without renamed-key secret leakage; injected recording sink remains compatible; worker crash/reclaim, lease fencing, drain, shared SEC allowance and no production mock mode |
 | PRO-12 | Browser→web→API correlation, bounded telemetry and safe Sentry forwarding; hostile header/body/log injection cases |
-| PRO-13 | Inject a vulnerable dependency, scanner crash, omitted artifact and archive outage; each must produce evidence and the correct failing required gate |
+| PRO-13 | Vulnerable dependency, scanner crash, omitted artifact and archive outage fail correctly; same-SHA hosted rerun test blocks before admission ACK and while archive is paused, with actual App/source-check branch binding; activation blocked until proven |
 | PRO-14 | Build-once deployment manifest, signature/provenance verification, one-shot migration identity, rollback compatibility and rejected digest mismatch using staging fixtures |
 | PRO-15 | Reproducible one/two/overlap-replica results with latency, correctness, connection ceilings, quotas, cursor-key rotation and stream resume |
 | PRO-16 | Timed isolated DB+object restoration, key/config/role reconstruction, verified citations and retained-pin replay; partial/missing-object recovery fails acceptance |
 | PRO-17 | Platform-observed digest/roles/health/grace, production identity/provider/storage proof and selected product's live gates; no code-only substitute |
 | PRO-18 | Owner/frequency/evidence matrix, access/offboarding and incident exercises, vendor/risk/retention decisions, overdue-control reporting |
 | PRO-19 | Independent sampling of local/release/archive results and missing-run population; pilot-entry recommendation, not hosted-readiness or SOC attestation |
-| PRO-20 | Approved archive and provider-specific OIDC design; prove same-repo wrong-workflow/ref/environment/audience denial, scoped writes, forbidden deletion/overwrite, key recovery, retention/readback, catch-up and missing-run alerts in an authorized disposable target |
+| PRO-20 | Approved archive and provider-specific OIDC design; prove same-repo wrong-workflow/ref/environment/audience denial, scoped writes, forbidden deletion/overwrite, key recovery, retention/readback, catch-up and missing-run alerts; publisher recovery fences old in-flight check writes in an authorized disposable target; coordinate actual App/branch-rule proof with PRO-13 |
 | PRO-21 | Independently sample actual hosted digest, migration, identity, storage, quota, lifecycle and recovery evidence; unresolved failures block production recommendation; no SOC attestation claim |
 | PRO-22 | Python/JS analysis coverage and seeded SAST findings; bounded local DAST/auth fixture, wrong-host/unavailable-target rejection; licensing/scope decided before making a new gate required |
 | PRO-23 | Enqueue→claim→retry correlation survives process restart; old envelopes remain compatible, hostile metadata is bounded and no tenant/context leaks or changed financial hashes |

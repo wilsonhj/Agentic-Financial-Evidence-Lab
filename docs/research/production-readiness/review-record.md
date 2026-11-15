@@ -35,6 +35,8 @@ penetration test, deployment or production access was performed.
 | Final image might omit migration scripts/SQL despite claiming one-shot migration support | IMG-01/PRO-05 require explicit assets and real apply/check from the final digest against a fixture database |
 | Web correlation omitted transports that rebuild outbound headers | PRO-12 now owns data/Observatory/extraction transports, named server bindings and per-transport header-capture tests |
 | Old same-run collector preference contradicted selected topology | Removed stale preference; same-run design is explicitly a separate reviewed alternative |
+| Round-two #420: same-SHA rerun could reuse old archive success; stale collectors could publish last | Added exact-attempt invalidation/admission acknowledgement, one serialized App publisher, durable generations/execution slots, stale/late-write fencing and cancellation/reconciliation semantics; SEC-08 blocks activation pending actual same-SHA native-check/App-bound branch-rule acceptance before ACK and while archival is paused |
+| Round-two #420: real API initialization and extraction/calculation telemetry were absent from the integrated ownership map | PRO-10 explicitly owns `observability.py`/Sentry tests; PRO-11 owns both telemetry adapters and existing/new tests, with actual-entrypoint canaries, recording-sink compatibility and full emitter inventory under LOG-08; existing dependencies carry those checkpoints into release/scale/recovery |
 
 Terra and Astra re-review confirmed their original material findings were addressed
 in the proposed design; the remaining stale preference was then removed. Sol
@@ -42,17 +44,29 @@ cross-review confirmed its first three corrections and identified the additional
 web-transport ownership gap, which was assigned explicitly. These reviews assess
 the specification, not an implemented or hosted system.
 
+The 2026-11-15 round-two revision addresses the two remaining proposed-design
+findings from exact prior head `1ab3671`. It rechecked GitHub's workflow-event
+and protected-branch primary documentation through the Tavily search skill;
+extraction returned no failed URLs. GitHub explicitly excludes reruns from
+`workflow_run: requested`; expected publisher App binding does not select a receipt
+attempt. The documented handshake starts its guarantee at invalidation ACK.
+Before-ACK native required-check behavior remains an explicit hosted activation
+criterion, including individual/failed-job reruns; no automatic invalidation or
+zero-window same-SHA guarantee is claimed. An unsuccessful experiment requires a
+separately reviewed authority design before enabling this topology.
+
 **Local documentation checks**
 
 - Markdownlint CLI2 0.18.1, using the repository configuration: passed for all
-  11 changed Markdown files.
+  ten research documents on the 2026-11-15 revision; the initial publication
+  previously checked all 11 changed Markdown files including the parent index.
 - JSON parse checks: both fenced JSON examples parsed.
-- Relative file-link check: 101 links across the ten new documents resolved at
-  the initial validation; repeat after final edits.
+- Relative file-link/anchor check: all 109 relative links across the ten research
+  documents resolved on the 2026-11-15 revision.
 - Dependency validation: all 24 PRO package IDs resolve; graph is acyclic.
 - Repository documentation index: 178 tracked Markdown files reachable, 18
   documented exclusions; index-check regression suite passed.
-- `git diff --check`: passed before publication; repeat on the final staged diff.
+- `git diff --check`: passed on the 2026-11-15 revision; repeat on the final staged diff.
 - Scope check: documentation only under `docs/research/production-readiness/**`
   and its parent research index. No application, workflow, canonical ledger,
   shared schema, ADR or live configuration was modified.

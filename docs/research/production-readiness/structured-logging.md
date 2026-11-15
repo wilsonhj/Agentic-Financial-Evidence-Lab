@@ -198,10 +198,55 @@ these are future file ownership boundaries, not edits authorized by this report.
 | Slice | Exclusive paths and interface | Evidence before integration |
 | --- | --- | --- |
 | Envelope core | New `packages/observability/fel_observability/{events,context,formatting,privacy}.py`, `packages/observability/tests/**`, `packages/observability/fixtures/**` | Stdlib-only `emit(event_code, context, fields)`, `bind_context(...)`, safe JSON encoder; synthetic schema/catalogue fixtures |
-| API adapter | `apps/api/app/observability.py`, new `apps/api/tests/test_structured_logging.py`, `apps/api/tests/fixtures/logging/**` | Inject core sink/context; auth-resolved tenant, route templates, failure/SSE outcomes and response request ID |
+| API adapter (PRO-10) | `apps/api/app/observability.py`, existing `apps/api/tests/test_observability.py`, new `apps/api/tests/test_structured_logging.py`, `apps/api/tests/fixtures/logging/**` | Inject core sink/context; auth-resolved tenant, route templates, failure/SSE outcomes, response request ID and real Sentry initialization/transport canary |
 | Worker adapter | `workers/src/fel_workers/{__main__,consumer}.py`, new `workers/src/fel_workers/log_context.py`, `workers/tests/test_log_context.py`, `workers/tests/fixtures/logging/**` | Per-attempt bind/reset and lease outcomes; inject recording sink; no queue schema change |
-| Web adapter | New `apps/web/src/lib/server-logging/**`, `apps/web/src/lib/server-logging.test.ts`, `apps/web/src/app/api/telemetry/route.ts` | Server-only catalogue/writer, AsyncLocalStorage context, hostile client fixtures in the owned test directory |
-| Telemetry adapters | `workers/src/fel_workers/extraction/telemetry.py`, `packages/calculation-engine/fel_calculation_engine/telemetry.py`, their dedicated telemetry tests | Preserve injectable sinks and existing redaction; emit queryable fields without duplicating core configuration |
+| Web adapter (PRO-12) | `apps/web/src/app/api/telemetry/route.ts`, `apps/web/src/lib/telemetry-validation.ts`, named HTTP transports/server bindings and adapter tests in the integrated plan | Consume PRO-04's `lib/observability/**` core; bind server context and map bounded client events; no second logging core |
+| Telemetry adapters (PRO-11 checkpoint) | `workers/src/fel_workers/extraction/telemetry.py`, new `workers/tests/extraction/test_telemetry.py`, `packages/calculation-engine/fel_calculation_engine/telemetry.py`, existing `packages/calculation-engine/tests/test_telemetry.py` | Preserve injectable sinks and existing redaction defense; replace dictionary-to-message rendering with typed catalogue fields without duplicating core configuration |
+
+### Emitter migration inventory and integrated owners
+
+These topic-local slices are checkpoints of the
+[integrated 24-package plan](parallel-work-packages.md), not additional dispatches.
+At the pinned baseline, a source search for Python logger calls identifies seven
+application emitter files; the web telemetry route supplies the application console
+writer. All require migration or a named reviewed safe legacy mapping:
+
+| Baseline emitter/configuration | Integrated owner and required disposition |
+| --- | --- |
+| `apps/api/app/observability.py` | PRO-10: migrate `JsonLogFormatter`, `configure_logging()`, request middleware and warning path; filter Sentry through real `configure_error_reporting()`; preserve transactional `record_audit_event()` separately |
+| `workers/src/fel_workers/__main__.py` | PRO-11: replace JSON-shaped `basicConfig`, lifecycle/configuration/error messages and Sentry initialization; no raw exception string fallback |
+| `workers/src/fel_workers/consumer.py` | PRO-11: catalogue heartbeat/lease/run/failure outcomes, safe identifiers, per-attempt context and one capture owner |
+| `workers/src/fel_workers/health.py` | PRO-11: map startup/watchdog/access messages; raw HTTP server format/arguments must not bypass route-template/attribute limits |
+| `workers/src/fel_workers/storage.py` | PRO-11: migrate database-role diagnostic to approved catalogue fields; never serialize a connection/DSN |
+| `workers/src/fel_workers/extraction/telemetry.py` | PRO-11: adapt actual `emit()` before `%s` rendering; unknown event/fields are rejected safely |
+| `packages/calculation-engine/fel_calculation_engine/telemetry.py` | PRO-11: adapt actual `LoggingSink`/default path before `%s` rendering; retain injectable `TelemetrySink` and `RecordingSink` payload/event contract |
+| `apps/web/src/app/api/telemetry/route.ts` and `apps/web/src/lib/telemetry-validation.ts` | PRO-12: retain client allowlists and bounds, then map to common server event envelope |
+| Uvicorn/Next runtime and third-party logger output | PRO-10/11/12: inventory effective configured handlers at startup; explicitly map safe legacy events or drop unknown messages with bounded diagnostics; no arbitrary `record.getMessage()` passthrough |
+
+Repeat source and configured-handler inventory against current main at registration;
+assign every new emitter before acceptance. `http.py`/`ingestion/sec_client.py` and
+web HTTP transports remain integration scope for correlation even where they do not
+currently emit logs. A formatter cannot recover safe typed attributes after a
+dictionary has become free-form text. Core-only acceptance therefore does not
+complete the telemetry migration.
+
+PRO-11's adapter tests call extraction `emit()` and calculation `emit(None, ...)`
+and `LoggingSink.emit()` through the installed logger/handler, then parse captured
+bytes. Assert catalogue `event_code`, typed/queryable attributes, request/job/attempt
+context where applicable, exactly one JSON line and the encoded size limit. Inject
+a synthetic secret under an unknown/renamed key, nested object, oversized string
+and unknown event; no original value reaches JSON, pretty output or Sentry. Exercise
+an engine evaluation with the default sink as well as the existing recording-sink
+tests; keep injected recording events compatible without exposing arbitrary values
+through the default log sink. Update terminal-run worker tests that currently inspect
+rendered message strings to assert approved catalogue fields.
+
+PRO-10 tests call the real `configure_logging()` and `configure_error_reporting()`
+from `observability.py`, with an in-memory Sentry transport and synthetic DSN;
+capture a canary exception including request/extras/breadcrumbs and inspect the final
+transport envelope. Verify filtering, safe correlation tags, no duplicate capture,
+no-DSN behavior and idempotent initialization. Direct calls to a privacy helper alone
+do not satisfy this integration acceptance.
 
 Core owns its synthetic golden JSONL and adversarial fixtures; adapters consume
 a frozen fixture version through explicit interfaces, never edit another slice's
