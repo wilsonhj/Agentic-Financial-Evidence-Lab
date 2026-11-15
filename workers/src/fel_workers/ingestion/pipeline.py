@@ -21,8 +21,8 @@ different bytes fails closed into quarantine with reason code
 were parsed from.
 
 Corpus versions are published atomically under the same transaction lock as
-publication backfill and restatement repair, preserving retained pins. Two
-publishers therefore serialize and the later one wins: it supersedes the
+filing ingestion, publication backfill and restatement repair, preserving
+retained pins. Two publishers therefore serialize and the later one wins: it supersedes the
 earlier version. A partial unique index additionally prevents multiple active
 versions when a writer that does not take the lock activates one; that
 conflict becomes PublishConflictError.
@@ -43,7 +43,7 @@ from psycopg.rows import dict_row
 
 from fel_providers.interfaces import StorageProvider
 from fel_workers.ingestion.errors import DivergentAccessionError, IngestError
-from fel_workers.ingestion.parser import PARSER_VERSION, parse_filing
+from fel_workers.ingestion.parser import PARSER_VERSION, ParsedDocument, parse_filing
 from fel_workers.ingestion.pin_guard import lock_corpus_mutations
 from fel_workers.ingestion.publication import UNKNOWN_PUBLICATION, Publication
 from fel_workers.ingestion.raw_store import (
@@ -51,9 +51,9 @@ from fel_workers.ingestion.raw_store import (
 )
 from fel_workers.ingestion.raw_store import (
     StoredDocument,
+    _store_raw_document_metadata,
     content_address,
     document_id_for_accession,
-    store_raw_document,
 )
 from fel_workers.ingestion.xbrl import NORMALIZER_VERSION, PriorFact, normalize_facts
 
@@ -222,6 +222,8 @@ def ingest_filing(
 
     ``publication`` is when the filing became public (``derive_publication``);
     it is stored on a new document row and orders restatement targets.
+    Provider writes and parsing finish before acquiring the corpus lock;
+    metadata, prior lookup and fact persistence then serialize with repairs.
 
     Idempotent: an identical (entity, accession, source, parser,
     normalizer) job is a no-op returning the recorded result — enforced by
@@ -245,7 +247,47 @@ def ingest_filing(
             f"|{PARSER_VERSION}|{NORMALIZER_VERSION}",
         )
     )
+    # Terminal results are immutable. Preserve replays without provider or
+    # parser work; concurrent misses still arbitrate on the locked claim below.
+    with conn.transaction(), conn.cursor(row_factory=dict_row) as replay_cur:
+        replay = replay_cur.execute(
+            "SELECT job_key, document_id, document_version_id, status, result"
+            " FROM ingestion_runs WHERE job_key = %s AND status IN ('succeeded', 'quarantined')",
+            (key,),
+        ).fetchone()
+        if replay is not None:
+            return _noop_outcome(key, dict(replay))
+
+    # No provider I/O or parsing follows acquisition of the corpus lock.
+    # Defer preparation errors until after the claim: a concurrent terminal
+    # winner must still replay, and metadata divergence precedes parse errors.
+    raw_failure: Exception | None = None
+    parse_failure: Exception | None = None
+    canonical_failure: Exception | None = None
+    parsed: ParsedDocument | None = None
+    text_key: str | None = None
+    try:
+        if form == COMPANY_FACTS_FORM and publication != UNKNOWN_PUBLICATION:
+            raise ValueError("a COMPANYFACTS snapshot cannot carry a publication time")
+        storage.put(storage_key, raw)
+    except Exception as exc:  # noqa: BLE001 — re-raised after the locked claim
+        raw_failure = exc
+    if raw_failure is None:
+        try:
+            parsed = parse_filing(raw, id_seed=version_id, content_hash=content_hash)
+        except Exception as exc:  # noqa: BLE001 — preserve metadata-error precedence
+            parse_failure = exc
+    if parsed is not None:
+        text_key = canonical_text_address(parsed.text)
+        try:
+            storage.put(text_key, parsed.text.encode())
+        except Exception as exc:  # noqa: BLE001 — normalization errors take precedence
+            canonical_failure = exc
+
     with conn.transaction():
+        # Take the advisory lock before ANY database write, including the
+        # ingestion claim and document insert, to avoid row/advisory inversions.
+        lock_corpus_mutations(conn)
         with conn.cursor(row_factory=dict_row) as run_cur:
             claimed = run_cur.execute(
                 "INSERT INTO ingestion_runs (job_key, source_hash, parser_version,"
@@ -268,13 +310,13 @@ def ingest_filing(
 
         stored: StoredDocument | None = None
         try:
-            stored = store_raw_document(
+            if raw_failure is not None:
+                raise raw_failure
+            stored = _store_raw_document_metadata(
                 conn,
-                storage,
                 entity_id=entity_id,
                 accession=accession,
                 source_url=source_url,
-                raw=raw,
                 published_at=published_at,
                 form=form,
                 filed_at=filed_at,
@@ -285,7 +327,9 @@ def ingest_filing(
                 storage_key=storage_key,
                 publication=publication,
             )
-            parsed = parse_filing(raw, id_seed=version_id, content_hash=content_hash)
+            if parse_failure is not None:
+                raise parse_failure
+            assert parsed is not None
             # Same-content replays preserve the existing document metadata.
             # Use that persisted publication time even when an old queued job
             # lacks acceptance data or carries a stale filing date.
@@ -332,10 +376,9 @@ def ingest_filing(
                 diagnostic=exc.diagnostic,
             )
 
-        # Persist the canonical text immutably so span offsets/text hashes
-        # stay verifiable against exactly the bytes they were computed from.
-        text_key = canonical_text_address(parsed.text)
-        storage.put(text_key, parsed.text.encode())
+        if canonical_failure is not None:
+            raise canonical_failure
+        assert text_key is not None
 
         conn.execute(
             "INSERT INTO document_versions"

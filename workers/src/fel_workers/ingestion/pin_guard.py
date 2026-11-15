@@ -15,8 +15,8 @@ class PublishedPinMutationError(RuntimeError):
 class CorpusLockTimeoutError(RuntimeError):
     """The corpus mutation lock was not granted within the bound.
 
-    Another publication or repair held it. Nothing was written: the error
-    aborts the caller's transaction. It is transient, so the job is retried.
+    Another ingestion, publication or repair held it. Nothing was written:
+    the error aborts the caller's transaction. It is transient, so the job is retried.
     """
 
 
@@ -26,7 +26,7 @@ class CorpusLockTimeoutError(RuntimeError):
 CORPUS_LOCK_TIMEOUT_MS = 30_000
 
 
-# One database-local key shared by every supported publisher and repair.
+# One database-local key shared by filing ingestion, publication and repairs.
 # A global lock avoids membership phantoms and lock-order deadlocks across
 # issuers. Unlike a session lock, it remains held until the OUTERMOST commit
 # or rollback, including when callers use nested transaction/savepoint scopes.
@@ -34,12 +34,12 @@ _CORPUS_MUTATION_LOCK = 0x46454C50494E21  # "FELPIN!"
 
 
 def lock_corpus_mutations(conn: psycopg.Connection[Any], *, timeout_ms: int | None = None) -> None:
-    """Serialize publish, publication backfill and direct restatement repair.
+    """Serialize filing ingestion, publish, backfill and restatement repair.
 
     Call inside a transaction, before reading or writing corpus state, and
     never across network I/O. The guard queries after waiting must see newly
     committed pins; a preexisting REPEATABLE READ/SERIALIZABLE snapshot cannot
-    provide that guarantee. Advisory locking is cooperative: all three
+    provide that guarantee. Advisory locking is cooperative: all four
     supported mutation entrypoints participate. This does not grant or enforce
     arbitrary direct SQL access.
 
@@ -62,8 +62,8 @@ def lock_corpus_mutations(conn: psycopg.Connection[Any], *, timeout_ms: int | No
         conn.execute("SELECT pg_advisory_xact_lock(%s)", (_CORPUS_MUTATION_LOCK,))
     except psycopg.errors.LockNotAvailable as exc:
         raise CorpusLockTimeoutError(
-            f"corpus mutation lock not granted within {bound} ms: another publication"
-            " or repair holds it; nothing was written, retry later"
+            f"corpus mutation lock not granted within {bound} ms: another corpus mutation"
+            " holds it; nothing was written, retry later"
         ) from exc
     conn.execute("SELECT set_config('lock_timeout', %s, true)", (previous,))
 

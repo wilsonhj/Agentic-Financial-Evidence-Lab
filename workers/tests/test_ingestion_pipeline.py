@@ -16,7 +16,8 @@ import psycopg
 import pytest
 
 from fel_providers.mocks import MockStorageProvider
-from fel_workers.ingestion.errors import DivergentAccessionError
+from fel_workers.ingestion import pipeline
+from fel_workers.ingestion.errors import DivergentAccessionError, NormalizationError
 from fel_workers.ingestion.parser import parse_filing
 from fel_workers.ingestion.pipeline import (
     PublishConflictError,
@@ -183,6 +184,129 @@ def test_identical_job_rerun_is_a_noop(corpus_conn: psycopg.Connection) -> None:
     assert second.document_version_id == first.document_version_id
     assert second.facts == first.facts
     assert _counts(corpus_conn) == before, "a rerun must write nothing"
+
+
+def test_terminal_replay_needs_neither_storage_nor_parser(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage = MockStorageProvider()
+    first = _ingest(corpus_conn, storage)
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("provider/parser unavailable during replay")
+
+    monkeypatch.setattr(storage, "put", unavailable)
+    monkeypatch.setattr(pipeline, "parse_filing", unavailable)
+    replay = _ingest(corpus_conn, storage)
+    assert replay.status == "noop" and replay.document_version_id == first.document_version_id
+
+
+def test_preparation_precedes_the_corpus_lock_and_database_writes(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage = MockStorageProvider()
+    put = storage.put
+    parse = pipeline.parse_filing
+    calls: list[str] = []
+
+    def assert_unlocked() -> None:
+        assert corpus_conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+        with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as observer:
+            assert observer.execute(
+                "SELECT count(*) FROM pg_locks WHERE pid = %s"
+                " AND (locktype = 'advisory' OR mode = 'RowExclusiveLock')",
+                (corpus_conn.info.backend_pid,),
+            ).fetchone() == (0,)
+
+    def checked_put(key: str, data: bytes) -> str:
+        assert_unlocked()
+        calls.append(key)
+        return put(key, data)
+
+    def checked_parse(*args, **kwargs):
+        assert_unlocked()
+        calls.append("parse")
+        return parse(*args, **kwargs)
+
+    monkeypatch.setattr(storage, "put", checked_put)
+    monkeypatch.setattr(pipeline, "parse_filing", checked_parse)
+    assert _ingest(corpus_conn, storage).status == "succeeded"
+    assert len(calls) == 3 and calls[0].startswith("raw/")
+    assert calls[1] == "parse" and calls[2].startswith("text/")
+
+
+@pytest.mark.parametrize("failed_prefix", ["raw/", "text/"])
+def test_storage_failure_leaves_no_ingestion_rows(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch, failed_prefix: str
+) -> None:
+    storage = MockStorageProvider()
+    put = storage.put
+
+    def fail_storage(key: str, data: bytes) -> str:
+        if key.startswith(failed_prefix):
+            raise RuntimeError("synthetic storage failure")
+        return put(key, data)
+
+    monkeypatch.setattr(storage, "put", fail_storage)
+    with pytest.raises(RuntimeError, match="synthetic storage failure"):
+        _ingest(corpus_conn, storage)
+    assert set(_counts(corpus_conn).values()) == {0}
+
+
+def test_divergent_accession_takes_precedence_over_prepared_parse_failure(
+    corpus_conn: psycopg.Connection,
+) -> None:
+    storage = MockStorageProvider()
+    first = _ingest(corpus_conn, storage)
+    malformed = _ingest(corpus_conn, storage, raw=b"")
+    assert malformed.status == "quarantined"
+    assert malformed.reason_code == "DIVERGENT_ACCESSION_CONTENT"
+    assert malformed.document_id == first.document_id
+    assert _counts(corpus_conn)["document_versions"] == 1
+
+
+@pytest.mark.parametrize("failed_prefix", ["raw/", "text/"])
+def test_concurrent_terminal_winner_supersedes_preparation_storage_failure(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch, failed_prefix: str
+) -> None:
+    storage = MockStorageProvider()
+    put = storage.put
+    winner = []
+
+    def fail_after_winner(key: str, data: bytes) -> str:
+        if key.startswith(failed_prefix):
+            with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as other:
+                other.execute("SET ROLE fel_worker")
+                winner.append(_ingest(other, MockStorageProvider()))
+            raise RuntimeError("losing worker's storage is unavailable")
+        return put(key, data)
+
+    monkeypatch.setattr(storage, "put", fail_after_winner)
+    replay = _ingest(corpus_conn, storage)
+    assert len(winner) == 1 and winner[0].status == "succeeded"
+    assert replay.status == "noop" and replay.document_version_id == winner[0].document_version_id
+    assert _counts(corpus_conn)["ingestion_runs"] == 1
+
+
+def test_normalization_quarantine_precedes_prepared_canonical_storage_failure(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage = MockStorageProvider()
+    put = storage.put
+
+    def fail_canonical(key: str, data: bytes) -> str:
+        if key.startswith("text/"):
+            raise RuntimeError("canonical storage unavailable")
+        return put(key, data)
+
+    def bad_numeric(*args, **kwargs):
+        raise NormalizationError("EMPTY_FACT_VALUE", "synthetic invalid numeric source")
+
+    monkeypatch.setattr(storage, "put", fail_canonical)
+    monkeypatch.setattr(pipeline, "normalize_facts", bad_numeric)
+    outcome = _ingest(corpus_conn, storage)
+    assert outcome.status == "quarantined" and outcome.reason_code == "EMPTY_FACT_VALUE"
+    assert _counts(corpus_conn)["document_versions"] == 0
 
 
 def test_restatement_links_across_document_versions(corpus_conn: psycopg.Connection) -> None:

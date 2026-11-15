@@ -652,6 +652,53 @@ def test_backfill_waits_for_an_uncommitted_publication_then_rejects_it(
     assert len(reports) == 1 and isinstance(reports[0], PublishedPinMutationError), reports
 
 
+@pytest.mark.parametrize("first", ["backfill", "ingest"])
+def test_ingestion_and_backfill_serialize_before_any_database_writes(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, first: str
+) -> None:
+    """Both orders leave the amendment edge correct before a pin can expose it."""
+    _ingest(corpus_conn, sec, [A], legacy=True)
+    errors: list[BaseException] = []
+    second_pid: list[int] = []
+
+    def act(conn: psycopg.Connection, action: str) -> None:
+        if action == "backfill":
+            run_publication_backfill_job(conn, sec, {"cik": CIK})
+        else:
+            _ingest(conn, sec, [B])
+
+    def run_second() -> None:
+        try:
+            with _other_connection() as conn:
+                second_pid.append(conn.info.backend_pid)
+                act(conn, "ingest" if first == "backfill" else "backfill")
+        except BaseException as exc:  # noqa: BLE001 — surfaced below
+            errors.append(exc)
+
+    thread = threading.Thread(target=run_second)
+    with corpus_conn.transaction():
+        act(corpus_conn, first)
+        thread.start()
+        blocked = _blocked_on_advisory_lock(corpus_conn, thread)
+        waiting = thread.is_alive()
+        # A waiter must hold no ingestion-claim/document write locks. Taking
+        # either before the advisory lock permits a row/advisory deadlock.
+        premature_writes = corpus_conn.execute(
+            "SELECT relation::regclass::text FROM pg_locks"
+            " WHERE pid = ANY(%s) AND mode = 'RowExclusiveLock'"
+            " AND relation IN ('ingestion_runs'::regclass, 'documents'::regclass)",
+            (second_pid,),
+        ).fetchall()
+    thread.join(timeout=30)
+    assert blocked and waiting, "the second mutation must wait for the first's outer commit"
+    assert premature_writes == [], "database writes preceded corpus-lock acquisition"
+    assert not thread.is_alive() and not errors, errors
+    assert _publication(corpus_conn) == {A: KNOWN[A], B: KNOWN[B]}
+    assert _links(corpus_conn) == [(B, A, 2)]
+    _publish(corpus_conn, A, B)
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+
+
 class _LockProbeIndex:
     """The pinned transport, recording whether any backend in this database
     holds an advisory lock while the submissions index is being fetched."""

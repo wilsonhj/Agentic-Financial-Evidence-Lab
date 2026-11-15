@@ -100,6 +100,46 @@ def store_raw_document(
     if content_hash is None or storage_key is None:
         content_hash, storage_key = content_address(raw)
     storage.put(storage_key, raw)
+    return _store_raw_document_metadata(
+        conn,
+        entity_id=entity_id,
+        accession=accession,
+        source_url=source_url,
+        content_hash=content_hash,
+        storage_key=storage_key,
+        published_at=published_at,
+        form=form,
+        filed_at=filed_at,
+        period_start=period_start,
+        period_end=period_end,
+        mime_type=mime_type,
+        publication=publication,
+    )
+
+
+def _store_raw_document_metadata(
+    conn: psycopg.Connection[Any],
+    *,
+    entity_id: str,
+    accession: str,
+    source_url: str,
+    content_hash: str,
+    storage_key: str,
+    published_at: datetime,
+    form: str | None = None,
+    filed_at: datetime | None = None,
+    period_start: date | None = None,
+    period_end: date | None = None,
+    mime_type: str = "text/html",
+    publication: Publication = UNKNOWN_PUBLICATION,
+) -> StoredDocument:
+    """Record metadata after the caller has stored the immutable source bytes.
+
+    Database work only: ingestion prepares provider writes before acquiring
+    the corpus lock, then records these rows under that lock.
+    """
+    if form == COMPANY_FACTS_FORM and publication != UNKNOWN_PUBLICATION:
+        raise ValueError("a COMPANYFACTS snapshot cannot carry a publication time")
     document_id = document_id_for_accession(accession)
     with conn.cursor(row_factory=dict_row) as cur:
         inserted = cur.execute(
