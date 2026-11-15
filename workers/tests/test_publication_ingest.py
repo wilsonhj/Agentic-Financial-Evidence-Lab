@@ -396,10 +396,11 @@ def test_backfill_keeps_set_values_and_leaves_unverifiable_rows_null(
     _ingest(corpus_conn, sec, [C])  # set at ingest, and correct
     # Set at ingest to something the index does not say: reported, never overwritten.
     _ingest(corpus_conn, sec, [E], acceptance_datetime="2026-05-06T12:00:00.000Z")
-    _ingest(corpus_conn, sec, [D], legacy=True)  # its index entry has no UTC offset
+    # No UTC offset: unparseable, so reported and left NULL. A missing time is not.
+    _ingest(corpus_conn, sec, [D], legacy=True)
     index = _EditedIndex(sec, _offsetless_time_for_d)
     report = run_publication_backfill_job(corpus_conn, index, {"cik": CIK})
-    assert (report.updated, report.unresolved, report.conflicts) == (1, 2, (B, E))
+    assert (report.updated, report.unresolved, report.conflicts) == (1, 2, (B, D, E))
     noon = _t("2026-05-06T12:00:00Z")
     assert _publication(corpus_conn) == {
         A: KNOWN[A],

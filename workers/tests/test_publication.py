@@ -7,11 +7,14 @@ timezone arithmetic.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from fel_workers.ingestion.backfill import _backfill_publication
+from fel_workers.ingestion.discovery import FilingRef
 from fel_workers.ingestion.publication import (
     UNKNOWN_PUBLICATION,
     Publication,
@@ -118,3 +121,96 @@ def test_rule_invariants_hold_for_every_hour_of_a_year() -> None:
             else:
                 assert (result.public_at_basis, result.public_at) == ("acceptance", instant)
         instant += timedelta(hours=1)
+
+
+class _Read:
+    """Rows already stored. The SELECT cursor does not count as a write."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def execute(self, sql: str, params: object = None) -> _Read:
+        return self
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self._rows
+
+    def __enter__(self) -> _Read:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+
+class _StoredRows:
+    """The documents read ``_backfill_publication`` takes; no database."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+        self.statements: list[str] = []
+
+    def cursor(self, *, row_factory: object = None) -> _Read:
+        return _Read(self._rows)
+
+    def execute(self, sql: str, params: object = None) -> _Read:
+        self.statements.append(sql)
+        return _Read([])
+
+
+def test_backfill_records_unparseable_acceptance_and_not_a_missing_one() -> None:
+    """An acceptance time that cannot be parsed is a conflict. A missing one is not.
+
+    The raw ``acceptanceDateTime`` stays out of the report. Neither row is written.
+    """
+    filed = date(2026, 5, 12)
+    filed_at = datetime.combine(filed, time(0), tzinfo=UTC)
+    stored = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)
+    bad_offset = "0009999997-26-000010"
+    garbage = "0009999997-26-000020"
+    missing = "0009999997-26-000030"
+    rows = [
+        {
+            "id": "bad-offset",
+            "accession": bad_offset,
+            "filed_at": filed_at,
+            "accepted_at": None,
+            "public_at": None,
+            "public_at_basis": None,
+            "timestamp_precision": "date",
+        },
+        {
+            "id": "garbage",
+            "accession": garbage,
+            "filed_at": filed_at,
+            "accepted_at": stored,
+            "public_at": stored,
+            "public_at_basis": "acceptance",
+            "timestamp_precision": "second",
+        },
+        {
+            "id": "missing",
+            "accession": missing,
+            "filed_at": filed_at,
+            "accepted_at": None,
+            "public_at": None,
+            "public_at_basis": None,
+            "timestamp_precision": "date",
+        },
+    ]
+    before = [dict(row) for row in rows]
+    refs = {
+        bad_offset: FilingRef(
+            "0009999997", bad_offset, "8-K", filed, None, "2026-05-12T09:00:00+25:00"
+        ),
+        garbage: FilingRef("0009999997", garbage, "8-K", filed, None, "not-a-timestamp"),
+        missing: FilingRef("0009999997", missing, "8-K", filed, None, None),
+    }
+    conn = _StoredRows(rows)
+    updated, conflicts = _backfill_publication(conn, refs, "entity-1")
+    assert updated == 0
+    assert conflicts == (bad_offset, garbage)
+    assert missing not in conflicts
+    assert rows == before
+    assert conn.statements == []
+    for raw in ("2026-05-12T09:00:00+25:00", "not-a-timestamp"):
+        assert raw not in conflicts

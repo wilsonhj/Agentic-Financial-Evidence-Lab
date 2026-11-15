@@ -9,9 +9,10 @@ transaction, using only the columns migration 0013 grants ``fel_worker``:
    verified: no acceptance time, an unusable one, or a stored filing date
    that disagrees with the index. A row that already holds values is never
    written: equal values need no write. A stored filing date or publication
-   time that differs from the index is reported as a conflict for an
-   operator, never overwritten. Company-facts snapshots are
-   excluded by form in both the read and the write.
+   time that differs from the index, or an acceptance time that cannot be
+   parsed, is reported as a conflict for an operator, never overwritten. A
+   missing acceptance time stays unresolved and is not a conflict.
+   Company-facts snapshots are excluded by form in both the read and the write.
 
 2. **Repair.** Recompute every filing fact's ``restates`` from the stored
    rows, with the ordering ingest uses (``pipeline._prior_canonical_facts``),
@@ -75,8 +76,9 @@ class BackfillReport:
     unresolved: int = 0
     """The issuer's filings that still have no publication time."""
     conflicts: tuple[str, ...] = ()
-    """Accessions whose stored filing date or publication time differs from
-    the index; left untouched."""
+    """Accessions left untouched: a stored filing date or publication time
+    differs from the index, or the acceptance time cannot be parsed. A
+    missing acceptance time is unresolved, not a conflict."""
     repair: RepairReport = field(default_factory=RepairReport)
 
 
@@ -184,6 +186,8 @@ def _backfill_publication(
         try:
             derived = derive_publication(ref.acceptance_datetime, ref.filed_on)
         except ValueError:
+            # The raw acceptanceDateTime is untrusted and is not recorded.
+            conflicts.append(ref.accession)
             continue  # an unusable acceptance time resolves nothing
         if derived.accepted_at is None:
             continue
