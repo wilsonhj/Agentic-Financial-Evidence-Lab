@@ -45,6 +45,9 @@ tmp/
 *.tmp
 
 # Claude Code session state and agent worktrees (live checkouts - never commit).
-# Only the shared project settings file is tracked.
+# Only the shared project settings file and the agent team definitions
+# (docs/handoff/FABLE_ORCHESTRATION.md "Agent team") are tracked.
 **/.claude/*
 !/.claude/settings.json
+!/.claude/agents/
+!/.claude/skills/

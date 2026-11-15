@@ -16,6 +16,25 @@ in the handoff README; this loop adds only Fable's scheduling duties.
 7. Send passing PRs to an independent reviewer and then the integration lead.
 8. After merge, ask the integration lead to update task checkboxes, package status, and `STATUS.md`.
 
+## Agent team
+
+Claude Code sessions run this protocol with the definitions below. The team
+has one human authority, one scheduler, one builder, and read-only reviewers.
+
+| Role | Definition | Writes code |
+|---|---|---|
+| Integration lead | The repository owner (`.github/CODEOWNERS`) | Yes. Merges and decides. |
+| Scheduler | [`/dev-team` skill](../../.claude/skills/dev-team/SKILL.md) | No |
+| Builder | [`implementer`](../../.claude/agents/implementer.md) | Only in the `allowed_paths` of its package |
+| Reviewer | [`security-reviewer`](../../.claude/agents/security-reviewer.md) | No. It has only the Read, Grep, and Glob tools. |
+| Reviewer | [`domain-integrity-reviewer`](../../.claude/agents/domain-integrity-reviewer.md) | No. It has only the Read, Grep, and Glob tools. |
+
+The scheduler runs `.claude/skills/dev-team/lane_check.py` before review. The
+script applies the rules of `scripts/agent/path_guard.py` to the diff of the
+branch. A reviewer gets the diff and the brief, not the reasoning of the
+builder. Add a reviewer only after a failure that it can prevent occurs more
+than one time.
+
 ## Worker prompt
 
 ```text
