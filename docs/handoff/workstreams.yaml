@@ -93,6 +93,20 @@ defaults:
 # two packages with overlapping paths concurrently: overlap is resolved by
 # time, not ownership.
 packages:
+  - id: LOCAL-KUBERNETES-LAB
+    issue: 435
+    tasks: [] # Owner-requested optional local packaging; no release-gate completion.
+    depends_on: []
+    team: integration
+    branch: agent/435-helm-lab
+    status: active # Owner authorized local lab enablement and research on 2026-11-15; draft for lead review.
+    allowed_paths:
+      - infra/kubernetes/**
+      - infra/helm/fel/**
+      - infra/README.md
+      - docs/research/2026-11-15-kubernetes-helm-lab.md
+      - docs/research/README.md # One index entry, serialized by the coordinator.
+      - docs/handoff/workstreams.yaml # Additive registration only; contract-change and lead review.
   - id: BACKLOG-EXECUTION-CONTROL
     issue: 188
     tasks: []
