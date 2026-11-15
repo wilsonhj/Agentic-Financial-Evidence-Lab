@@ -35,6 +35,12 @@ branch. A reviewer gets the diff and the brief, not the reasoning of the
 builder. Add a reviewer only after a failure that it can prevent occurs more
 than one time.
 
+The specialist reviews are internal advice and do not replace required
+different-vendor review or integration-lead approval. Preserve the applicable
+merge gates, including
+[ADR-0034](../decisions/ADR-0034-public-read-only-evidence-surface.md)
+for MCP work; a team using one vendor cannot satisfy that gate for its own author.
+
 ## Worker prompt
 
 ```text

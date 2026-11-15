@@ -40,6 +40,16 @@ If the implementer reports a blocker, go to step 7.
 
 ## 4. Run the lane check
 
+Require the implementer's worktree to be clean (`git status --porcelain`, including
+untracked files). Resolve the working branch to a full commit SHA and require it
+to equal the head SHA reported by the implementer. A dirty worktree or mismatched
+head is a blocker: stop and request a committed, tested checkpoint.
+
+Run the checker from the scheduler's trusted checkout, not from the candidate
+worktree. It reads the guard and registry from the approved base and reports the
+exact base/head SHAs it checked. Require its reported head to equal that checkpoint.
+Require its reported base to equal the approved full base SHA also.
+
 ```bash
 python3 -I .claude/skills/dev-team/lane_check.py <base-sha> <working-branch>
 ```
@@ -47,16 +57,19 @@ python3 -I .claude/skills/dev-team/lane_check.py <base-sha> <working-branch>
 - Exit 0: continue.
 - Exit 1: stop. Do not start the reviewers. Report each path that the check
   printed. A shared path needs the `contract-change` process in `AGENTS.md`.
-- Exit 2: the check did not run. Report the error text.
+- Exit 2: stop; the check did not run. Report the error text.
 
 ## 5. Write the diff file
 
-Write `git diff <base-sha>...<working-branch>` to a file in a temporary
-directory outside the repository. Record the absolute path.
+Write `git diff <checked-base-sha>...<checked-head-sha>` to a file in a temporary
+directory outside the repository. Use both fixed checked SHAs, not moving branch
+refs. Record the absolute path and both SHAs.
 
-The reviewers read files in the worktree of the implementer. If the result of
-the implementer gives no worktree path, add a detached worktree of the working
-branch in the same temporary directory.
+Add a detached worktree at that exact checked head in the temporary directory.
+Both reviewers read this snapshot, not the mutable implementer worktree. Give them
+the exact same diff and snapshot. Any subsequent candidate change requires a new
+checkpoint, acceptance results and steps 4 to 6 again; an old review cannot approve
+new bytes.
 
 ## 6. Start the reviewers
 
@@ -76,6 +89,15 @@ If a reviewer reports `BLOCK`, start a new `implementer` run on the same
 branch one time. Give it the findings. Then do steps 4 to 6 again. If a
 reviewer reports `BLOCK` a second time, stop and go to step 7. Recommend the
 `needs-decision` label.
+
+These specialist verdicts are internal advice. They do not automatically satisfy
+an independent different-vendor review gate. Record the author and reviewer
+vendors and report any outstanding gate to the integration lead. In particular,
+ADR-0034 and `specs/006-mcp-evidence-server/plan.md` require different-vendor review
+and lead approval for MCP work; different OpenAI models are one vendor, and a
+Claude team reviewing a Claude implementation is also one vendor. Hold any change
+whose required different-vendor review is outstanding. This scheduler grants no
+exception to that rule.
 
 ## 7. Report to the integration lead
 
