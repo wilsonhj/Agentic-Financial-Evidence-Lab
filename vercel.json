@@ -16,17 +16,11 @@
     "api": {
       "root": "./",
       "runtime": "container",
-      "entrypoint": "infra/docker/api.Dockerfile",
-      "routes": [
-        {
-          "src": "/__fel_api/health",
-          "transforms": [{ "type": "request.path", "op": "set", "args": "/health" }]
-        }
-      ]
+      "entrypoint": "infra/docker/api.Dockerfile"
     }
   },
   "rewrites": [
-    { "source": "/__fel_api/health", "destination": { "service": "api" } },
+    { "source": "/__fel_api/health", "destination": { "service": "api", "path": "/health" } },
     { "source": "/(.*)", "destination": { "service": "web" } }
   ]
 }
