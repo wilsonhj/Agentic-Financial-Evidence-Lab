@@ -22,6 +22,7 @@ ENV NODE_ENV=production \
     FEL_DEPLOYMENT_MODE=fixture \
     FEL_EVIDENCE_SOURCE=fixture
 COPY --from=build --chown=node:node /workspace /workspace
+COPY LICENSE NOTICE /workspace/
 WORKDIR /workspace/apps/web
 USER node
 ARG SOURCE_SHA=unknown

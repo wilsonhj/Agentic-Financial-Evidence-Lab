@@ -1,5 +1,7 @@
 # Dockerfile-specific allowlist; root .dockerignore is owned by a separate lane.
 **
+!LICENSE
+!NOTICE
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml

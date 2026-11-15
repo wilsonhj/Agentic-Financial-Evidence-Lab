@@ -43,6 +43,7 @@ RUN mkdir -p /work \
     && chown -R node:node /workspace/apps/web /work \
     && chmod -R a+rX /opt/playwright
 USER node
+COPY LICENSE NOTICE /workspace/
 ARG SOURCE_SHA=unknown
 LABEL org.opencontainers.image.revision=$SOURCE_SHA
 ENTRYPOINT ["bash", "/workspace/infra/kubernetes/run-acceptance.sh"]
