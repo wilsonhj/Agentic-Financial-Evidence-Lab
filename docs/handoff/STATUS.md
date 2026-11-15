@@ -7,8 +7,8 @@ findings from the November 14 independent PR review. The bounded authoring
 lanes are #409/#415 (source-bound acceptance fixtures), #393/#417 (published
 pin immutability, publication ordering and versioned reparsing), and #419/#420
 (security-check lifecycle and explicit telemetry adapter ownership). The
-coordinator owns serialized handoff updates. This uses three implementation
-agents total under ADR-0034 Amendment 2; additional agents perform read-only
+coordinator owns serialized handoff updates. The wave used three implementation
+agents total under ADR-0034 Amendment 2; additional agents performed read-only
 review and isolated verification.
 
 #395's submitted slices #416/#418 and #396's #414 were in `review` when this

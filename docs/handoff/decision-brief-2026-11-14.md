@@ -136,7 +136,7 @@ limit of three implementers total plus the coordinator.
 **MCP evidence server.** [ADR-0034](../decisions/ADR-0034-public-read-only-evidence-surface.md)
 adds a public, read-only MCP surface over the SEC corpus.
 
-- The contract wave merged today in merge `517553e` (#401, #402, #406,
+- The contract wave merged on 2026-11-14 in merge `517553e` (#401, #402, #406,
   #407): schemas, OpenAPI 0.10.0, migration 0012 (publication columns,
   `fel_public_read` role) and 0013 (worker backfill grants).
 - Amendment 2 caps the current wave at three implementers total, including fix
@@ -366,8 +366,8 @@ the worker graded the edge `verified` or a reviewer supplied the evidence.
 The defect was reproduced first: the tests-only commit `fadd90f` failed 14
 tests, with 200 returned instead of 422.
 
-Two existing required tests now fail, plus the non-required extraction
-acceptance job:
+On 2026-11-14, before the November 15 repair, two existing required tests
+failed, plus the non-required extraction acceptance job:
 
 - `evals/tests/test_extraction_cross_stack.py::test_harness_seeds_source_runs_worker_and_verifies_real_immutable_rows`
 - `apps/api/tests/test_extraction_load_report.py::test_real_preflight_cli_writes_metadata_and_all_verified_operations`
@@ -376,7 +376,9 @@ Their mock models (`evals/harness/extraction_cross_stack.py::ScopedMock`,
 `apps/api/benchmarks/extraction_load_fixture.py::BulkMock`) cite by span
 membership only, so they had been passing through the defect. Those files
 were outside the original #409 `allowed_paths`; AC6 now names both producers
-and `evals/tests/test_extraction_cross_stack.py`. None is a shared path.
+and `evals/tests/test_extraction_cross_stack.py`. None is a shared path. The
+November 15 repair made both tests pass: every #415 check passed at `0a0bd05`
+on 2026-11-15.
 
 **Options:** (a) widen #409 to the two mock files and
 `evals/tests/test_extraction_cross_stack.py`; (b) register a separate small
@@ -600,10 +602,12 @@ the Medium and Low rows were never re-verified.
 1. Record the applicable lead gates for the reconciled ledger (G5, G6).
 2. #414 merged independently, as `2319c35` on 2026-11-15; #416 precedes #418. Record
    C1/C4 integration decisions without claiming unfinished #395 methods done.
-3. Complete #409 AC6, get #415 green and merge when its own gates pass; it
-   does not depend on #417. Hold #417 for all three reproduced correctness
-   fixes, including transactional publication/repair serialization, and, by
-   the owner's 2026-11-15 ruling, until #394 merges. D1 remains
+3. #409 AC6 authoring completed on 2026-11-15, and every #415 check passed at
+   `0a0bd05`. Merge #415 when its review and lead gates pass, and before #394
+   is dispatched, because #394 must not overlap #409's `apps/api/tests/**`. It
+   does not depend on #417. Hold #417 until its repair commits (including
+   transactional publication/repair serialization) pass review and, by the
+   owner's 2026-11-15 ruling, until #394 merges. D1 remains
    a separate real-backfill/hosted gate.
 4. Release `workers/tests/**` only after its owner finishes. Dispatch #410,
    #411 and #412 in turn, plus the H8 package, subject to registration and

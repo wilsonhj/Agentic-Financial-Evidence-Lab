@@ -109,13 +109,15 @@ brief's [sequencing](decision-brief-2026-11-14.md#sequencing-once-decided).
   their dependencies are in
   [`specs/006-mcp-evidence-server/plan.md`](../../specs/006-mcp-evidence-server/plan.md#path-exclusivity).
 - Flag any file a PR changes outside its lane.
+- The table below summarizes those lanes as amended on 2026-11-15; where it
+  differs from `workstreams.yaml`, the registry governs.
 
 | Package | Allowed paths |
 | --- | --- |
 | `MCP-VERIFIER` (#396) | `packages/retrieval/fel_retrieval/verification.py`, `verification_report.py`, `packages/retrieval/tests/test_verification*.py` |
-| `MCP-EVIDENCE-READ` (#395) | `packages/retrieval/fel_retrieval/evidence/**` except `interfaces.py`; `packages/retrieval/tests/evidence/**` except `test_interfaces.py` |
-| `MCP-INGEST-ACCEPTED-AT` (#393) | `workers/src/fel_workers/ingestion/**`, `workers/src/fel_workers/consumer.py`, `workers/tests/**` |
-| `FIX-REVIEW-CITATION-BLOCKERS` (#409) | `apps/api/app/extraction/**`, `apps/api/tests/extraction/**` |
+| `MCP-EVIDENCE-READ` (#395) | `packages/retrieval/fel_retrieval/evidence/**` except `interfaces.py`; `packages/retrieval/tests/evidence/**` except `test_interfaces.py`; #418's branch is registered as `MCP-EVIDENCE-READ-2` with the same lane |
+| `MCP-INGEST-ACCEPTED-AT` (#393) | `workers/src/fel_workers/ingestion/**`, `workers/src/fel_workers/consumer.py`, `workers/tests/**`, `evals/harness/synthetic_sec.py` |
+| `FIX-REVIEW-CITATION-BLOCKERS` (#409) | `apps/api/app/extraction/**`, `apps/api/tests/extraction/**`, `evals/harness/extraction_cross_stack.py`, `evals/tests/test_extraction_cross_stack.py`, `apps/api/benchmarks/extraction_load_fixture.py`, `apps/api/tests/test_extraction_load_report.py` |
 | ledger (#413) | `docs/handoff/**` (shared: `workstreams.yaml`, needs `contract-change`) |
 
 ## PR #413: handoff ledger
@@ -128,8 +130,9 @@ the handoff README.
 - Registers four fix packages from the
   [2026-11-13 code review](../research/2026-11-13-repository-code-review.md#verification-status):
   #409 (C1), #410 (C3), #411 (C4) and #412 (H4).
-- Records #393/#409 as repair owners, #395/#396 in `review`, and #419 as
-  documentation ownership for the bounded November 15 wave.
+- Records that the November 15 repair authoring for #393 and #409 completed,
+  leaving both in `review` with no active owner; #395/#396 in `review`; and
+  #419 as documentation ownership for the bounded wave.
 - Notes the serialization rules: #410, #411 and #412 wait for #393 to release
   `workers/tests/**`, and #394 must not overlap #409 or #412 in
   `apps/api/tests/**`.
