@@ -160,6 +160,25 @@ def test_the_coverage_note_stays_within_the_schema_budget(
     assert note.forms == (form,)
 
 
+def test_a_pathological_cohort_cik_cannot_overflow_the_note(read: Any) -> None:
+    company = i.Company(COMPANY.entity_id, "9" * 2000, COMPANY.ticker, COMPANY.name)
+    read.companies = {company.entity_id: company}
+    note = read().coverage_note
+    assert len(note.text) <= 1000
+    assert note.text.startswith("Searched filings of 1 issuer public from ")
+    assert note.issuers == (company.cik,)
+
+
+@pytest.mark.parametrize(("start", "end"), [(-1, 403), (-2, -1), (403, 402)])
+def test_invalid_stored_offsets_fail_closed_even_with_a_matching_slice_hash(
+    read: Any, start: int, end: int
+) -> None:
+    # The fake models a corrupt stored row independently of DB CHECK constraints.
+    # Its hash matches Python's pathological slice, so hashing alone is insufficient.
+    with _raises("integrity_error"):
+        read(start, end)
+
+
 @pytest.mark.parametrize(
     ("start", "end", "text"),
     [(402, 403, "B"), (401, 403, "\U0001f600B"), (400, 402, "A\U0001f600"), (403, 403, "")],

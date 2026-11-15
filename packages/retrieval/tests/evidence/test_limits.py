@@ -90,6 +90,22 @@ def test_an_unknown_request_type_fails_closed() -> None:
         limits.check_request(object())
 
 
+@pytest.mark.parametrize(
+    ("start", "end", "field"), [(-1, 1, "start_char"), (0, -1, "end_char"), (2, 1, "end_char")]
+)
+def test_range_limits_recheck_offsets_at_the_service_boundary(
+    start: int, end: int, field: str
+) -> None:
+    # Normal construction rejects these too; a prebuilt object is not a reason
+    # for the service's independent request gate to trust invalid offsets.
+    ref = i.SpanRangeRef(ID, 0, 1)
+    object.__setattr__(ref, "start_char", start)
+    object.__setattr__(ref, "end_char", end)
+    with pytest.raises(i.EvidenceReadError) as raised:
+        limits.check_request(ref)
+    assert (raised.value.code, raised.value.field) == ("invalid_input", field)
+
+
 def test_limits_equal_the_frozen_input_schemas() -> None:
     def props(tool: str) -> dict[str, Any]:
         loaded: dict[str, Any] = json.loads((SCHEMAS / f"mcp-{tool}-input.schema.json").read_text())
