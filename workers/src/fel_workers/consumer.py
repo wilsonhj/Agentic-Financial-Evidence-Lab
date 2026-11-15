@@ -538,8 +538,6 @@ def run_worker(
                 )
             elif job.kind == JOB_KIND_SEC_PUBLICATION_BACKFILL:
                 backfill = run_publication_backfill_job(conn, sec, job.payload)
-                # The changed versions are logged because a repair alters rows
-                # that corpus pins may expose (ADR-0034 Amendment 2).
                 log.info(
                     "publication backfill cik=%s: %d set, %d unresolved, conflicts=%s;"
                     " restates %d linked, %d relinked, %d cleared in versions %s",
@@ -552,6 +550,24 @@ def run_worker(
                     backfill.repair.cleared,
                     list(backfill.repair.document_version_ids),
                 )
+                if backfill.rejected or backfill.repair.rejected_versions:
+                    # Published pins were left as they were (ADR-0034 Amendment
+                    # 2). The allowed changes are committed; the job is parked
+                    # failed so the rejection reaches an operator, not retried.
+                    log.warning(
+                        "publication backfill cik=%s left published pins unchanged:"
+                        " documents %s, versions %s",
+                        job.payload.get("cik"),
+                        list(backfill.rejected),
+                        list(backfill.repair.rejected_versions),
+                    )
+                    verdict = (
+                        "dead_letter",
+                        "publication backfill rejected changes to published corpus pins:"
+                        f" {len(backfill.rejected)} document(s),"
+                        f" {len(backfill.repair.rejected_versions)} version(s);"
+                        " other changes committed; lead decision required",
+                    )
             elif job.kind == JOB_KIND_EXTRACTION_RUN:
                 if extraction_provider is None:  # pragma: no cover — narrowed above
                     raise RuntimeError("structured LLM capability vanished mid-dispatch")

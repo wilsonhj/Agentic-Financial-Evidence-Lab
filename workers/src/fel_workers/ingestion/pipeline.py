@@ -113,6 +113,24 @@ class IngestionOutcome:
     diagnostic: str | None = None
 
 
+# Corpus publication and every write that can change a published pin's
+# evidence (the publication backfill and the restatement repair) take this
+# transaction-scoped advisory lock first and hold it to commit (#393, review
+# of #417). A pin is a corpus version that is 'active' or 'superseded'. The
+# writers check pin membership after taking the lock, so a publication can
+# neither commit between their check and their write nor publish rows they
+# have written but not committed. The key is fixed and arbitrary.
+CORPUS_PUBLICATION_LOCK_KEY = 393_417_001
+PINNED_CORPUS_STATUSES = ("active", "superseded")
+
+
+def lock_corpus_publication(conn: psycopg.Connection[Any]) -> None:
+    """Take the corpus-publication lock for the rest of the open transaction."""
+    if conn.info.transaction_status != psycopg.pq.TransactionStatus.INTRANS:
+        raise RuntimeError("the corpus-publication lock needs an open transaction")
+    conn.execute("SELECT pg_advisory_xact_lock(%s)", (CORPUS_PUBLICATION_LOCK_KEY,))
+
+
 def _prior_canonical_facts(
     conn: psycopg.Connection[Any],
     *,
@@ -515,10 +533,12 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
     the new active pointer, never zero or two. The partial unique index
     ``corpus_versions_single_active`` fails any racing second publisher —
     that race surfaces as :class:`PublishConflictError`, never a raw
-    database error.
+    database error. The corpus-publication lock is taken first, so a
+    publication waits for any uncommitted backfill or repair (#393).
     """
     try:
         with conn.transaction():
+            lock_corpus_publication(conn)
             conn.execute(
                 "UPDATE corpus_versions SET is_active = false, status = 'superseded'"
                 " WHERE is_active"

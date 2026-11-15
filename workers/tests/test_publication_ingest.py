@@ -634,3 +634,26 @@ def test_reparse_orders_by_stored_publication_time(
     ).fetchall()
     assert _publication(corpus_conn)[B] == KNOWN[B]
     assert targets == [(A, 2)]
+
+
+def test_worker_dead_letters_a_backfill_that_had_to_leave_a_pin_alone(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient
+) -> None:
+    """The unpinned change commits; the job is parked failed, not retried, so
+    the rejection reaches an operator."""
+    _ingest(corpus_conn, sec, [A, B], legacy=True)
+    _publish(corpus_conn, A)
+    queue.enqueue(
+        corpus_conn,
+        kind=JOB_KIND_SEC_PUBLICATION_BACKFILL,
+        payload={"cik": CIK},
+        queue="ingestion",
+    )
+    completed = run_worker(
+        corpus_conn, MockStorageProvider(), sec, queue_name="ingestion", max_iterations=2
+    )
+    assert completed == 0
+    assert _publication(corpus_conn) == {A: UNKNOWN, B: KNOWN[B]}
+    row = corpus_conn.execute("SELECT status, attempts, error FROM jobs").fetchone()
+    assert row is not None and (row[0], row[1]) == ("failed", 1)
+    assert "published corpus pins: 1 document(s), 0 version(s)" in row[2]["error"]["message"]
