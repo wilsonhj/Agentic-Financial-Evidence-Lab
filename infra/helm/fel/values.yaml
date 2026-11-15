@@ -40,7 +40,7 @@ acceptance:
     image:
       repository: pgvector/pgvector
       tag: 0.8.5-pg17
-      digest: ""
+      digest: sha256:d2ef61f42ef767baa5a1475393303cc235bcd92febd9d7014eddb48b41f3bad0
       pullPolicy: IfNotPresent
     resources:
       requests:
