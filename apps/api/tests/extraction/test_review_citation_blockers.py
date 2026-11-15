@@ -79,12 +79,16 @@ def _seed(url, base, source, citation, value="100"):
         "document_version_id": source["version"],
         "role": "supports",
     }
-    asserted, grade = {
-        "string_form": ([source["span"]], "partial"),
-        "without_text_hash": ([edge], "partial"),
-        "verified": ([{**edge, "text_hash": source["hash"]}], "verified"),
+    asserted, grade, blockers = {
+        "string_form": ([source["span"]], "partial", [WORKER_BLOCKER]),
+        "without_text_hash": ([edge], "partial", [WORKER_BLOCKER]),
+        "wrong_text_hash": (
+            [{**edge, "text_hash": "sha256:" + "0" * 64}],
+            "invalid",
+            ["span hash mismatch: " + source["span"], WORKER_BLOCKER],
+        ),
+        "verified": ([{**edge, "text_hash": source["hash"]}], "verified", []),
     }[citation]
-    blockers = [] if grade == "verified" else [WORKER_BLOCKER]
     payload = {
         **base["payload"],
         "value": value,
@@ -200,7 +204,9 @@ def test_worker_verified_proposal_is_still_accepted(
     ]
 
 
-@pytest.mark.parametrize("citation", ["string_form", "without_text_hash", "verified"])
+@pytest.mark.parametrize(
+    "citation", ["string_form", "without_text_hash", "wrong_text_hash", "verified"]
+)
 def test_accept_follows_the_citation_the_proposal_asserted(
     extraction_client,
     extraction_tenant,
