@@ -1571,6 +1571,7 @@ packages:
       - workers/src/fel_workers/ingestion/**
       - workers/src/fel_workers/consumer.py
       - workers/tests/**
+      - evals/harness/synthetic_sec.py # November 15: explicit synthetic acceptance timestamps preserve corpus-QA restatement fixtures under strict known-time ordering.
   - id: MCP-CUTOFF-PREDICATES
     issue: 394
     tasks: [] # MCP-301..304

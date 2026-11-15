@@ -16,8 +16,10 @@ implementation dispatched. Remaining #395 methods, context-contract decisions,
 different-vendor review of subsequent fixes, and lead merge gates remain open.
 No PR is marked merged and no canonical task checkbox changes here. #409 AC6
 already names the two fixture producers and their cross-stack test; the registry
-now records that bounded extension. #419 registers documentation ownership only,
-not any proposed `PRO-*` implementation.
+now records that bounded extension. #393 also owns the single synthetic
+corpus-QA producer file needed to supply explicit fixture acceptance timestamps
+under strict known-publication ordering; expected metrics stay unchanged.
+#419 registers documentation ownership only, not any proposed `PRO-*` implementation.
 
 The November 14 Sol review reproduced both #415 acceptance failures against
 PostgreSQL (41 other targeted tests passed). For #417, 100 existing scoped tests
