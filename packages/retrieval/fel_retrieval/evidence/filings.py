@@ -217,26 +217,18 @@ def list_filings(
 
     ``not_found`` when the company is not served or has no visible filing;
     ``invalid_input`` when the reference names more than one visible company.
+    A cursor signature is checked before any query. Binding and expiry are
+    checked only once exactly one company is visible.
     """
     check_request(request)
     visible = visibility_params(context)
     # EDGAR form types are upper case; normalise so "10-k" lists 10-K filings.
     forms = None if request.forms is None else sorted({form.upper() for form in request.forms})
     candidates = match_companies(companies, request.company, partial=False)
-    position = None
     if request.cursor is not None:
-        if len(candidates) == 1:
-            # Unique cohort identifiers can reject any invalid cursor before SQL.
-            binding = {
-                "tool": "list_filings",
-                "entities": [candidates[0].entity_id],
-                "forms": forms,
-            }
-            position = _filing_position(cursors.decode(request.cursor, context, binding))
-        else:
-            # Shared names need visibility to resolve the scope, but never send
-            # a forged or malformed token as far as the database boundary.
-            cursors.validate_signature(request.cursor)
+        # Signature only. Binding and expiry wait until one company is visible,
+        # so a hidden issuer stays indistinguishable from an unknown name.
+        cursors.validate_signature(request.cursor)
     with public_read_session(conn):
         stats = _form_stats(conn, visible, candidates)
         shown = [company for company in candidates if company.entity_id in stats]
@@ -247,7 +239,8 @@ def list_filings(
         # Bind the one visible resolved company, so an invisible namesake cannot
         # make a full name and that issuer's exact identifiers incompatible.
         binding = {"tool": "list_filings", "entities": [shown[0].entity_id], "forms": forms}
-        if request.cursor is not None and position is None:
+        position = None
+        if request.cursor is not None:
             position = _filing_position(cursors.decode(request.cursor, context, binding))
         after_public, after_id = (None, None) if position is None else position
         page = {

@@ -210,20 +210,50 @@ def test_list_filings_pages_newest_first_with_a_bound_cursor(world: Any) -> None
 
 
 def test_a_cursor_is_rejected_before_any_database_work(world: Any) -> None:
-    rows = [_page_row(3, LATE), _page_row(2, EARLY), _page_row(1, EARLY)]
-    cursor = world.listing({"GROUP BY": _stats(CRM), "LIMIT": rows}, forms=("10-K",)).next_cursor
-    changed: list[dict[str, Any]] = [{"forms": ("8-K",)}, {"forms": None}, {"company": NOW.cik}]
-    for request in changed:
-        with pytest.raises(i.EvidenceReadError, check=lambda e: e.field == "cursor"):
-            world.listing({}, **{"forms": ("10-K",), "cursor": cursor, **request})
+    forged = "not-a-signed-cursor"
+    # A bad signature is the same refusal for a cohort member with nothing visible
+    # and for a name that is not served, and neither consults the database.
+    for company in (NOW.cik, NOW.ticker, NOW.entity_id, NOW.name, "no such company"):
+        with pytest.raises(
+            i.EvidenceReadError,
+            check=lambda e: (e.code, e.field) == ("invalid_input", "cursor"),
+        ):
+            world.listing({}, company=company, cursor=forged)
         assert world.conn.statements == []
-    later = dataclasses.replace(world.context, effective_as_of=AS_OF + timedelta(microseconds=1))
-    world.context = later
-    with pytest.raises(i.EvidenceReadError, check=lambda e: e.code == "invalid_input"):
-        world.listing({}, forms=("10-K",), cursor=cursor)
     with pytest.raises(i.EvidenceReadError, check=lambda e: e.field == "limit"):
         world.listing({}, limit=51)
     assert world.conn.statements == []
+
+
+def test_a_signed_cursor_for_a_hidden_company_is_not_found_like_an_unknown_name(
+    world: Any,
+) -> None:
+    rows = [_page_row(3, LATE), _page_row(2, EARLY), _page_row(1, EARLY)]
+    cursor = world.listing({"GROUP BY": _stats(CRM), "LIMIT": rows}, forms=("10-K",)).next_cursor
+
+    def outcome(**request: Any) -> tuple[dict[str, Any], list[str]]:
+        with pytest.raises(i.EvidenceReadError) as raised:
+            world.listing({}, **{"forms": ("10-K",), "cursor": cursor, **request})
+        error = vars(raised.value)
+        assert error == vars(i.EvidenceReadError.not_found())
+        sql = world.conn.sql
+        assert any("GROUP BY" in statement for statement in sql)
+        assert not any("LIMIT" in statement for statement in sql)
+        return error, sql
+
+    unknown = outcome(company="no such company")
+    for company in (NOW.cik, NOW.ticker, NOW.entity_id, NOW.name):
+        assert outcome(company=company) == unknown
+    # The issuer is in the cohort, but nothing is visible, so scope mismatches
+    # and expiry stay behind not_found. The form-stats query may run; the page must not.
+    assert outcome(company="CRM", forms=("8-K",)) == unknown
+    assert outcome(company="CRM", forms=None) == unknown
+    original = world.context
+    world.context = dataclasses.replace(original, effective_as_of=AS_OF + timedelta(microseconds=1))
+    assert outcome(company="CRM") == unknown
+    world.context = original
+    world.clock.now += MAX_LIFETIME
+    assert outcome(company="CRM") == outcome(company="no such company")
 
 
 def test_an_expired_cursor_is_cursor_expired(world: Any) -> None:
@@ -231,8 +261,55 @@ def test_an_expired_cursor_is_cursor_expired(world: Any) -> None:
     cursor = world.listing({"GROUP BY": _stats(CRM), "LIMIT": rows}).next_cursor
     world.clock.now += MAX_LIFETIME
     with pytest.raises(i.EvidenceReadError, check=lambda e: e.code == "cursor_expired"):
-        world.listing({}, cursor=cursor)
-    assert world.conn.statements == []
+        world.listing({"GROUP BY": _stats(CRM)}, cursor=cursor)
+    assert any("GROUP BY" in statement for statement in world.conn.sql)
+    assert not any("LIMIT" in statement for statement in world.conn.sql)
+
+
+def test_a_visible_company_rejects_a_cursor_for_another_scope_after_the_stats_query(
+    world: Any,
+) -> None:
+    rows = [_page_row(3, LATE), _page_row(2, EARLY), _page_row(1, EARLY)]
+    cursor = world.listing({"GROUP BY": _stats(CRM), "LIMIT": rows}, forms=("10-K",)).next_cursor
+    visible = {"GROUP BY": _stats(CRM, NOW)}
+
+    def rejected(**request: Any) -> i.EvidenceReadError:
+        with pytest.raises(i.EvidenceReadError) as raised:
+            world.listing(visible, **{"forms": ("10-K",), "cursor": cursor, **request})
+        assert any("GROUP BY" in statement for statement in world.conn.sql)
+        assert not any("LIMIT" in statement for statement in world.conn.sql)
+        return raised.value
+
+    for request in ({"forms": ("8-K",)}, {"forms": None}, {"company": NOW.cik}):
+        error = rejected(**request)
+        assert (error.code, error.field) == ("invalid_input", "cursor")
+    original = world.context
+    world.context = dataclasses.replace(original, effective_as_of=AS_OF + timedelta(microseconds=1))
+    error = rejected()
+    world.context = original
+    assert (error.code, error.field) == ("invalid_input", "cursor")
+
+
+def test_a_binding_mismatch_is_reported_before_expiry(world: Any) -> None:
+    rows = [_page_row(3, LATE), _page_row(2, EARLY), _page_row(1, EARLY)]
+    cursor = world.listing({"GROUP BY": _stats(CRM), "LIMIT": rows}, forms=("10-K",)).next_cursor
+    world.clock.now += MAX_LIFETIME
+    visible = {"GROUP BY": _stats(CRM, NOW)}
+
+    def rejected(**request: Any) -> None:
+        with pytest.raises(i.EvidenceReadError) as raised:
+            world.listing(visible, **{"forms": ("10-K",), "cursor": cursor, **request})
+        assert (raised.value.code, raised.value.field) == ("invalid_input", "cursor")
+        assert any("GROUP BY" in statement for statement in world.conn.sql)
+        assert not any("LIMIT" in statement for statement in world.conn.sql)
+
+    rejected(forms=("8-K",))
+    rejected(forms=None)
+    rejected(company=NOW.cik)
+    original = world.context
+    world.context = dataclasses.replace(original, effective_as_of=AS_OF + timedelta(microseconds=1))
+    rejected()
+    world.context = original
 
 
 def test_a_hidden_company_lists_like_an_unknown_one(world: Any) -> None:
@@ -376,8 +453,11 @@ def test_forms_are_upper_cased_and_cursors_bind_the_resolved_company(world: Any)
     # The same company and forms, spelled differently, continue the listing.
     for spelling in ("crm", "1108524", CRM.entity_id):
         world.listing(answers, company=spelling, forms=("8-k", "10-K"), cursor=first.next_cursor)
-    with pytest.raises(i.EvidenceReadError, check=lambda e: e.field == "cursor"):
+    # NOW is in the cohort and has no visible filing, so a foreign cursor is not_found.
+    with pytest.raises(i.EvidenceReadError) as raised:
         world.listing(answers, company="NOW", forms=("10-K", "8-K"), cursor=first.next_cursor)
+    assert vars(raised.value) == vars(i.EvidenceReadError.not_found())
+    assert not any("LIMIT" in sql for sql in world.conn.sql)
 
 
 def test_shared_name_cursor_continues_by_each_identifier_of_the_visible_company(world: Any) -> None:
