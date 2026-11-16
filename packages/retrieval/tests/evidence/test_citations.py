@@ -326,6 +326,108 @@ def test_a_blocked_object_read_is_deadline_exceeded(read: Any) -> None:
     assert "x" * 40 not in error.message
 
 
+@pytest.fixture()
+def deadline_clock(monkeypatch: Any) -> Any:
+    class Clock:
+        now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    clock = Clock()
+    monkeypatch.setattr(citations, "monotonic", clock, raising=False)
+    return clock
+
+
+def _charge_queries(fake_conn: Any, monkeypatch: Any, clock: Any, seconds: float) -> None:
+    original = fake_conn.execute
+
+    def execute(self: Any, query: str, params: Any = None) -> Any:
+        result = original(self, query, params)
+        if "source_spans" in query or "min(d.public_at)" in query:
+            clock.now += seconds
+        return result
+
+    monkeypatch.setattr(fake_conn, "execute", execute)
+
+
+def test_database_time_exhausts_the_citation_deadline_without_starting_storage(
+    read: Any, fake_conn: Any, monkeypatch: Any, deadline_clock: Any
+) -> None:
+    _charge_queries(fake_conn, monkeypatch, deadline_clock, 0.075)
+    with _raises("deadline_exceeded"):
+        read(timeout=0.05)
+    assert read.texts.reads == 0
+
+
+def test_storage_receives_only_the_citation_deadline_remaining_after_sql(
+    read: Any, fake_conn: Any, monkeypatch: Any, deadline_clock: Any
+) -> None:
+    _charge_queries(fake_conn, monkeypatch, deadline_clock, 0.02)
+    waits = []
+
+    def storage(texts: Any, key: str, limit: int, *, timeout: float) -> bytes:
+        waits.append(timeout)
+        result: bytes = texts.read(key, limit)
+        return result
+
+    monkeypatch.setattr(citations, "_read_with_deadline", storage)
+    assert read(timeout=0.05).citation.text == "B"
+    assert waits == [pytest.approx(0.01)]
+
+
+@pytest.mark.parametrize("phase", ["storage", "hash", "result"])
+def test_late_storage_hashing_or_result_assembly_cannot_return_success(
+    read: Any, monkeypatch: Any, deadline_clock: Any, phase: str
+) -> None:
+    if phase == "storage":
+        original = read.texts.read
+
+        def storage(key: str, limit: int) -> bytes:
+            result: bytes = original(key, limit)
+            deadline_clock.now = 0.06
+            return result
+
+        monkeypatch.setattr(read.texts, "read", storage)
+    elif phase == "hash":
+        original_hash = citations.content_sha256
+
+        def hash_text(text: str) -> str:
+            result: str = original_hash(text)
+            deadline_clock.now = 0.06
+            return result
+
+        monkeypatch.setattr(citations, "content_sha256", hash_text)
+    else:
+        original_result = i.CitationResult
+
+        def result(**kwargs: Any) -> Any:
+            made = original_result(**kwargs)
+            deadline_clock.now = 0.06
+            return made
+
+        monkeypatch.setattr(i, "CitationResult", result)
+    with _raises("deadline_exceeded"):
+        read(timeout=0.05)
+
+
+def test_an_expired_citation_call_never_creates_a_storage_worker(
+    read: Any, monkeypatch: Any, deadline_clock: Any
+) -> None:
+    starts = []
+    original_start = threading.Thread.start
+
+    def start(self: threading.Thread) -> None:
+        starts.append(self)
+        original_start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", start)
+    with _raises("deadline_exceeded"):
+        read(timeout=0)
+    assert starts == []
+    assert read.texts.reads == 0
+
+
 def test_timed_out_reads_keep_bounded_slots_until_the_store_finishes(
     read: Any, monkeypatch: Any
 ) -> None:
