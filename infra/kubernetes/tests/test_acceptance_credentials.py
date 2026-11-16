@@ -104,6 +104,14 @@ class AcceptanceCredentialTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assert_refused(self.runner.acceptance_environment)
 
+    def test_service_link_shaped_pg_variable_is_still_rejected(self):
+        self.initialize()
+        # The chart disables service links; the runner still refuses inherited
+        # PG variables rather than weakening its connection-override boundary.
+        with patch.dict(os.environ, {"PG_LAB_WEB_SERVICE_HOST": "10.96.0.1"}):
+            self.assert_refused(self.runner.initialize_credential)
+            self.assert_refused(self.runner.acceptance_environment)
+
     def test_shell_entrypoint_rejects_inherited_url_before_loading_database_driver(self):
         binaries = self.root / "bin"
         binaries.mkdir()

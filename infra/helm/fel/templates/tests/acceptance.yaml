@@ -18,6 +18,7 @@ spec:
         app.kubernetes.io/component: acceptance
     spec:
       restartPolicy: Never
+      enableServiceLinks: false
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:

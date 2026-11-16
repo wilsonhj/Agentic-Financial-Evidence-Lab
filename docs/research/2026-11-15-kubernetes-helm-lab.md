@@ -166,7 +166,9 @@ data and evidence storage use `emptyDir`; no existing database can be supplied
 through chart values. The runner validates its exact local target before
 migrations. Do not inject real credentials into either lab image or Pod.
 
-Run the credential and build-context regression checks without a cluster:
+Run the credential, build-context and lab-script regression checks without a
+cluster. With the pinned Helm CLI on `PATH`, the same command also checks chart
+rendering, controller hook modes and service-link isolation:
 
 ```bash
 python3 -m unittest discover -s infra/kubernetes/tests -v
@@ -176,10 +178,18 @@ Logs are available after a Job completes. Browser traces and files inside a
 terminated container are not exported by this first version; `kubectl cp`
 requires a running container. For durable trace bundles, add an explicitly
 owned artifact volume/export step before container exit. Capture logs before
-rerunning a test because hook recreation removes the prior Job. A rendered
-NetworkPolicy alone does not establish isolation: enforcement depends on the
-cluster CNI. kind's default kindnet does not enforce NetworkPolicy. The
-loopback bind and absent database Service remain intentional.
+rerunning a test: `lab.sh test` removes both previous hook Jobs before starting
+the next attempt, including an acceptance hook that a failed smoke test would
+otherwise leave untouched. Artifact-collection failures emit warnings and
+preserve Helm's test exit status.
+
+A rendered NetworkPolicy alone does not establish isolation: enforcement depends
+on the cluster CNI. The pinned kind 0.33.0 kindnet includes a
+[NetworkPolicy controller](https://github.com/kubernetes-sigs/kind/blob/v0.33.0/images/kindnetd/cmd/kindnetd/main.go#L217-L269),
+which can fail open. Verify controller startup and deny probes on the running
+cluster before claiming enforcement; the recorded acceptance run does not
+establish it. The loopback bind and absent database Service remain intentional. Pod
+service links are disabled so Services cannot inject `PG*` connection overrides.
 
 Useful diagnostics, always with the lab kubeconfig:
 

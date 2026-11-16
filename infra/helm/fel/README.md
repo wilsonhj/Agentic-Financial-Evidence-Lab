@@ -22,7 +22,12 @@ volume; PostgreSQL and the runner read that file through read-only mounts.
 No password value is stored in the chart or image. The `extraction-ci` target
 matches the existing CI acceptance configuration.
 An ingress/egress deny policy selects the test Pod; its enforcement depends on
-the cluster CNI, and kind's default kindnet does not enforce NetworkPolicy.
+the cluster CNI. The pinned kind 0.33.0 kindnet includes a
+[NetworkPolicy controller](https://github.com/kubernetes-sigs/kind/blob/v0.33.0/images/kindnetd/cmd/kindnetd/main.go#L217-L269).
+Verify controller startup and deny probes on the running cluster before claiming
+enforcement; the controller can fail open. The recorded acceptance run does not
+establish policy enforcement. Service links are disabled so unrelated Services
+cannot inject `PG*` variables that the runner rejects as connection overrides.
 
 All data uses `emptyDir`. Pod deletion discards the database, canonical evidence,
 marker and manifest together. No PVC, live provider, public ingress or arbitrary
@@ -39,7 +44,8 @@ with both Helm and Argo CD. Only one controller's hook annotations are emitted.
 
 The test Job has no retry and a 15-minute deadline. Helm retains it until the
 next test (`before-hook-creation`) or explicit cleanup. Capture logs before
-rerunning; [hook resources](https://helm.sh/docs/topics/charts_hooks/) are not managed by `helm uninstall`. Test-result files
+rerunning; `lab.sh test` removes both prior test Jobs before launching the next
+attempt so a skipped hook cannot supply stale passing logs. [Hook resources](https://helm.sh/docs/topics/charts_hooks/) are not managed by `helm uninstall`. Test-result files
 inside the terminated runner cannot be retrieved using `kubectl cp`; use the
 runner's log artifacts or collect files while it is running. The Web health
 probe checks process startup, not API, provider or database readiness.

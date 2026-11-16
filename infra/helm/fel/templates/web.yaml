@@ -17,6 +17,7 @@ spec:
         {{- include "fel.labels" . | nindent 8 }}
         app.kubernetes.io/component: fixture-web
     spec:
+      enableServiceLinks: false
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

@@ -83,10 +83,15 @@ case "$action" in
     need helm kubectl
     owned
     mkdir -p "$state/evidence"
+    # Helm stops after the first failed hook. Remove both retained Jobs now so
+    # a skipped acceptance hook cannot contribute a previous run's passing log.
+    # Every target is a fixed hook name in this owned cluster and namespace.
+    kube -n "$namespace" delete job "$release-web-smoke" "$release-acceptance" \
+      --ignore-not-found=true --wait=true
     # Helm test launches a fresh DB/API/worker/browser stack in its own Job.
     # This is separate from the interactive fixture Deployment's health probe.
     set +e
-    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
     helm_lab test "$release" -n "$namespace" --timeout 16m 2>&1 | tee "$state/evidence/helm-test-$stamp.log"
     result=${PIPESTATUS[0]}
     set -e
@@ -97,8 +102,10 @@ case "$action" in
       kube -n "$namespace" logs "job/$release-$job" -c "$container" \
         > "$state/evidence/$job-$container-$stamp.log" 2>&1 || true
     done
-    kube -n "$namespace" get pods,jobs -o wide > "$state/evidence/workloads-$stamp.txt"
-    kube -n "$namespace" get events --sort-by=.metadata.creationTimestamp > "$state/evidence/events-$stamp.txt"
+    kube -n "$namespace" get pods,jobs -o wide > "$state/evidence/workloads-$stamp.txt" || \
+      echo 'Could not collect workload metadata; Helm test status is preserved.' >&2
+    kube -n "$namespace" get events --sort-by=.metadata.creationTimestamp > "$state/evidence/events-$stamp.txt" || \
+      echo 'Could not collect events; Helm test status is preserved.' >&2
     exit "$result"
     ;;
   status)
@@ -119,7 +126,11 @@ case "$action" in
     rm -f "$state/owner" "$state/node-id" "$config"
     echo "Deleted $cluster. Evidence remains in $state/evidence."
     ;;
-  *)
+  help|-h|--help)
     echo 'Usage: lab.sh doctor|build|create|deploy|test|status|open|delete'
+    ;;
+  *)
+    echo 'Usage: lab.sh doctor|build|create|deploy|test|status|open|delete' >&2
+    exit 2
     ;;
 esac
