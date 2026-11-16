@@ -93,7 +93,7 @@ jobs:
     services:
       postgres:
         # pgvector required by db/migrations/0003_retrieval_core.sql (halfvec + HNSW).
-        image: pgvector/pgvector:0.8.5-pg17
+        image: pgvector/pgvector:0.8.6-pg18
         env:
           POSTGRES_USER: fel
           POSTGRES_PASSWORD: fel-ci-only
@@ -160,6 +160,22 @@ jobs:
             "$RUNNER_TEMP/runtime-$build/bin/python" -I scripts/runtime/verify.py > "$RUNNER_TEMP/runtime-$build.json"
           done
           diff -u "$RUNNER_TEMP/runtime-one.json" "$RUNNER_TEMP/runtime-two.json"
+      # The hosted API runs this image on the Vercel container runtime
+      # (ADR-0035). Build it from the same lock and installer, then prove it
+      # starts, answers /health, and runs as the unprivileged user.
+      - name: Build the API container image
+        run: docker build -f infra/docker/api.Dockerfile -t fel-api:ci .
+      - name: Start the API image and probe /health
+        run: |
+          docker run -d --name fel-api -p 8080:8080 fel-api:ci
+          ok=0
+          for _ in $(seq 30); do
+            if curl -fsS http://localhost:8080/health; then ok=1; break; fi
+            sleep 1
+          done
+          docker logs fel-api
+          test "$ok" -eq 1
+          test "$(docker exec fel-api id -u)" = "10001"
 
   database:
     name: DB — migration and backup-restore smoke
@@ -167,7 +183,7 @@ jobs:
     services:
       postgres:
         # pgvector required by db/migrations/0003_retrieval_core.sql (halfvec + HNSW).
-        image: pgvector/pgvector:0.8.5-pg17
+        image: pgvector/pgvector:0.8.6-pg18
         env:
           POSTGRES_USER: fel
           POSTGRES_PASSWORD: fel-ci-only
@@ -200,7 +216,7 @@ jobs:
           python scripts/db/migrate.py --check
       # Run the smoke test inside the service container so the client tools
       # (psql/pg_dump/pg_restore) always match the server version exactly —
-      # the runner's postgresql-client lags the pgvector/pgvector:0.8.5-pg17
+      # the runner's postgresql-client lags the pgvector/pgvector:0.8.6-pg18
       # image, and pg_dump refuses to dump a newer server. db/migrations is
       # still copied in: the harness step below reads tests/ from /tmp.
       - name: Back up and restore the migrated database
