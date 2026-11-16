@@ -3,7 +3,9 @@ name = "fel-workers"
 version = "0.0.0"
 description = "Financial Evidence Lab asynchronous workers"
 requires-python = ">=3.11"
-dependencies = ["httpx>=0.27.2", "psycopg[binary]>=3.2"]
+# tzdata: the SEC publication rule resolves America/New_York through zoneinfo.
+# A Linux image can lack the system zone database (ADR-0034 Amendment 3).
+dependencies = ["httpx>=0.27.2", "psycopg[binary]>=3.2", "tzdata>=2025.2"]
 
 [build-system]
 requires = ["setuptools>=68"]
