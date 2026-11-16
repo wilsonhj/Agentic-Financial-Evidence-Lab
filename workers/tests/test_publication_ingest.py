@@ -259,12 +259,12 @@ def test_fetch_stores_acceptance_and_derived_publication_time(
 @pytest.mark.parametrize(
     "override",
     [
-        {"acceptance_datetime": "2026-05-05T08:05:11"},  # no offset: never assumed
         {"acceptance_datetime": 20260505080511},
+        {"acceptance_datetime": {"secret": "value"}},
         {"filed_on": "2026-05-05T00:00:00+00:00"},  # an instant is not a filing date
     ],
 )
-def test_unusable_acceptance_input_fails_before_fetch_without_echo(
+def test_invalid_acceptance_type_or_filing_date_fails_before_fetch_without_echo(
     corpus_conn: psycopg.Connection,
     sec: FixtureSecClient,
     override: dict[str, Any],
@@ -281,6 +281,141 @@ def test_unusable_acceptance_input_fails_before_fetch_without_echo(
         )
     assert "2026" not in str(excinfo.value), "the untrusted payload was echoed"
     assert corpus_conn.execute("SELECT count(*) FROM documents").fetchone() == (0,)
+
+
+@pytest.mark.parametrize(
+    "acceptance",
+    [
+        "2026-05-05T08:05:11",
+        "untrusted-acceptance-secret",
+        "0001-01-01T00:00:00+05:00",
+        "9999-12-31T23:59:59-01:00",
+        "0001-01-01T00:00:00Z",
+    ],
+)
+def test_unusable_acceptance_still_ingests_with_unknown_publication(
+    corpus_conn: psycopg.Connection,
+    sec: FixtureSecClient,
+    acceptance: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _ingest(corpus_conn, sec, [A], acceptance_datetime=acceptance)
+    assert _publication(corpus_conn) == {A: UNKNOWN}
+    assert _links(corpus_conn) == []
+    assert "storing unknown publication" in caplog.text
+    assert str(acceptance) not in caplog.text
+
+
+@pytest.mark.parametrize("order", [(A, B), (B, A)])
+def test_publication_repairs_before_freezing_links_and_allows_later_backfill(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, order: tuple[str, str]
+) -> None:
+    _ingest(corpus_conn, sec, order)
+    pin = _publish(corpus_conn, A, B)
+    assert _links(corpus_conn) == [(B, A, 2)]
+    assert pipeline.active_corpus_version(corpus_conn) == pin
+    _ingest(corpus_conn, sec, [C], legacy=True)
+    report = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+    assert report.updated == 1
+    assert _links(corpus_conn) == LINKS
+    assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
+
+
+@pytest.mark.parametrize("superseded", [False, True])
+def test_publication_rolls_back_when_repair_would_change_a_retained_pin(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, superseded: bool
+) -> None:
+    _ingest(corpus_conn, sec, [A, C])
+    _publish(corpus_conn, A, C)
+    if superseded:
+        _pin(corpus_conn, version_ids=[])
+    _ingest(corpus_conn, sec, [B])
+    draft = create_corpus_version(
+        corpus_conn, label="must remain draft", document_version_ids=[_version(corpus_conn, B)]
+    )
+    before = _row_versions(corpus_conn)
+    statuses = corpus_conn.execute(
+        "SELECT id, status, is_active FROM corpus_versions ORDER BY id"
+    ).fetchall()
+    with corpus_conn.transaction():
+        with pytest.raises(PublishedPinMutationError):
+            publish_corpus_version(corpus_conn, draft)
+        assert _row_versions(corpus_conn) == before
+    assert (
+        corpus_conn.execute(
+            "SELECT id, status, is_active FROM corpus_versions ORDER BY id"
+        ).fetchall()
+        == statuses
+    )
+    assert _links(corpus_conn) == [(B, A, 2), (C, A, 2)]
+
+
+@pytest.mark.parametrize("order", [(A, B), (B, A)])
+def test_same_session_publication_uses_known_acceptance_order(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, order: tuple[str, str]
+) -> None:
+    times = {A: "2026-05-08T22:05:00Z", B: "2026-05-08T22:15:00Z"}
+    for accession in order:
+        _ingest(
+            corpus_conn,
+            sec,
+            [accession],
+            filed_on="2026-05-11",
+            acceptance_datetime=times[accession],
+        )
+    assert _publication(corpus_conn)[A][1] == _publication(corpus_conn)[B][1]
+    if order == (A, B):
+        assert _links(corpus_conn) == [(B, A, 2)]
+    repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert _links(corpus_conn) == [(B, A, 2)]
+    before = _row_versions(corpus_conn)
+    _publish(corpus_conn, A, B)
+    assert _row_versions(corpus_conn) == before
+
+
+@pytest.mark.parametrize("order", [(B, A, C), (C, A, B)])
+def test_acceptance_order_beats_accession_when_publication_times_tie(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, order: tuple[str, str, str]
+) -> None:
+    times = {B: "2026-05-08T22:05:00Z", A: "2026-05-08T22:10:00Z", C: "2026-05-08T22:15:00Z"}
+    for accession in order:
+        _ingest(
+            corpus_conn,
+            sec,
+            [accession],
+            filed_on="2026-05-11",
+            acceptance_datetime=times[accession],
+        )
+    if order == (B, A, C):
+        assert _links(corpus_conn) == [(A, B, 2), (C, A, 2)]
+    repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert _links(corpus_conn) == [(A, B, 2), (C, A, 2)]
+
+
+def test_equal_publication_reparse_uses_the_stored_acceptance(
+    corpus_conn: psycopg.Connection,
+    sec: FixtureSecClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for accession, acceptance in ((A, "22:05"), (B, "22:10"), (C, "22:15")):
+        _ingest(
+            corpus_conn,
+            sec,
+            [accession],
+            filed_on="2026-05-11",
+            acceptance_datetime=f"2026-05-08T{acceptance}:00Z",
+        )
+    monkeypatch.setattr(pipeline, "PARSER_VERSION", "acceptance-order-reparse")
+    _ingest(corpus_conn, sec, [B], legacy=True, filed_on="2026-05-12")
+    targets = corpus_conn.execute(
+        "SELECT td.accession, count(*)::int FROM financial_facts f"
+        " JOIN financial_facts t ON t.id = f.restates"
+        " JOIN document_versions tv ON tv.id = t.document_version_id"
+        " JOIN documents td ON td.id = tv.document_id"
+        " WHERE f.document_version_id = %s GROUP BY 1",
+        (_version(corpus_conn, B),),
+    ).fetchall()
+    assert targets == [(A, 2)]
 
 
 @pytest.mark.parametrize(
@@ -1022,7 +1157,7 @@ def test_publish_serializes_with_outer_repair_transaction(
         if thread.ident is not None:
             thread.join(6)
     assert not thread.is_alive()
-    if publish_first:
+    if publish_first and operation == "backfill":
         assert len(failures) == 1 and isinstance(failures[0], PublishedPinMutationError), failures
         assert _row_versions(corpus_conn) == before
     else:
@@ -1089,7 +1224,18 @@ def test_repair_cannot_clear_retained_legacy_unknown_edges(
         "UPDATE documents SET accepted_at = NULL, public_at = NULL,"
         " public_at_basis = NULL, timestamp_precision = 'date'"
     )
-    _pin(corpus_conn)
+    # Model a retained pin created by the old publisher, which did not repair.
+    # The supported publisher now clears this edge before activating a new pin.
+    legacy_pin = create_corpus_version(
+        corpus_conn,
+        label="legacy retained unknown edge",
+        document_version_ids=[_version(corpus_conn, A), _version(corpus_conn, C)],
+    )
+    corpus_conn.execute(
+        "UPDATE corpus_versions SET status = 'active', is_active = true,"
+        " published_at = now() WHERE id = %s",
+        (legacy_pin,),
+    )
     before = _row_versions(corpus_conn)
     with pytest.raises(PublishedPinMutationError):
         repair_restatement_links(corpus_conn, entity_id=ENTITY)

@@ -182,8 +182,8 @@ def handle_sec_filing_fetch(
     # Publication time (ADR-0034, #393): the SEC acceptance string is carried
     # uninterpreted from discovery and read by exactly one function. The rule
     # compares calendar dates, so an instant in filed_on cannot stand in for
-    # the filing date. Unusable input fails before I/O and is never echoed;
-    # an absent acceptance time is stored as unknown, never estimated.
+    # the filing date. An unusable acceptance time is stored as unknown,
+    # never estimated or echoed; an invalid filing-date shape still fails.
     publication = UNKNOWN_PUBLICATION
     acceptance = payload.get("acceptance_datetime")
     if acceptance is not None and acceptance != "":
@@ -191,7 +191,10 @@ def handle_sec_filing_fetch(
             r"[0-9]{4}-[0-9]{2}-[0-9]{2}", filed_on_text
         ):
             raise ValueError("acceptance time needs a string and a YYYY-MM-DD filing date")
-        publication = derive_publication(acceptance, filed_at.date())
+        try:
+            publication = derive_publication(acceptance, filed_at.date())
+        except ValueError:
+            log.warning("unverifiable acceptance time; storing unknown publication")
     # These are explicit producer-supplied dates, never inferred from filing
     # time or document text. An incomplete/invalid pair must fail before I/O.
     period_start = period_end = None

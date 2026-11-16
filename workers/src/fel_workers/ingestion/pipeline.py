@@ -55,6 +55,7 @@ from fel_workers.ingestion.raw_store import (
     content_address,
     document_id_for_accession,
 )
+from fel_workers.ingestion.restatement import repair_restatement_links
 from fel_workers.ingestion.xbrl import NORMALIZER_VERSION, PriorFact, normalize_facts
 
 # COMPANY_FACTS_FORM is defined in raw_store (not in company_facts.py, which
@@ -125,14 +126,16 @@ def _prior_canonical_facts(
     entity_id: str,
     public_before: datetime | None,
     document_id: str,
+    accepted_before: datetime | None = None,
 ) -> dict[str, PriorFact]:
     """Latest canonical fact per key from filings published before another.
 
-    Only known, strictly earlier public_at instants establish predecessors.
+    A known earlier public_at establishes a predecessor; equal public_at
+    requires both known accepted_at instants to be strictly ordered.
     Filing dates may be adjusted by the SEC, and unknown timestamps establish
-    no ordering, even across dates. Equal public instants are not predecessors.
+    no ordering, even across dates. Tied or unknown acceptance adds no ordering.
     The latest successfully parsed version supplies canonical facts, ordered
-    by public_at DESC, accession DESC and fact id for deterministic ties.
+    by public_at DESC, accepted_at DESC, accession DESC and fact id for ties.
     Excluding this document also prevents linking to an older parse of itself.
     ``backfill.repair_restatement_links`` applies the same relation.
 
@@ -155,7 +158,9 @@ def _prior_canonical_facts(
               AND ff.duplicate_of IS NULL
               AND dv.status = 'parsed'
               AND d.id <> %(document_id)s
-              AND d.public_at < %(public_at)s::timestamptz
+              AND (d.public_at < %(public_at)s::timestamptz
+                   OR (d.public_at = %(public_at)s::timestamptz
+                       AND d.accepted_at < %(accepted_at)s::timestamptz))
               AND d.form IS DISTINCT FROM %(company_facts)s
               AND dv.id = (
                   SELECT dv2.id FROM document_versions dv2
@@ -163,13 +168,14 @@ def _prior_canonical_facts(
                   ORDER BY dv2.created_at DESC, dv2.id DESC
                   LIMIT 1
               )
-            ORDER BY ff.fact_key, d.public_at DESC,
+            ORDER BY ff.fact_key, d.public_at DESC, d.accepted_at DESC NULLS LAST,
                      d.accession DESC, ff.id
             """,
             {
                 "entity_id": entity_id,
                 "document_id": document_id,
                 "public_at": public_before,
+                "accepted_at": accepted_before,
                 "company_facts": COMPANY_FACTS_FORM,
             },
         ).fetchall()
@@ -335,7 +341,7 @@ def ingest_filing(
             # Use that persisted publication time even when an old queued job
             # lacks acceptance data or carries a stale filing date.
             held = conn.execute(
-                "SELECT public_at FROM documents WHERE id = %s", (stored.document_id,)
+                "SELECT public_at, accepted_at FROM documents WHERE id = %s", (stored.document_id,)
             ).fetchone()
             if held is None:  # pragma: no cover — raw store just established it
                 raise RuntimeError("stored document is missing")
@@ -343,6 +349,7 @@ def ingest_filing(
                 conn,
                 entity_id=entity_id,
                 public_before=held[0],
+                accepted_before=held[1],
                 document_id=stored.document_id,
             )
             facts = normalize_facts(
@@ -558,7 +565,7 @@ def create_corpus_version(
 def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str) -> None:
     """Atomically make a draft corpus version the single active one.
 
-    Both updates happen in one transaction; readers see either the old or
+    Restatement repair and both updates happen in one transaction; readers see either the old or
     the new active pointer, never zero or two. The shared transaction lock
     serializes publishers with each other and with publication/edge repairs
     until outer commit, so of two publishers the later one wins and the
@@ -570,6 +577,22 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
     try:
         with conn.transaction():
             lock_corpus_mutations(conn)
+            draft = conn.execute(
+                "SELECT status FROM corpus_versions WHERE id = %s", (corpus_version_id,)
+            ).fetchone()
+            if draft is None or draft[0] != "draft":
+                raise ValueError(
+                    f"corpus version {corpus_version_id} does not exist or is not a draft"
+                )
+            issuers = conn.execute(
+                "SELECT DISTINCT d.entity_id FROM corpus_version_documents c"
+                " JOIN document_versions v ON v.id = c.document_version_id"
+                " JOIN documents d ON d.id = v.document_id"
+                " WHERE c.corpus_version_id = %s ORDER BY d.entity_id",
+                (corpus_version_id,),
+            ).fetchall()
+            for (entity_id,) in issuers:
+                repair_restatement_links(conn, entity_id=str(entity_id))
             conn.execute(
                 "UPDATE corpus_versions SET is_active = false, status = 'superseded'"
                 " WHERE is_active"
