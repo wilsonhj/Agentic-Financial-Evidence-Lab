@@ -53,14 +53,39 @@ claims. All runtime lanes depend on #404; #393 also depends on #405.
   corpus pins as replayable.
 - `MCP-204` Order restatement targets by publication time, and test a
   same-day original and amendment; repair existing missed links idempotently.
+- ADR-0034 Amendment 3 (2026-11-16) adds three requirements to this package:
+  - Break a tie in publication time by known acceptance time. Equal or
+    unknown acceptance times establish no order. Test two after-hours
+    filings with one filing date.
+  - Run the restatement repair under the shared corpus lock before
+    `publish_corpus_version` activates a version.
+  - Store an unknown publication time at ingest when the acceptance string
+    is unusable; do not abort the filing. A job field that is not a string
+    keeps its input-validation error.
 
 ## MCP-CUTOFF-PREDICATES (#394)
 
 - `MCP-301` Switch the corpus listing and version-resolve predicates.
 - `MCP-302` Switch the reader target and sibling predicates.
-- `MCP-303` Switch the retrieval lane predicate.
+- `MCP-303` Switch the retrieval lane predicate. PR #417 carries this change
+  under ADR-0034 Amendment 3; #394 verifies it and adds no second predicate.
 - `MCP-304` Test same-day hidden, same-day visible, after-hours and
   no-publication-time cases, and justify every golden change.
+
+## MCP-ACCEPTANCE-HEADER (#441)
+
+Added on 2026-11-16 under ADR-0034 Amendment 3, decision 1. It follows #393.
+
+- `MCP-205` Add a workers-local header capability on the SEC client and
+  fetch the filing header before the corpus lock.
+- `MCP-206` Parse `ACCEPTANCE-DATETIME` as America/New_York wall-clock time
+  in the one derivation function. Use the submissions JSON only as a
+  cross-check; a disagreement, or an unusable header value, gives an unknown
+  publication time.
+- `MCP-207` Extend the backfill to re-derive rows that the JSON filled. Do
+  not write a document in an active or retained pin; report it.
+- `MCP-208` Supply synthetic headers to the eval harness fixtures and keep
+  the expected corpus-QA and reader-smoke results unchanged.
 
 ## MCP-EVIDENCE-READ (#395)
 
