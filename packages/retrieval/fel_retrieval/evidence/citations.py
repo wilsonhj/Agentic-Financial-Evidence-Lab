@@ -14,6 +14,7 @@ import re
 import threading
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any, Final, Protocol
 
 from fel_retrieval.evidence import interfaces as i
@@ -86,6 +87,22 @@ def _instant(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def _deadline_exceeded() -> i.EvidenceReadError:
+    return i.EvidenceReadError(
+        "deadline_exceeded",
+        "The request exceeded its time limit.",
+        retryable=True,
+        recovery="Narrow the request, then retry.",
+    )
+
+
+def _remaining(deadline: float) -> float:
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise _deadline_exceeded()
+    return remaining
+
+
 def _read_with_deadline(
     texts: CanonicalTextStore, key: str, limit: int, *, timeout: float
 ) -> bytes:
@@ -133,12 +150,7 @@ def _read_with_deadline(
         slots.release()
         raise
     if not finished.wait(timeout):
-        raise i.EvidenceReadError(
-            "deadline_exceeded",
-            "The request exceeded its time limit.",
-            retryable=True,
-            recovery="Narrow the request, then retry.",
-        )
+        raise _deadline_exceeded()
     result = outcome[0]
     if isinstance(result, BaseException):
         raise result
@@ -200,6 +212,7 @@ def get_citation(
     ``companies`` maps ``entity_id`` to the served cohort; evidence of an
     issuer outside it is not served.
     """
+    deadline = monotonic() + timeout
     check_request(ref)
     params: dict[str, Any] = visibility_params(context)
     if isinstance(ref, i.SpanIdRef):
@@ -220,13 +233,18 @@ def get_citation(
         coverage = conn.execute(_COVERAGE, scope)
         first, last = (instant.astimezone(UTC) for instant in coverage.fetchall()[0])
 
+    # SQL and canonical-text verification share one budget. An exhausted read
+    # must not start another backend operation, even if the store is fast.
+    _remaining(deadline)
     span_id, start, end = str(row[0]), int(row[1]), int(row[2])
     if len(rows) > 1:
         raise _integrity_error("more than one stored span answers the reference", span_id)
     # Reject before Citation or CoverageNote. The value stays out of the log and the message.
     if not isinstance(company.cik, str) or _CIK.fullmatch(company.cik) is None:
         raise _integrity_error("served cohort issuer is not a 10-digit CIK", span_id)
-    text = _verified_text(texts, str(row[7]), start, end, str(row[3]), span_id, timeout=timeout)
+    text = _verified_text(
+        texts, str(row[7]), start, end, str(row[3]), span_id, timeout=_remaining(deadline)
+    )
     form = None if row[11] is None else str(row[11])
     citation = i.Citation(
         span_id=span_id,
@@ -268,4 +286,7 @@ def get_citation(
         forms=() if form is None else (form,),
         date_range=i.DateRange(from_=first, to=last),
     )
-    return i.CitationResult(evidence_context=context, coverage_note=note, citation=citation)
+    result = i.CitationResult(evidence_context=context, coverage_note=note, citation=citation)
+    # Include decoding, hashing and result construction; a late success is not served.
+    _remaining(deadline)
+    return result
