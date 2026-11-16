@@ -28,6 +28,8 @@ from fel_retrieval.index_build import DBConnection
 
 MAX_CANONICAL_BYTES: Final = 4 * 1024 * 1024  # §7.4: canonical-text bytes per request
 READ_TIMEOUT_SECONDS: Final = 10.0  # §7.4: one tool call's total deadline
+MAX_OUTSTANDING_READS: Final = 16  # §7.4: replica tool-call concurrency ceiling
+_READ_SLOTS = threading.BoundedSemaphore(MAX_OUTSTANDING_READS)
 MAX_NOTE_CHARS: Final = 1000  # mcp-get-citation-output: coverage_note.text.maxLength
 _CIK: Final = re.compile(r"^[0-9]{10}$")  # mcp-citation company.cik
 _RETRY_AFTER_SECONDS: Final = 30
@@ -89,10 +91,21 @@ def _read_with_deadline(
 ) -> bytes:
     """Read off the caller thread. A store that blocks past ``timeout`` is ``deadline_exceeded``.
 
-    The worker is a daemon: abandoning it must not keep the process, or pytest, alive.
-    ``statement_timeout`` does not cover this read, and the SQL transaction has
-    already ended, so the deadline lives here.
+    Workers are daemons so a blocked store cannot prevent process shutdown.
+    A timed-out worker keeps its process-wide slot until the store actually
+    finishes, bounding outstanding reads even across sequential retries.
+    ``statement_timeout`` does not cover this read; the SQL transaction has ended.
     """
+    # Capture the semaphore: the worker owns exactly the slot it acquired.
+    slots = _READ_SLOTS
+    if not slots.acquire(blocking=False):
+        raise i.EvidenceReadError(
+            "overloaded",
+            "Evidence storage is busy.",
+            retryable=True,
+            recovery="Wait for outstanding reads to finish, then retry.",
+            retry_after_seconds=_RETRY_AFTER_SECONDS,
+        )
     outcome: list[bytes | BaseException] = []
     finished = threading.Event()
 
@@ -102,9 +115,14 @@ def _read_with_deadline(
         except BaseException as error:
             outcome.append(error)
         finally:
+            slots.release()
             finished.set()
 
-    threading.Thread(target=_target, name="canonical-text-read", daemon=True).start()
+    try:
+        threading.Thread(target=_target, name="canonical-text-read", daemon=True).start()
+    except BaseException:
+        slots.release()
+        raise
     if not finished.wait(timeout):
         raise i.EvidenceReadError(
             "deadline_exceeded",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -56,6 +57,18 @@ def test_effective_as_of(as_of: datetime | date | None, expected: datetime) -> N
 def test_as_of_outside_the_contract_range_is_rejected(as_of: datetime | date) -> None:
     with _error("invalid_input", "as_of"):
         effective_as_of(as_of, NOW)
+
+
+def test_repeated_hour_compares_instants_before_database_work(fake_conn: Any) -> None:
+    new_york = ZoneInfo("America/New_York")
+    first_hour = datetime(2024, 11, 3, 1, 45, tzinfo=new_york, fold=0)  # 05:45Z
+    second_hour = datetime(2024, 11, 3, 1, 15, tzinfo=new_york, fold=1)  # 06:15Z
+    conn = fake_conn()
+    with _error("invalid_input", "as_of"):
+        resolve_context(conn, i.ContextRequest(request_time=first_hour, as_of=second_hour))
+    assert conn.statements == []
+    # A later wall-clock time in the first fold is still an earlier instant.
+    assert effective_as_of(first_hour, second_hour) == datetime(2024, 11, 3, 5, 45, tzinfo=UTC)
 
 
 def test_a_naive_as_of_never_reaches_resolution() -> None:

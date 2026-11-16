@@ -6,6 +6,7 @@ slicing and hash recomputation. Unit level, with a fake at the connection bounda
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from datetime import UTC, date, datetime
 from typing import Any
@@ -13,6 +14,7 @@ from typing import Any
 import pytest
 
 from fel_retrieval import content_sha256
+from fel_retrieval.evidence import citations
 from fel_retrieval.evidence import interfaces as i
 from fel_retrieval.evidence.citations import MAX_CANONICAL_BYTES, get_citation
 
@@ -322,6 +324,66 @@ def test_a_blocked_object_read_is_deadline_exceeded(read: Any) -> None:
     assert time.monotonic() - started < 1
     assert "\U0001f600" not in error.message
     assert "x" * 40 not in error.message
+
+
+def test_timed_out_reads_keep_bounded_slots_until_the_store_finishes(
+    read: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(citations, "_READ_SLOTS", threading.BoundedSemaphore(2), raising=False)
+    release = threading.Event()
+    workers: list[threading.Thread] = []
+    original = read.texts
+
+    class Blocking:
+        def read(self, key: str, limit: int) -> bytes:
+            workers.append(threading.current_thread())
+            release.wait()
+            return original.read(key, limit)
+
+    read.texts = Blocking()
+    try:
+        for _ in range(2):
+            with _raises("deadline_exceeded"):
+                read(timeout=0.01)
+        started = time.monotonic()
+        with pytest.raises(i.EvidenceReadError) as raised:
+            read(timeout=1)
+        assert (raised.value.code, raised.value.retryable) == ("overloaded", True)
+        assert raised.value.retry_after_seconds is not None
+        assert time.monotonic() - started < 0.5
+        assert len(workers) == 2
+    finally:
+        release.set()
+        for worker in workers:
+            worker.join(1)
+            assert not worker.is_alive()
+    read.texts = original
+    # Completion releases both slots; successful reads also return their slot.
+    for _ in range(3):
+        assert read().citation.text == "B"
+
+
+def test_failed_storage_reads_release_their_slot(read: Any, monkeypatch: Any) -> None:
+    monkeypatch.setattr(citations, "_READ_SLOTS", threading.BoundedSemaphore(1), raising=False)
+    for _ in range(2):
+        read.texts.error = OSError("connection reset")
+        with _raises("unavailable"):
+            read()
+        read.texts.error = None
+        assert read().citation.text == "B"
+
+
+def test_a_worker_start_failure_releases_its_slot(read: Any, monkeypatch: Any) -> None:
+    monkeypatch.setattr(citations, "_READ_SLOTS", threading.BoundedSemaphore(1), raising=False)
+    with monkeypatch.context() as patch:
+
+        def fail_start(self: threading.Thread) -> None:
+            raise RuntimeError("cannot start new thread")
+
+        patch.setattr(threading.Thread, "start", fail_start)
+        with pytest.raises(RuntimeError, match="cannot start new thread"):
+            read()
+    assert read().citation.text == "B"
 
 
 def test_a_statement_timeout_is_deadline_exceeded(fake_conn: Any, read: Any) -> None:
