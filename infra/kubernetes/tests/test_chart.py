@@ -16,7 +16,9 @@ class ChartTests(unittest.TestCase):
 
         result = subprocess.run(
             [HELM, "template", "pg-lab", str(CHART), "--kube-version", "1.37.0", *arguments],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         return list(yaml.safe_load_all(result.stdout))
@@ -28,8 +30,11 @@ class ChartTests(unittest.TestCase):
         for mode in ("helm", "argocd"):
             with self.subTest(mode=mode):
                 resources = self.render("--set", f"tests.hookMode={mode}")
-                pods = [resource["spec"]["template"]["spec"] for resource in resources
-                        if resource["kind"] in ("Deployment", "Job")]
+                pods = [
+                    resource["spec"]["template"]["spec"]
+                    for resource in resources
+                    if resource["kind"] in ("Deployment", "Job")
+                ]
                 self.assertEqual(len(pods), 3)
                 for pod in pods:
                     self.assertIs(pod["enableServiceLinks"], False)
@@ -41,8 +46,11 @@ class ChartTests(unittest.TestCase):
             ("argocd", "argocd.argoproj.io/hook", "helm.sh/hook"),
         ):
             with self.subTest(mode=mode):
-                jobs = [resource for resource in self.render("--set", f"tests.hookMode={mode}")
-                        if resource["kind"] == "Job"]
+                jobs = [
+                    resource
+                    for resource in self.render("--set", f"tests.hookMode={mode}")
+                    if resource["kind"] == "Job"
+                ]
                 self.assertEqual(len(jobs), 2)
                 for job in jobs:
                     self.assertIn(expected, job["metadata"]["annotations"])

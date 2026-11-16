@@ -19,13 +19,15 @@ class LabScriptTests(unittest.TestCase):
         self.state = self.root / "state"
         self.state.mkdir()
         for name, value in (
-            ("owner", "fel-test"), ("node-id", "owned-node"), ("kubeconfig", "test")
+            ("owner", "fel-test"),
+            ("node-id", "owned-node"),
+            ("kubeconfig", "test"),
         ):
             (self.state / name).write_text(value)
         binaries = self.root / "bin"
         binaries.mkdir()
         cli = binaries / "fake-cli"
-        cli.write_text(f"#!{sys.executable}\n" + '''
+        cli.write_text(f"#!{sys.executable}\n" + """
 import json, os, pathlib, sys
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
@@ -58,7 +60,7 @@ elif "get" in args:
     sys.exit(int(os.environ.get("TEST_COLLECTION_STATUS", "0")))
 elif name == "date":
     print("20261116T120000Z")
-''')
+""")
         cli.chmod(0o755)
         for name in ("docker", "helm", "kubectl", "date"):
             (binaries / name).symlink_to(cli)
@@ -73,7 +75,9 @@ elif name == "date":
         return subprocess.run(
             ["bash", str(SCRIPT), action],
             env=dict(self.environment, **environment),
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
 
     def calls(self):
@@ -105,9 +109,7 @@ elif name == "date":
     def test_collection_failure_preserves_failed_or_passed_helm_status(self):
         for status in ("0", "9"):
             with self.subTest(helm_status=status):
-                result = self.run_script(
-                    TEST_HELM_STATUS=status, TEST_COLLECTION_STATUS="4"
-                )
+                result = self.run_script(TEST_HELM_STATUS=status, TEST_COLLECTION_STATUS="4")
                 self.assertEqual(result.returncode, int(status), result.stderr)
                 self.assertIn("Could not collect", result.stderr)
 
