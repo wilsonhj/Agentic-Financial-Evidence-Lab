@@ -2,6 +2,8 @@
 
 Status: Accepted
 Date: 2026-07-12
+Superseded in part (Railway hosting line) by
+[ADR-0035](ADR-0035-vercel-hosting.md).
 
 ## Decision
 
@@ -31,6 +33,8 @@ This ADR is the single source of truth for the MVP technology stack. `specs/001-
 ### Runtime and operations
 
 - Railway hosts the web, API, and worker processes from one monorepo.
+  Superseded by [ADR-0035](ADR-0035-vercel-hosting.md): Vercel hosts the web
+  app and API.
 - Sentry plus structured JSON logs for observability; full OpenTelemetry is deferred.
 - GitHub Actions for CI and deployment gates.
 

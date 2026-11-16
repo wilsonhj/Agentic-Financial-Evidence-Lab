@@ -173,7 +173,7 @@ corepack pnpm run test
 ```
 
 Database-gated Python tests skip when `TEST_DATABASE_URL` is absent. CI runs
-those suites against PostgreSQL 17 with pgvector. See the
+those suites against PostgreSQL 18 with pgvector. See the
 [testing guide](./docs/development/testing.md) for the complete matrix and
 recommended developer loops.
 

@@ -66,7 +66,7 @@ and `apps/api/app/retrieval_pipeline.py`.
 
 - Unit suites run DB-less (recording fake connections; pure logic).
 - Integration suites require `TEST_DATABASE_URL` pointing at a migrated
-  pgvector database (CI provisions `pgvector/pgvector:0.8.5-pg17`; local:
+  pgvector database (CI provisions `pgvector/pgvector:0.8.6-pg18`; local:
   any container with migrations `0001`–`0005` applied) and cover build/publish
   lifecycle, single-active enforcement, exact-vs-HNSW recall, lane
   pin/cutoff/leakage negatives, and full pipeline determinism.
