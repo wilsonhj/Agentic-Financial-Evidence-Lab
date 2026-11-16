@@ -19,6 +19,9 @@ case ${1:-help} in
     if docker inspect "$name" >/dev/null 2>&1; then
       echo 'Registry container name already exists; refusing to replace it.' >&2; exit 2
     fi
+    if [[ -n "$(k get namespace fel-registry --ignore-not-found -o name)" ]]; then
+      echo 'Registry namespace already exists; refusing to adopt it.' >&2; exit 2
+    fi
     umask 077
     mkdir -p "$directory/tls" "$directory/data"
     cat > "$directory/tls/openssl.cnf" <<EOF
@@ -46,7 +49,7 @@ EOF
       -e REGISTRY_HTTP_TLS_KEY=/tls/server.key "$image" > "$directory/container-id"
     address=$(docker inspect --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$name")
     [[ "$address" =~ ^[0-9.]+$ ]] || { echo 'Expected IPv4 kind network.' >&2; exit 2; }
-    k create namespace fel-registry --dry-run=client -o yaml | k apply -f -
+    k create namespace fel-registry -o jsonpath='{.metadata.uid}' > "$directory/namespace-uid"
     k apply -f - <<EOF
 apiVersion: v1
 kind: Service
@@ -86,13 +89,14 @@ EOF
     echo 'Registry did not become ready.' >&2; exit 1
     ;;
   delete)
-    [[ -f "$directory/container-id" ]] || exit 2
+    [[ -f "$directory/container-id" && -s "$directory/namespace-uid" ]] || exit 2
     actual=$(docker inspect --format '{{.Id}}' "$name")
     [[ "$actual" = "$(cat "$directory/container-id")" ]] || exit 2
+    [[ "$(k get namespace fel-registry -o jsonpath='{.metadata.uid}')" = "$(cat "$directory/namespace-uid")" ]] || exit 2
     docker rm -f "$name"
     k delete namespace fel-registry --wait=true --timeout=60s
     # Keep published artifacts for inspection, erase only this lab's TLS key.
-    rm -f "$directory/tls/server.key" "$directory/container-id"
+    rm -f "$directory/tls/server.key" "$directory/container-id" "$directory/namespace-uid"
     ;;
   *) echo 'Usage: local-registry.sh create|delete' >&2; exit 2 ;;
 esac
