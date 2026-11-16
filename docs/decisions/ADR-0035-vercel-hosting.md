@@ -1,6 +1,6 @@
 # ADR-0035: Host the web app and API on Vercel, with Neon Postgres 18
 
-Status: Proposed
+Status: Accepted by the integration lead on PR #431 ([authorization record](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/431#issuecomment-6906682936), 2026-11-16)
 Date: 2026-11-15
 Supersedes in part: [ADR-0002](ADR-0002-mvp-stack.md), "Runtime and operations",
 the line "Railway hosts the web, API, and worker processes from one monorepo".

@@ -7,7 +7,7 @@ The Status column below is abbreviated. Many ADRs qualify their status with a lo
 | ADR | Title | Status | Date | Supersedes / Superseded by |
 |---|---|---|---|---|
 | [ADR-0001](ADR-0001-contract-freeze.md) | Contract-first parallel delivery | Accepted | 2026-07-12 | — |
-| [ADR-0002](ADR-0002-mvp-stack.md) | Locked MVP technology stack | Accepted | 2026-07-12 | — |
+| [ADR-0002](ADR-0002-mvp-stack.md) | Locked MVP technology stack | Accepted | 2026-07-12 | Superseded in part (Railway hosting line) by [ADR-0035](ADR-0035-vercel-hosting.md) |
 | [ADR-0003](ADR-0003-root-config-edits.md) | Mechanical root-config edits ride with the owning package | Accepted | 2026-07-13 | — |
 | [ADR-0004](ADR-0004-public-corpus-tenancy.md) | Public corpus tables carry no org_id and no RLS | Accepted | 2026-07-13 | — |
 | [ADR-0005](ADR-0005-reader-composite-endpoint.md) | Composite version-pinned evidence reader endpoint | Accepted | 2026-07-15 | Superseded in part (oversized-reader posture) by [ADR-0021](ADR-0021-bounded-api-pagination-and-reader.md) |
@@ -40,4 +40,4 @@ The Status column below is abbreviated. Many ADRs qualify their status with a lo
 | [ADR-0032](ADR-0032-documentation-status-reconciliation.md) | Reconcile ADR and specification status with the repository | Accepted | 2026-10-31 | — |
 | [ADR-0033](ADR-0033-retrieval-gate-quickstart-note.md) | Note the failing retrieval gate in the spec 002 quickstart | Accepted | 2026-11-01 | — |
 | [ADR-0034](ADR-0034-public-read-only-evidence-surface.md) | Public read-only evidence surface over MCP | Accepted (qualified) | 2026-11-10 | Amends in part [ADR-0004](ADR-0004-public-corpus-tenancy.md) and [ADR-0027](ADR-0027-deployment-modes.md) |
-| [ADR-0035](ADR-0035-vercel-hosting.md) | Host the web app and API on Vercel, with Neon Postgres 18 | Proposed | 2026-11-15 | Supersedes in part [ADR-0002](ADR-0002-mvp-stack.md) (hosting line) |
+| [ADR-0035](ADR-0035-vercel-hosting.md) | Host the web app and API on Vercel, with Neon Postgres 18 | Accepted | 2026-11-15 | Supersedes in part [ADR-0002](ADR-0002-mvp-stack.md) (hosting line) |
