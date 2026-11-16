@@ -186,6 +186,90 @@ all new changes, including these corrections. Sol, Terra and Astra are all
 OpenAI and do not satisfy that distinction for one another. No canonical
 ledger state, hosted budget, credential, deployment or paid call is authorized.
 
+## Amendment 3 (2026-11-16): acceptance-time source, restatement order and merge order
+
+The owner made these decisions on 2026-11-16, after a read-only review of #413
+and #417 and a check of public reports about the submissions API. Each one
+accepts a recommendation recorded on #417 and #432.
+
+**1. The filing header is the source of the acceptance time.** Several
+third-party projects report that `acceptanceDateTime` in the submissions JSON
+is not consistently UTC: some values are true UTC and some are Eastern time
+with a `Z` suffix, and the convention appears to have changed in October 2026
+([edgartools #1501](https://github.com/dgunning/edgartools/issues/1501),
+[edgar-pit](https://github.com/broiisapro/edgar-pit),
+[sec_submissions_data](https://github.com/iangow/sec_submissions_data)).
+Two of them report that `ACCEPTANCE-DATETIME` in the SGML header of each
+filing matched the SEC index page for every filing they checked. This project
+did not verify those reports against sec.gov.
+
+- The acceptance time of a filing comes from `ACCEPTANCE-DATETIME` in its
+  header, read as America/New_York wall-clock time.
+- The submissions JSON value is a cross-check. If the two disagree after
+  conversion, the filing keeps an unknown publication time, which public reads
+  already hide.
+- A sample of filings must be compared with the SEC index pages, with the
+  approved `FEL_SEC_USER_AGENT`, before any hosted run. One request does not
+  settle owner input 4.
+- This is new scope. It needs a header read on the SEC client, which is a
+  cross-package interface, so it needs its own issue and `contract-change`
+  review. #417 keeps the JSON value at face value until then, and the hosted
+  gate in Amendment 1 stays.
+
+**2. Restatements order by `public_at`, then by `accepted_at`.** `public_at`
+stays the only visibility instant. Two filings accepted after hours on one day
+receive the same `public_at`, so the rule "strictly earlier `public_at`" never
+links an amendment to its original. A filing is now a predecessor when its
+`public_at` is earlier, or when the two `public_at` values are equal and its
+known `accepted_at` is earlier. Equal or unknown acceptance times establish no
+order. A predecessor is never public later than the filing that restates it,
+so no edge exposes a later fact. This amends acceptance criterion 4 of #393.
+Until decision 1 is implemented, both acceptance times in a pair come from the
+same JSON source.
+
+**3. Publication repairs restatement links first.** Amendment 2 requires
+"repair restatement links before exposing affected corpus pins". Nothing in
+production code runs the repair before `publish_corpus_version`, so a filing
+ingested before its predecessor can freeze a missing link into a pin.
+Publication must run the idempotent repair for the issuers of the version,
+under the shared corpus lock, before it activates the version.
+
+**4. #417 no longer waits for #394.** The owner ruled on 2026-11-15 that #394
+merges first, because retrieval lanes used a visibility predicate that the
+migration `0012` guard rejected. #417 now carries that lane fix. The ruling is
+withdrawn. #417 merges on its own gates. #394 follows it, starts from a base
+that contains it, and keeps the reader and corpus cutoff work.
+
+**5. The #393 lane includes the six files of that correction**, for PR #417
+only: `packages/retrieval/fel_retrieval/lanes.py`,
+`packages/retrieval/tests/test_lanes_integration.py`,
+`packages/retrieval/tests/test_lanes_unit.py`,
+`evals/harness/reader_prod_smoke.py`, `evals/tests/test_reader_prod_smoke.py`
+and `evals/tests/test_corpus_qa_harness.py`.
+
+**6. The concurrency limit is three implementers in total.** It includes
+non-MCP fix and research writers. This decides item G8 of the November 14
+decision brief. Read-only reviewers do not count.
+
+**7. #394, #397 and #399 are dispatched together after #417 merges.** Two
+single-file overlaps stay serialized as their registry entries state:
+`apps/api/tests/test_mcp_mount.py` (#394 and #397) and `pyproject.toml` (#397
+and #399). The integration lead still changes each status.
+
+**8. `MCP-HOSTED-PILOT` also depends on `MCP-EVIDENCE-READ-2`** (#418), so that
+the pilot cannot appear ready while part 2 of #395 is open.
+
+**9. `tzdata` becomes an unconditional runtime dependency.** The publication
+rule needs IANA zone data at import, and the lock files pin `tzdata` for
+Windows only. The change to the dependency and lock files needs its own
+`contract-change` PR.
+
+**10. `FEL_SEC_USER_AGENT` may be provisioned** for the verification in
+decision 1. No other credential, hosted run, budget, deployment or paid call
+is authorized. Owner inputs 2 and 5 stay open.
+
+Different-vendor review and integration-lead approval remain merge gates.
+
 ## Consequences
 
 - One reviewed contract package (#392) freezes the migration, schemas and
@@ -228,7 +312,7 @@ supply. Each open input gates the package named beside it and nothing else.
 | 1 | Anonymous hosted access | **Accepted.** Decision 2 stands. | — |
 | 2 | Operating budget: a monthly infrastructure figure that sizes the global request limit | **Open** | #400 |
 | 3 | Hosting target | **Accepted as drafted:** mount in `apps/api` on the planned Railway service. Provisioning is still owed. | #400 |
-| 4 | Acceptance-time timezone: whether `acceptanceDateTime` in the submissions JSON is UTC or US Eastern. Confirming it needs one request to sec.gov with an approved `FEL_SEC_USER_AGENT`. | **Open.** #393 isolates the assumption in one function. | Any hosted run |
+| 4 | Acceptance-time timezone: whether `acceptanceDateTime` in the submissions JSON is UTC or US Eastern. Confirming it needs one request to sec.gov with an approved `FEL_SEC_USER_AGENT`. | **Open, and changed by Amendment 3.** One request cannot settle it. The filing header becomes the source of truth, and a sample must be verified. #393 isolates the assumption in one function. | Any hosted run |
 | 5 | Product name and domain, which must avoid the SEC and EDGAR marks | **Open** | Directory submission |
 | 6 | Whether `.claude-plugin/marketplace.json` counts as shared configuration | **Resolved by Amendment 2:** shared, with #398 ownership, `contract-change` and lead review. | — |
 
