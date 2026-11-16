@@ -5,6 +5,10 @@ infrastructure-as-code boundary (ADR-0002); Terraform/Pulumi are deferred.
 
 ## Layout
 
+- [helm/fel/](helm/fel/README.md) — optional local Kubernetes fixture UI and
+  isolated synthetic cross-stack acceptance chart. Reproduce it with the
+  [Apple Silicon lab guide](../docs/research/2026-11-15-kubernetes-helm-lab.md)
+  and scripts in `kubernetes/`. This lab does not change the production host.
 - `railway/` — Railway config-as-code. Each service in the Railway dashboard
   points its "config file path" at the matching JSON file. `api.json`,
   `worker.json` and `web.json` define their respective service commands.

@@ -116,7 +116,7 @@ docker run --name fel-postgres \
   -e POSTGRES_PASSWORD=fel \
   -e POSTGRES_DB=fel_dev \
   -p 5432:5432 \
-  -d pgvector/pgvector:0.8.5-pg17
+  -d pgvector/pgvector:0.8.6-pg18
 ```
 
 Set the connection URL and apply migrations via the checksummed migration applier (`scripts/db/migrate.py`, ADR-0014):
