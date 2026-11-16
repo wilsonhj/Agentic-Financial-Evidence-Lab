@@ -32,6 +32,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Validate workflow expressions with pinned actionlint
+        run: |
+          asset=actionlint_1.7.12_linux_amd64.tar.gz
+          release=https://github.com/rhysd/actionlint/releases/download/v1.7.12
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/$asset" "$release/$asset"
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/actionlint-checksums.txt" \
+            "$release/actionlint_1.7.12_checksums.txt"
+          (cd "$RUNNER_TEMP" && grep -F "  $asset" actionlint-checksums.txt | sha256sum --check)
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes= .github/workflows/kubernetes-lab.yml
       - uses: actions/setup-python@v5
         with:
           python-version-file: .python-version
@@ -65,12 +75,13 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     env:
-      FEL_LAB_STATE: ${{ runner.temp }}/fel-lab-state
       FEL_LAB_CLUSTER: fel-ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Select this runner's isolated state directory
+        run: echo "FEL_LAB_STATE=$RUNNER_TEMP/fel-lab-state" >> "$GITHUB_ENV"
       - name: Install pinned tools
         run: |
           bash infra/kubernetes/bootstrap-tools.sh "$RUNNER_TEMP/fel-lab-bin"
