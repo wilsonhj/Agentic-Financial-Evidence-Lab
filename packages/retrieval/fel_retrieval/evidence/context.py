@@ -67,9 +67,12 @@ def effective_as_of(as_of: datetime | date | None, request_time: datetime) -> da
         instant = as_of
     else:
         instant = datetime.combine(as_of, time(0), tzinfo=_NEW_YORK)
-    if not EARLIEST_AS_OF <= instant <= request_time:
+    # Same-zone datetime comparisons ignore fold during a repeated DST hour.
+    # Compare UTC instants so a later second-fold cutoff cannot appear earlier.
+    instant = instant.astimezone(UTC)
+    if not EARLIEST_AS_OF <= instant <= request_time.astimezone(UTC):
         raise invalid_input("as_of", "must be between 1994-01-01T00:00:00Z and the request time")
-    return instant.astimezone(UTC)
+    return instant
 
 
 def resolve_context(
