@@ -14,7 +14,8 @@ This directory is the restart point for all implementation agents. Fable must be
 Resolve the live queue from GitHub, then read [`STATUS.md`](STATUS.md) and
 [`workstreams.yaml`](workstreams.yaml). Those files include dated evidence;
 do not infer current dispatchability from a historical commit or issue list.
-The newest section of `STATUS.md` is dated November 15, 2026. It records the
+The newest section of `STATUS.md` is dated November 16, 2026. It records the
+owner decisions of that date. The November 15 section records the
 verified-finding repair and review wave; the October snapshot retains the
 earlier dependency order and hosted blockers. Earlier sections are in the
 [archived status history](../archive/handoff/STATUS-history-2026-09.md).
@@ -129,10 +130,10 @@ A package is ready only when:
 The general ceiling is four packages. ADR-0034 Amendment 2 sets a stricter
 limit: "at most three implementation agents plus the coordinator". The
 November 15 repair wave applied that limit to every implementer, including
-non-MCP fix and research writers. That wider reading is the coordinator's
-conservative reading, not ADR text. It is open decision G8 in the
-[November 14 decision brief](decision-brief-2026-11-14.md). Apply the wider
-reading until the integration lead decides G8. Independent
+non-MCP fix and research writers. That wider reading was open decision G8 in the
+[November 14 decision brief](decision-brief-2026-11-14.md) until 2026-11-16.
+ADR-0034 Amendment 3 then decided it: the limit is three implementers in
+total. Independent
 read-only reviewers do not own implementation packages. Serialize shared-file
 changes through the coordinator. Prefer PRs below roughly 600 changed lines and
 split work that cannot be reviewed independently.
