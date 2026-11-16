@@ -235,3 +235,42 @@ Production corpus publication helpers may publish worker-produced versions;
 the harness must verify successful jobs and ingestion before starting the API.
 Hosted fault injection requires an identified dedicated smoke service and
 restoration on failure; existing production services are not fallback targets.
+
+### November 16 optional local Kubernetes lab registration
+
+Status: Accepted for the bounded registration below by integration-lead
+ratification in [PR #436](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/436).
+
+[Issue #435](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/435)
+records the owner's November 15 request for optional local Helm/Kubernetes
+packaging, reproducible Apple Silicon testing instructions and an external
+agent handoff. Its scope explicitly includes one additive workstream
+registration. This ruling records that existing authorization; it does not
+select Kubernetes as a production platform.
+
+Register `LOCAL-KUBERNETES-LAB` for issue #435 on branch
+`agent/435-helm-lab`, with `tasks: []`, `depends_on: []` and `status: review`.
+The package owns `infra/kubernetes/**`, `infra/helm/fel/**`, `infra/README.md`
+and `docs/research/2026-11-15-kubernetes-helm-lab.md`. Its one entry in
+`docs/research/README.md` and additive entry in
+`docs/handoff/workstreams.yaml` are serialized by the integration lead.
+Coordinate any overlap with other `infra/**` owners before further work.
+PR #431's `infra/docker/**`, root `.dockerignore`, CI and hosting ADR remain
+outside this package. This amendment supplies the accepted ADR record for
+the new dispatch key required by `AGENTS.md`.
+
+The implementation is an optional fixture and synthetic acceptance lab. It
+preserves application deployment guards, authentication and provider
+contracts, evidence invariants and the migration ledger. Local cluster
+results establish only the recorded local checks, not production capacity,
+real SEC/model behavior or hosted acceptance. No canonical task completion,
+production architecture change, credential-policy change, live-provider
+activation or paid call is authorized. GitOps publication, persistent
+controller deployments and external write credentials require their own
+applicable authorization; documenting recipes does not grant it.
+
+Merge still requires independent review, integration-lead approval and
+current required checks, with reproducible local evidence and explicit
+unrun checks as required by #435. The package remains `review` until the
+lead records its verified merge. Existing dispatch limits, path ownership,
+review rules and release gates are unchanged.

@@ -1,0 +1,16 @@
+Local fixture UI:
+  kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "fel.fullname" . }}-web 3000:3000 --address 127.0.0.1
+  Open http://127.0.0.1:3000
+
+{{ if eq .Values.tests.hookMode "helm" -}}
+Check the fixture Deployment and, when enabled, the isolated acceptance stack:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --timeout 16m
+  kubectl -n {{ .Release.Namespace }} logs job/{{ include "fel.fullname" . }}-web-smoke -c web-smoke
+{{ if .Values.acceptance.enabled }}  kubectl -n {{ .Release.Namespace }} logs job/{{ include "fel.fullname" . }}-acceptance -c acceptance
+{{ end }}
+{{ else -}}
+Argo CD owns the PostSync test Jobs. Run a full Argo CD sync, not helm test.
+{{ end }}
+The acceptance test starts its own API and Web processes. It does not test a
+backend behind the fixture Deployment. Its data and model replies are synthetic.
+No public authentication, live-provider, hosted-readiness or load gate is claimed.

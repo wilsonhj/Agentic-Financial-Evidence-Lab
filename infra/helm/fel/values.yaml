@@ -1,0 +1,51 @@
+# Build and load these local images before installing. No registry is implied.
+tests:
+  # argocd renders only PostSync hooks; the Argo CD controller owns execution.
+  hookMode: helm
+
+web:
+  image:
+    repository: fel-web-fixture
+    tag: local-dev
+    digest: ""
+    pullPolicy: Never
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# helm test creates a fresh, separate stack. It does not test a backend behind
+# the fixture Deployment. Keep the Pod after completion to inspect its logs.
+acceptance:
+  enabled: true
+  image:
+    repository: fel-acceptance
+    tag: local-dev
+    digest: ""
+    pullPolicy: Never
+  activeDeadlineSeconds: 900
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+      ephemeral-storage: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+      ephemeral-storage: 6Gi
+  postgres:
+    image:
+      repository: pgvector/pgvector
+      tag: 0.8.5-pg17
+      digest: sha256:d2ef61f42ef767baa5a1475393303cc235bcd92febd9d7014eddb48b41f3bad0
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
