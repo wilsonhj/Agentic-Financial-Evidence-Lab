@@ -294,6 +294,9 @@ A prior Claude review found no must-fix. Its items are applied in `8abb200`,
   ordered by filing date, then by `public_at` within a date. This deliberately
   deviates from the reviewer's suggestion, which can form an ordering cycle
   when filing dates are adjusted under 17 CFR 232.13(b).
+  The November 14 review rejected this rule. The November 15 repair on #417
+  replaced it: a predecessor needs a strictly earlier known `public_at`, and
+  the filing date orders nothing.
 - Same-day discovery ties break by acceptance time, then accession.
 - Filing-date conflicts are reported, not overwritten.
 

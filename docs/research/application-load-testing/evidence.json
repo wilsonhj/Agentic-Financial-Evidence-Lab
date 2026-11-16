@@ -1,0 +1,258 @@
+{
+  "schema_version": "load-research-evidence/v1",
+  "baseline_commit": "33c6a635c05460624c894d00363d8710a780adc3",
+  "research_date": "2026-11-14",
+  "repository_sources": [
+    {
+      "path": "specs/001-financial-evidence-lab/spec.md",
+      "sha256": "8f2576cbafed3201924545f8f7d81294eb579bd187d64812b35cf348be2e76ed"
+    },
+    {
+      "path": "apps/api/benchmarks/results/2026-09-14-projected/report.json",
+      "sha256": "fad0179940d882221d3efd64dae5b32dd22148525c78dd2ddba847c7f82580ec"
+    },
+    {
+      "path": "apps/api/benchmarks/results/2026-09-14-projected/samples.jsonl",
+      "sha256": "9af37f9a6cda9ff864fcc75dda00a3a8b7695f242723b528a267552c4b29fc97"
+    },
+    {
+      "path": "apps/api/EXTRACTION_LOAD.md",
+      "sha256": "e9524da19b705199eb7206d52e94954854c13b480d5936af66f4df48bff59569"
+    },
+    {
+      "path": "apps/api/benchmarks/extraction_load_report.py",
+      "sha256": "546fe46c6700b6c537bb42dc074df471dd4e62009ac18fe923f89fde22c88b05"
+    },
+    {
+      "path": "apps/web/src/lib/deployment-mode.ts",
+      "sha256": "9c38168bedc1567ce737b0e3e04d2b7219bb88513666d7311b9757e894c92181"
+    },
+    {
+      "path": "apps/web/src/proxy.ts",
+      "sha256": "7a5cb44962824fc016033dced347181c93ee3a5829bb8b51787645afc22d2872"
+    },
+    {
+      "path": "apps/api/app/deployment.py",
+      "sha256": "c5a66e136201b5acdbe4254c053e761aba32f4a106409d699ac5f1d1aa2837a4"
+    },
+    {
+      "path": "infra/railway/worker.json",
+      "sha256": "bca482ad739a97faa57207619ab19e52be95414fb69cd2961ac615fa95929c11"
+    },
+    {
+      "path": "workers/src/fel_workers/__main__.py",
+      "sha256": "2e44ef35c4443e6b7c606689550665c24b114a9c66ea806bb34c20bc809e7eef"
+    },
+    {
+      "path": "apps/api/app/extraction/runs.py",
+      "sha256": "ba130be2bd292bb7445075a750d61c2ace0b0ff154e05cdcc6037c911bc17e4e"
+    },
+    {
+      "path": "infra/railway/README.md",
+      "sha256": "acff009e9e79f2bf06d20f120a9ac7b8e1cd2445de3574388775c4936e1cc90f"
+    },
+    {
+      "path": "apps/api/app/config.py",
+      "sha256": "896335a9dea1c728a55bb3989d638665c816184e0995c39cbfb82ca6473eeee4"
+    },
+    {
+      "path": "apps/api/app/db.py",
+      "sha256": "5b864cbfa74996402f1d5c045513933488df3e22aa5d6ddda0c53b29f11d9ecd"
+    },
+    {
+      "path": "apps/api/app/retrieval.py",
+      "sha256": "2be3f659382df2844d0665537e4df5c2e6da3ca556fbe1afc477e6e5090568a9"
+    },
+    {
+      "path": "apps/api/app/extraction/routes_events.py",
+      "sha256": "be20c0f5143e3426cf7b6bd3ff77cc32ddd292372e37179b77ba67c1eb72171d"
+    },
+    {
+      "path": "apps/api/app/extraction/events.py",
+      "sha256": "ec4fc24fd0f18443dafa9b45be718c72c726419a10b176a50feaec23ba25e817"
+    },
+    {
+      "path": "apps/api/app/dependencies.py",
+      "sha256": "7ddefd1766e3ef9552ce124d12cd2422ee771e826085bc8778a44d19c0b5b8a4"
+    },
+    {
+      "path": "apps/api/app/ratelimit.py",
+      "sha256": "c45ed2745de5a802089c7545fd25ed06c6966b1c1c3d30c5b2115223cb300424"
+    },
+    {
+      "path": "apps/api/app/costs.py",
+      "sha256": "42d227964ce27830834fbb5ac09c5d2e3d9f11d89ade6518850ede05cd0a6d47"
+    },
+    {
+      "path": "apps/api/app/reader.py",
+      "sha256": "9b3b8d52f54184b991b7c37408ac78ccde98c60b02f66d5c8f8a977b88e8905f"
+    },
+    {
+      "path": "apps/api/app/extraction/evidence.py",
+      "sha256": "f0a5b97b53d09c1bb00b26afca2264687d23a7d1be497aaac93831f959ac8c41"
+    },
+    {
+      "path": "workers/src/fel_workers/storage.py",
+      "sha256": "0ecb4bcc1cd2d85c6fe7eae8a526767351697354064c4fee81bed49eefb27c18"
+    },
+    {
+      "path": "packages/providers/fel_providers/interfaces.py",
+      "sha256": "e8c0196c800b9ec6f2a2342325d0feab5d6aa3ced41d116ea5fe9e3d3e24a643"
+    },
+    {
+      "path": "infra/railway/api.json",
+      "sha256": "e143d866a68c1645a39ef2123bfd93fa2f89a03c8e567d6de66c133dcad32372"
+    },
+    {
+      "path": "infra/railway/web.json",
+      "sha256": "a07bcdc8999aaf1a404fbde6b8e123f1f1ed4261dccca02b3830add2bc1ae451"
+    },
+    {
+      "path": "apps/api/benchmarks/extraction_load.py",
+      "sha256": "264fb3bcf08061feb2e4b3b5520d122b2224a0de57697c60f4fdf0fd59aa8051"
+    },
+    {
+      "path": "apps/api/benchmarks/synthetic_target.py",
+      "sha256": "47604545f415e2b5e068ae2ddf459f11d14a06c50fbf87ec16b7346a6535d450"
+    },
+    {
+      "path": "docs/decisions/ADR-0002-mvp-stack.md",
+      "sha256": "15a1045a42b94bbb1b054abe5a50d019b2312b413200aaf50118e8fc0ef79370"
+    },
+    {
+      "path": ".specify/memory/constitution.md",
+      "sha256": "6119bcc5404b51112ac0a85c5c480f475cccfb253cd0a089d7b3ac91a9adc659"
+    },
+    {
+      "path": "workers/src/fel_workers/queue.py",
+      "sha256": "0578f23ac5dbe7ccff42b0571084a175fdbac56c27efe7f61bd545dbf5476cb0"
+    },
+    {
+      "path": "workers/src/fel_workers/consumer.py",
+      "sha256": "7c84b507aeb9a078fcba4c6baf3146291abacd6aa49f13cee588ef7e783fd5ef"
+    },
+    {
+      "path": "apps/api/app/main.py",
+      "sha256": "3473fb6a3b40b7aca1d4286eb1696edfa4b2142c018c5b3010687be87d98bbbd"
+    },
+    {
+      "path": "apps/web/package.json",
+      "sha256": "91009a7eecc76138639e0b088178b38bceadf732d17e0d4092413644e7f1917d"
+    },
+    {
+      "path": "requirements.lock",
+      "sha256": "dcb1d3fd0f386605bce341d418a8d5ce798ef25f0135c7c0018e5af1a9f4db0f"
+    },
+    {
+      "path": "apps/api/app/retrieval_queries.py",
+      "sha256": "1839f275449f04e9b3dc467bcf71eaf2e062db892338420eb308c408ea9eabb6"
+    }
+  ],
+  "external_sources": [
+    {
+      "id": "E01",
+      "url": "https://docs.railway.com/deployments/scaling",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "For now Railway does not support sticky sessions nor report the usage of the replicas within the metrics view.",
+      "excerpt_sha256": "11ff7794bdaceb702416dec18107241d5a48254950bb876c58f52d84bf5de7f9"
+    },
+    {
+      "id": "E02",
+      "url": "https://docs.railway.com/volumes/reference",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "Replicas cannot be used with volumes",
+      "excerpt_sha256": "c619ea9b6db67e1c5be2a7398fcec8620eb40cdfefd610fc9108b8f233fd19f4"
+    },
+    {
+      "id": "E03",
+      "url": "https://docs.railway.com/deployments/healthchecks",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "Railway does not monitor the healthcheck endpoint after the deployment has gone live.",
+      "excerpt_sha256": "19155e42954de79e67c23af1e2680d2847eb384138015df6806365d38a4f8cf7"
+    },
+    {
+      "id": "E04",
+      "url": "https://docs.railway.com/networking/private-networking/how-it-works",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "Every service in a project and environment gets an internal DNS name under the `railway.internal` domain that resolves to the internal IP addresses of the service.",
+      "excerpt_sha256": "830c82391ab9f067d7890cf26cfb2dce0e46a26653e9a99a801f7e50e128ae11"
+    },
+    {
+      "id": "E05",
+      "url": "https://docs.railway.com/networking/public-networking/specs-and-limits",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "| **Maximum Connections** | 10,000 concurrent connections | The number of concurrent connections. |",
+      "excerpt_sha256": "da57930cb8fd140c42d0034ecf57a33b0a946e21fb4383cf7ab097555bb37b28"
+    },
+    {
+      "id": "E06",
+      "url": "https://docs.railway.com/deployments/deployment-teardown",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "Once the new deployment is active, the previous deployment is sent a SIGTERM signal and given time to gracefully shutdown before being forcefully stopped with a SIGKILL.",
+      "excerpt_sha256": "98b1b444f335dc5e543be5bb489606ae8bd5ea680da0e29f6af638e3831eabe2"
+    },
+    {
+      "id": "E07",
+      "url": "https://grafana.com/docs/k6/latest/using-k6/scenarios/concepts/open-vs-closed/",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "In the open model, on the other hand, VUs arrive independently of iteration completion.",
+      "excerpt_sha256": "d801506fb9fea5526b98c199178a7a55dc011d382e8c5e2597fbfc4941b50799"
+    },
+    {
+      "id": "E08",
+      "url": "https://grafana.com/docs/k6/latest/using-k6/scenarios/concepts/dropped-iterations/",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "With `constant-arrival-rate` and `ramping-arrival-rate`, iterations drop if there are no free VUs.",
+      "excerpt_sha256": "3859a99428b1d674f8a0420f8b3c7662b0668b1819ddc895ec1b046842b25190"
+    },
+    {
+      "id": "E09",
+      "url": "https://www.psycopg.org/psycopg3/docs/advanced/pool.html",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "The pool manages a certain amount of connections (between `min_size` and `max_size`).",
+      "excerpt_sha256": "39caf49ca150428a37ce95e6bbd679518e853a3f13314f6449a8cd1405faed7c"
+    },
+    {
+      "id": "E10",
+      "url": "https://github.com/vercel/next.js/blob/v16.4.2/docs/01-app/02-guides/self-hosting.mdx",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "When running multiple server instances, all instances must use the same encryption key.",
+      "excerpt_sha256": "0ecdc9e4ae016a420119916dc0de945e803ee72577cc4fd6a1f222da0cb9eec7"
+    },
+    {
+      "id": "E11",
+      "url": "https://github.com/Kludex/uvicorn/blob/0.52.4/docs/settings.md",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "Defaults to the `$WEB_CONCURRENCY` environment variable if available, or 1.",
+      "excerpt_sha256": "188a711236c09f1f60eb4e352eab029680d044f54eff2f5407a44cfe09b0b386"
+    },
+    {
+      "id": "E12",
+      "url": "https://www.postgresql.org/docs/17/sql-notify.html",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "If the same channel name is signaled multiple times with identical payload strings within the same transaction, only one instance of the notification event is delivered to listeners.",
+      "excerpt_sha256": "5f02b24462aa443d09b6d6e34873451bdee3c62f9b75d6aa7d34fb56e1166f2a"
+    },
+    {
+      "id": "E13",
+      "url": "https://supabase.com/docs/guides/storage/uploads/standard-uploads.md",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "When two or more clients upload a file to the same path, the first client to complete the upload will succeed and the other clients will receive a `400 Asset Already Exists` error.",
+      "excerpt_sha256": "10acfe25fd6581ea1ba0c1e4982e204fd3c3e7667485c74a2de0e8d97627688c"
+    },
+    {
+      "id": "E14",
+      "url": "https://supabase.com/docs/guides/database/connecting-to-postgres",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "**Session-level state** is lost between transactions. This covers `set` and `reset`, session-level advisory locks, `listen` and `notify`, and temporary tables. Run them inside the transaction that needs them, or use session mode or a direct connection instead.",
+      "excerpt_sha256": "24dee05266522d781a999f76b2ab4a36242d429421d636c9a660438932ecbc42"
+    },
+    {
+      "id": "E15",
+      "url": "https://grafana.com/docs/k6/latest/testing-guides/running-distributed-tests/",
+      "retrieved_on": "2026-11-14",
+      "excerpt": "A fully optimized node cannot produce the load required by your extremely large test.",
+      "excerpt_sha256": "9c9d9d9a93332cb198ad1268b76f15ae5db330b65b3306ba609253e5831c7b55"
+    }
+  ]
+}

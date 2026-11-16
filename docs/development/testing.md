@@ -306,7 +306,7 @@ access for dependency advisory data.
 | Coverage floors | `pytest` and `pnpm run test` with no coverage | `pytest --cov ...` and `pnpm run test --coverage`; floors in `pyproject.toml` and `vitest.config.ts` fail the job (see [quality-gates.md](quality-gates.md)) |
 | mypy | omits `scripts/db` | also checks `scripts/db` |
 | pip-audit | `requirements-dev.txt` | `requirements.lock`, `requirements-dev.lock` and `scripts/runtime/build.lock` |
-| Database suites | skip unless you set `TEST_DATABASE_URL` | PostgreSQL 17 + pgvector 0.8.5 service, `FEL_REQUIRE_DB=1` |
+| Database suites | skip unless you set `TEST_DATABASE_URL` | PostgreSQL 18 + pgvector 0.8.6 service, `FEL_REQUIRE_DB=1` |
 | Not run by `make ci` | — | Gitleaks, Playwright (fixture and deployment-guard), the reproducible production install, and the migration/backup-restore smoke |
 
 **Known interaction if you obtained Python 3.11 through `uv`.** The `security`
@@ -337,11 +337,13 @@ in [`.github/required-checks.md`](../../.github/required-checks.md):
 3. `Web — Playwright E2E (fixture mode)` — the fixture suite, then the public
    deployment-guard suite (`playwright.deployment-guard.config.ts`) over
    production HTTP;
-4. `Python — format, lint, typecheck, test, security` — PostgreSQL 17 +
+4. `Python — format, lint, typecheck, test, security` — PostgreSQL 18 +
    pgvector and the Python coverage floor;
 5. `Python — reproducible production installs` — builds the runtime closure
    twice from `requirements.lock` and `scripts/runtime/build.lock` and diffs
-   the results;
+   the results, then builds the API container image
+   (`infra/docker/api.Dockerfile`) and probes its `/health` as the
+   unprivileged user;
 6. `DB — migration and backup-restore smoke` — `migrate.py`, backup/restore
    and the migration regression harnesses;
 7. `Shared-path changes carry contract-change` (`shared-paths.yml`).
@@ -420,7 +422,7 @@ What was measured at `a25bf7c`, against a plain Postgres 16 with only
 56 errored, every error tracing to `extension "vector" is not available`. That
 exercises 131 of the 187 database-gated tests and leaves 56 unexecuted, so
 treat it as a floor rather than the full-database figure. CI's `python` job
-(`pgvector/pgvector:0.8.5-pg17`) is the run that covers all 187 — take the
+(`pgvector/pgvector:0.8.6-pg18`) is the run that covers all 187 — take the
 full-database result from there, not from this page.
 
 Behavioral gates and zero unresolved high/medium review findings matter more
