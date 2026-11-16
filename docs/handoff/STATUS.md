@@ -1,5 +1,33 @@
 # Implementation status
 
+## November 16 owner decisions
+
+The owner decided the open items below on 2026-11-16.
+[ADR-0034 Amendment 3](../decisions/ADR-0034-public-read-only-evidence-surface.md#amendment-3-2026-11-16-acceptance-time-source-restatement-order-and-merge-order)
+is the record. On that date #413 to #415, #420, #422, #430, #431 and #432 were
+merged, and #416, #417 and #418 were open.
+
+- **#417 merge order.** The 2026-11-15 ruling that #394 merges before #417 is
+  withdrawn. #417 merges on its own gates. #394 had no branch on 2026-11-16.
+- **#417 rules.** Restatements order by `public_at`, then `accepted_at`.
+  Publication runs the restatement repair before it activates a version. Both
+  changes, and four small defects recorded on the PR, were not implemented on
+  2026-11-16.
+- **#417 lane.** The six files of its integration correction are registered.
+- **Acceptance time.** The filing header becomes the source of truth. This is
+  new scope with no issue on 2026-11-16. The hosted gate stays.
+- **Dispatch.** #394, #397 and #399 are dispatched together after #417 merges,
+  within a limit of three implementers in total. #410, #411 and #412 still
+  wait for #417 to release `workers/tests/**`.
+- **Dependencies.** `MCP-HOSTED-PILOT` also depends on `MCP-EVIDENCE-READ-2`.
+  `tzdata` becomes an unconditional dependency in a separate PR.
+- **Credentials.** `FEL_SEC_USER_AGENT` is approved and was not delivered on
+  2026-11-16.
+
+Still open for the owner: the operating budget (ADR-0034 owner input 2), the
+product name and domain (input 5), the other credentials in
+[`CREDENTIALS.md`](CREDENTIALS.md), and the load-acceptance gate of #61.
+
 ## November 15 verified-finding repair wave
 
 Baseline: this section was written against `main` at `33c6a63` (2026-11-14);
