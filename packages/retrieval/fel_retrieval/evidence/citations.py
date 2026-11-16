@@ -120,6 +120,15 @@ def _read_with_deadline(
 
     try:
         threading.Thread(target=_target, name="canonical-text-read", daemon=True).start()
+    except RuntimeError as error:
+        slots.release()
+        raise i.EvidenceReadError(
+            "overloaded",
+            "Evidence storage is busy.",
+            retryable=True,
+            recovery="Wait, then retry.",
+            retry_after_seconds=_RETRY_AFTER_SECONDS,
+        ) from error
     except BaseException:
         slots.release()
         raise

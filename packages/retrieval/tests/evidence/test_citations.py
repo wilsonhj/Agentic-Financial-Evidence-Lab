@@ -373,16 +373,26 @@ def test_failed_storage_reads_release_their_slot(read: Any, monkeypatch: Any) ->
         assert read().citation.text == "B"
 
 
-def test_a_worker_start_failure_releases_its_slot(read: Any, monkeypatch: Any) -> None:
+@pytest.mark.parametrize("failure", [RuntimeError("cannot start new thread"), KeyboardInterrupt()])
+def test_a_worker_start_failure_releases_its_slot(
+    read: Any, monkeypatch: Any, failure: BaseException
+) -> None:
     monkeypatch.setattr(citations, "_READ_SLOTS", threading.BoundedSemaphore(1), raising=False)
     with monkeypatch.context() as patch:
 
         def fail_start(self: threading.Thread) -> None:
-            raise RuntimeError("cannot start new thread")
+            raise failure
 
         patch.setattr(threading.Thread, "start", fail_start)
-        with pytest.raises(RuntimeError, match="cannot start new thread"):
-            read()
+        if isinstance(failure, RuntimeError):
+            with pytest.raises(i.EvidenceReadError) as raised:
+                read()
+            assert (raised.value.code, raised.value.retryable) == ("overloaded", True)
+            assert raised.value.retry_after_seconds is not None
+            assert "cannot start new thread" not in raised.value.message
+        else:
+            with pytest.raises(KeyboardInterrupt):
+                read()
     assert read().citation.text == "B"
 
 
