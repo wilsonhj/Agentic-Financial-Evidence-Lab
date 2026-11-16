@@ -9,6 +9,7 @@ import hmac
 import json
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -60,6 +61,34 @@ def test_a_cursor_round_trips_until_just_before_its_lifetime(context: i.Evidence
         False,
         None,
     )
+
+
+@pytest.mark.parametrize(
+    "issued",
+    [
+        datetime(2026, 11, 1, 1, 55, tzinfo=ZoneInfo("America/New_York"), fold=0),
+        datetime(2026, 11, 1, 1, 5, tzinfo=ZoneInfo("America/New_York"), fold=1),
+        datetime(2026, 3, 8, 1, 55, tzinfo=ZoneInfo("America/New_York")),
+    ],
+    ids=["fall-first-fold", "fall-second-fold", "spring-transition"],
+)
+def test_cursor_lifetime_is_elapsed_time_across_dst(
+    context: i.EvidenceContext, issued: datetime
+) -> None:
+    clock = Clock()
+    clock.now = issued
+    codec = CursorCodec(KEY, clock)
+    token = codec.encode(context, SCOPE, POSITION)
+    issued_utc = issued.astimezone(UTC)
+    body = token.split(".")[0]
+    payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    assert datetime.fromisoformat(payload["e"]) == issued_utc + MAX_LIFETIME
+    # Keep the injected clock zoned, including either side of the fold or gap.
+    clock.now = (issued_utc + MAX_LIFETIME - MICRO).astimezone(issued.tzinfo)
+    assert codec.decode(token, context, SCOPE) == POSITION
+    clock.now = (issued_utc + MAX_LIFETIME).astimezone(issued.tzinfo)
+    with _error("cursor_expired", None):
+        codec.decode(token, context, SCOPE)
 
 
 def test_token_bytes_change_with_issue_time_but_not_what_they_mean(

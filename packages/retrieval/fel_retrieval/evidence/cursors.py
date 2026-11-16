@@ -69,7 +69,8 @@ class CursorCodec:
         now = self._clock()
         if now.utcoffset() is None:
             raise ValueError("the cursor clock must return timezone-aware instants")
-        return now
+        # Lifetimes are elapsed time, including across a zoned clock's DST fold/gap.
+        return now.astimezone(UTC)
 
     def _mac(self, body: str) -> str:
         return _b64(hmac.new(self._key, body.encode("ascii"), hashlib.sha256).digest())
