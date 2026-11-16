@@ -1515,7 +1515,7 @@ packages:
     depends_on: []
     team: contracts
     branch: agent/mcp-contract
-    status: active # Dispatched 2026-11-10 after the owner accepted ADR-0034 as drafted. Carries contract-change; the mcp dependency is authorized by ADR-0034 decision 8.
+    status: merged # PR #402 landed in merge 517553e (2026-11-14) with #401, #406 and #407. Dispatched 2026-11-10 after the owner accepted ADR-0034 as drafted; the mcp dependency is authorized by ADR-0034 decision 8.
     allowed_paths:
       - db/migrations/**
       - packages/contracts/**
@@ -1538,7 +1538,7 @@ packages:
     depends_on: [MCP-CONTRACT]
     team: contracts
     branch: agent/mcp-replay-contract
-    status: review # PR #406, authored on #402's head under the 2026-11-13 authorization (ADR-0034 Amendment 2).
+    status: merged # PR #406 landed in merge 517553e (2026-11-14). Authored on #402's head under the 2026-11-13 authorization (ADR-0034 Amendment 2).
     allowed_paths:
       - packages/contracts/**
       - packages/retrieval/fel_retrieval/evidence/interfaces.py
@@ -1555,7 +1555,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: data
     branch: agent/mcp-backfill-privileges
-    status: review # PR #407, a bounded stacked prerequisite authorized 2026-11-13 (ADR-0034 Amendment 2). #393 depends on it and on #404.
+    status: merged # PR #407 landed in merge 517553e (2026-11-14). A bounded stacked prerequisite authorized 2026-11-13 (ADR-0034 Amendment 2); #393 depends on it and on #404.
     allowed_paths:
       - db/migrations/0013_mcp_backfill_privileges.sql
       - db/migrations/tests/0013_mcp_backfill_privileges.test.sql
@@ -1566,18 +1566,19 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-BACKFILL-PRIVILEGES]
     team: data
     branch: agent/mcp-ingest-accepted-at
-    status: blocked # Also waits for #405 worker column grants. Must not run concurrently with #62 or #66 (workers/tests/**).
+    status: review # November 15 repair authoring completed: retained-pin rejection, publication/repair serialization, known-time ordering and persisted-metadata reparsing. On 2026-11-15 the owner authorized fixes for the verified #417 findings on this branch (ownership unchanged) and ruled that #417 merges after MCP-CUTOFF-PREDICATES (#394). Final independent verification and lead merge gates remain; no hosted timestamp claim.
     allowed_paths:
       - workers/src/fel_workers/ingestion/**
       - workers/src/fel_workers/consumer.py
       - workers/tests/**
+      - evals/harness/synthetic_sec.py # November 15: explicit synthetic acceptance timestamps preserve corpus-QA restatement fixtures under strict known-time ordering.
   - id: MCP-CUTOFF-PREDICATES
     issue: 394
     tasks: [] # MCP-301..304
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: api
     branch: agent/mcp-cutoff-predicates
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404).
+    status: blocked # #392 and #404 merged in 517553e, and #396 (#414) in 2319c35; next in Lane B. Merge order (owner ruling, 2026-11-15): merges before MCP-INGEST-ACCEPTED-AT (#417). Must not run concurrently with FIX-REVIEW-CITATION-BLOCKERS (#409) or FIX-RUN-ERROR-REDACTION (#412), which also edit apps/api/tests/**.
     allowed_paths:
       - apps/api/app/corpus.py
       - apps/api/app/reader.py
@@ -1589,8 +1590,21 @@ packages:
     tasks: [] # MCP-401..407
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: retrieval
+    # Part 1 (PR #416). Part 2 (PR #418, stacked on #416) is registered below as
+    # MCP-EVIDENCE-READ-2 so that path_guard, which reads one branch per package,
+    # also checks its branch.
     branch: agent/mcp-evidence-read
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Imports lanes.py; must not edit it (owned by MCP-CUTOFF-PREDICATES).
+    status: review # Submitted slices #416/#418 entered independent review on 2026-11-14; no implementation owner assigned in the November 15 repair wave. Remaining #395 methods and contract decisions are unfinished. Imports lanes.py; must not edit it.
+    allowed_paths:
+      - packages/retrieval/fel_retrieval/evidence/** # except interfaces.py, owned by MCP-CONTRACT
+      - packages/retrieval/tests/evidence/** # except test_interfaces.py, frozen by #404
+  - id: MCP-EVIDENCE-READ-2
+    issue: 395
+    tasks: [] # Second slice of MCP-401..407; task state stays with MCP-EVIDENCE-READ.
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    team: retrieval
+    branch: agent/mcp-evidence-read-2
+    status: review # PR #418, stacked on #416 (MCP-EVIDENCE-READ) and merging after it. Registered 2026-11-15 for lane enforcement only; same lane as part 1, never edited concurrently with it; no implementation owner assigned.
     allowed_paths:
       - packages/retrieval/fel_retrieval/evidence/** # except interfaces.py, owned by MCP-CONTRACT
       - packages/retrieval/tests/evidence/** # except test_interfaces.py, frozen by #404
@@ -1600,7 +1614,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: trust
     branch: agent/mcp-verifier
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Existing mock identity strings and goldens must stay byte-identical.
+    status: review # In review from 2026-11-14, when #414 was submitted, until #414 merged in 2319c35 (2026-11-15); no implementation owner was assigned in the November 15 repair wave. The flip to `merged` is reserved to the integration lead. Existing mock identity strings and goldens stay byte-identical.
     allowed_paths:
       - packages/retrieval/fel_retrieval/verification.py
       - packages/retrieval/fel_retrieval/verification_report.py
@@ -1611,7 +1625,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: platform
     branch: agent/mcp-server
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Builds against an interface mock; final integration needs MCP-EVIDENCE-READ and MCP-VERIFIER merged.
+    status: blocked # Dependencies #392 and #404 merged in 517553e; awaits a lead dispatch decision within the ADR-0034 Amendment 2 cap. Builds against an interface mock; final integration needs MCP-EVIDENCE-READ and MCP-VERIFIER merged.
     allowed_paths:
       - packages/mcp-server/**
       - apps/api/app/main.py # the /mcp mount only
@@ -1626,7 +1640,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: experience
     branch: agent/mcp-plugin
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Marketplace is shared under ADR-0034 Amendment 2; contract-change and lead review required.
+    status: blocked # Dependencies #392 and #404 merged in 517553e; awaits a lead dispatch decision within the ADR-0034 Amendment 2 cap. Marketplace is shared under ADR-0034 Amendment 2; contract-change and lead review required.
     allowed_paths:
       - plugins/financial-evidence-lab/**
       - .claude-plugin/marketplace.json # Shared; ADR-0034 Amendment 2 records the ruling.
@@ -1637,7 +1651,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
     team: trust
     branch: agent/mcp-evals
-    status: blocked # Waits on MCP-CONTRACT (#392) and MCP-REPLAY-CONTRACT (#404). Confined to a new subtree of the evals/** claimed by #62/#67/#68/#108/#177/#201.
+    status: blocked # Dependencies #392 and #404 merged in 517553e; awaits a lead dispatch decision within the ADR-0034 Amendment 2 cap. Confined to a new subtree of the evals/** claimed by #62/#67/#68/#108/#177/#201.
     allowed_paths:
       - evals/mcp/**
       - pyproject.toml # Add only evals/mcp to pytest testpaths when tests land; serialize against #397 scaffold changes.
@@ -1653,3 +1667,93 @@ packages:
       - infra/**
       - docs/runbooks/**
       - docs/handoff/CREDENTIALS.md
+  # --- Fix packages from the 2026-11-13 repository code review ---
+  # The four findings that survived independent re-verification as the top tier
+  # (docs/research/2026-11-13-repository-code-review.md, "Verification status").
+  # Defect fixes: no canonical task covers them, so every entry carries
+  # `tasks: []`. Their allowed paths are disjoint from each other, but three of
+  # them sit under workers/tests/**, which MCP-INGEST-ACCEPTED-AT (#393) owns
+  # while it is active, and two sit under apps/api/tests/**, which
+  # MCP-CUTOFF-PREDICATES (#394) owns once it is dispatched. Flipping any entry
+  # is a dispatch decision reserved to the integration lead, within the
+  # current ADR-0034 Amendment 2 cap of three implementation agents total
+  # plus the coordinator; read-only reviewers are exempt.
+  - id: FIX-REVIEW-CITATION-BLOCKERS
+    issue: 409
+    tasks: [] # Finding C1: review accept/merge can clear the unverified-citation blocker.
+    depends_on: []
+    team: extraction
+    branch: agent/fix-review-citation-blockers
+    status: review # November 15 repair authoring completed: source-bound cross-stack/bulk fixtures and provenance assertions; local database and production browser acceptance passed. Final CI and review gates remain; #394 API-test ownership stays serialized.
+    allowed_paths:
+      - apps/api/app/extraction/**
+      - apps/api/tests/extraction/**
+      - evals/harness/extraction_cross_stack.py # #409 AC6: assert actual seeded span hashes.
+      - evals/tests/test_extraction_cross_stack.py
+      - apps/api/benchmarks/extraction_load_fixture.py
+      - apps/api/tests/test_extraction_load_report.py # November 15: verify the bulk source's distinct hash and unchanged values/usage.
+  - id: FIX-NUMERIC-SIGN-PARSING
+    issue: 410
+    tasks: [] # Finding C3: parse_numeric drops the sign of non-dollar and U+2212 negatives.
+    depends_on: []
+    team: extraction
+    branch: agent/fix-numeric-sign-parsing
+    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393 to release workers/tests/**.
+    allowed_paths:
+      - workers/src/fel_workers/extraction/normalize/**
+      - workers/tests/extraction/test_normalize.py
+      - workers/tests/extraction/test_normalize_magnitude.py
+      - workers/tests/extraction/test_normalize_sign.py
+  - id: FIX-XBRL-DIVIDE-UNITS
+    issue: 411
+    tasks: [] # Finding C4: xbrli:divide units collapse to the last measure.
+    depends_on: []
+    team: data
+    branch: agent/fix-xbrl-divide-units
+    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393, which owns workers/src/fel_workers/ingestion/** and workers/tests/**.
+    allowed_paths:
+      - workers/src/fel_workers/ingestion/parser.py
+      - workers/src/fel_workers/ingestion/xbrl.py
+      - workers/tests/test_parser_golden.py
+      - workers/tests/test_parser_golden_stress.py
+      - workers/tests/test_xbrl_normalize.py
+      - workers/tests/fixtures/**
+  - id: FIX-RUN-ERROR-REDACTION
+    issue: 412
+    tasks: [] # Finding H4: run-failure text is stored, and for retrieval returned, unredacted.
+    depends_on: []
+    team: trust
+    branch: agent/fix-run-error-redaction
+    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393 (workers/tests/**) and must not overlap #394 (apps/api/tests/**).
+    allowed_paths:
+      - apps/api/app/retrieval.py
+      - apps/api/app/retrieval_run_store.py
+      - apps/api/tests/test_retrieval_api.py
+      - workers/src/fel_workers/redact.py
+      - workers/src/fel_workers/extraction/workflow.py
+      - workers/tests/test_redact.py
+      - workers/tests/extraction/test_run_error_redaction.py
+  # --- Documentation-only research packages ---
+  # Research and specification only; neither dispatches implementation work.
+  # Both list docs/research/README.md for one index entry each, so their merges
+  # are serialized through the coordinator.
+  - id: RESEARCH-PRODUCTION
+    issue: 419
+    tasks: [] # Research and specification only; no PRO-* implementation is dispatched.
+    depends_on: []
+    team: integration
+    branch: agent/production-readiness-research
+    status: review # November 15 documentation corrections completed: trusted check admission/publication and explicit telemetry adapter ownership. External review and lead gates remain; no PRO-* implementation or hosted activation is authorized.
+    allowed_paths:
+      - docs/research/production-readiness/**
+      - docs/research/README.md
+  - id: LOAD-TESTING-SPEC
+    issue: 421
+    tasks: [] # Research and specification only; no load-testing implementation is dispatched.
+    depends_on: []
+    team: integration
+    branch: agent/421-application-load-testing-spec
+    status: review # PR #422. Owner-requested documentation authored 2026-11-14 outside the dispatch registry, registered afterwards in `review`; no implementation agent is assigned. Shares the docs/research/README.md index with RESEARCH-PRODUCTION (#419): serialize the two merges. External review and lead gates remain.
+    allowed_paths:
+      - docs/research/application-load-testing/**
+      - docs/research/README.md # one index entry; shared with RESEARCH-PRODUCTION

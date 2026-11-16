@@ -119,6 +119,7 @@ def _apply(
             "evidence": command["evidence"],
             "validation_summary": {},
             "source_run_ids": sorted(source_pins),
+            validation.REVIEWER_EVIDENCE: True,
         }
         validation_rows = [row for row in validation_rows if str(row["id"]) != origin_id]
         validation_rows.append(replacement)
