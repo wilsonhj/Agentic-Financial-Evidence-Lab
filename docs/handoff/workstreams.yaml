@@ -1486,7 +1486,7 @@ packages:
     depends_on: [M3-REVIEW-API, M3-REVIEW-WEB]
     team: trust
     branch: agent/61-load-acceptance
-    status: blocked # PR #316 implements the runner and batching repair; latest measured bulk p95 1501.91 ms still fails 1000 ms. WAL/storage contention and missing reference resources remain.
+    status: blocked # PR #316 implements the runner and batching repair; latest measured bulk p95 1501.91 ms still fails 1000 ms. WAL/storage contention and missing reference resources remain. Lane overlap recorded 2026-11-15: this lane shares `apps/api/benchmarks/extraction_load_fixture.py`, `apps/api/tests/test_extraction_load_report.py`, `apps/api/app/extraction/review.py`, `apps/api/app/extraction/approved.py` and `apps/api/tests/extraction/test_review_query_budget.py` with FIX-REVIEW-CITATION-BLOCKERS (#409). PR #316 merged on 2026-09-14 and PR #415 merged as `982e12d` on 2026-11-15. Later #61 work must start from a base that contains `982e12d` and must keep the source-bound hash assertions of #415. Must not run concurrently with #409 work on these files.
     allowed_paths:
       - apps/api/benchmarks/**
       - apps/api/tests/test_extraction_load_report.py
@@ -1580,7 +1580,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-BACKFILL-PRIVILEGES]
     team: data
     branch: agent/mcp-ingest-accepted-at
-    status: review # November 15 repair authoring completed: retained-pin rejection, publication/repair serialization, known-time ordering and persisted-metadata reparsing. On 2026-11-15 the owner authorized fixes for the verified #417 findings on this branch (ownership unchanged) and ruled that #417 merges after MCP-CUTOFF-PREDICATES (#394). Final independent verification and lead merge gates remain; no hosted timestamp claim.
+    status: review # November 15 repair authoring completed: retained-pin rejection, publication/repair serialization, known-time ordering and persisted-metadata reparsing. On 2026-11-15 the owner authorized fixes for the verified #417 findings on this branch (ownership unchanged) and ruled that #417 merges after MCP-CUTOFF-PREDICATES (#394). Final independent verification and lead merge gates remain; no hosted timestamp claim. Must not run concurrently with M3-CONFIDENCE-GATE (#62), M5-FORECASTING (#66), M5-BACKTEST, READER-PROD-SMOKE or RELEASE-LIVE-CUTOVER (`workers/tests/**`). `evals/harness/synthetic_sec.py` is also inside the `evals/**` lanes of READER-PROD-SMOKE, M3-CONFIDENCE-GATE, M5-BACKTEST, RELEASE-LIVE-CUTOVER and M5-AUDIT-RELEASE.
     allowed_paths:
       - workers/src/fel_workers/ingestion/**
       - workers/src/fel_workers/consumer.py
@@ -1698,7 +1698,7 @@ packages:
     depends_on: []
     team: extraction
     branch: agent/fix-review-citation-blockers
-    status: review # November 15 repair authoring completed: source-bound cross-stack/bulk fixtures and provenance assertions; local database and production browser acceptance passed. Final CI and review gates remain; #394 API-test ownership stays serialized.
+    status: review # November 15 repair authoring completed: source-bound cross-stack/bulk fixtures and provenance assertions; local database and production browser acceptance passed. Final CI and review gates remain; #394 API-test ownership stays serialized. Lane overlap recorded 2026-11-15: `apps/api/app/extraction/**`, `apps/api/tests/extraction/**`, the bulk load fixture and `apps/api/tests/test_extraction_load_report.py` are also in the lane of M3-REVIEW-LOAD-ACCEPTANCE (#61). Must not run concurrently with #61 work on these files. The two `evals/` files are also inside the `evals/**` lanes of READER-PROD-SMOKE, M3-CONFIDENCE-GATE, M5-BACKTEST, RELEASE-LIVE-CUTOVER and M5-AUDIT-RELEASE.
     allowed_paths:
       - apps/api/app/extraction/**
       - apps/api/tests/extraction/**
