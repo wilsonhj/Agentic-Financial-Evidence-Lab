@@ -113,6 +113,55 @@ def test_discovery_rejects_a_non_string_acceptance_time() -> None:
         discover_filings(NumericClient(), "9999997")
 
 
+@pytest.mark.parametrize("shape", ["short", "long", "empty", "non-list"])
+def test_misaligned_acceptance_list_fails_before_enqueue(
+    shape: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fel_workers.ingestion import discovery
+
+    class MisalignedClient(AcceptanceSecClient):
+        def submissions(self, cik: str) -> dict[str, object]:
+            payload = super().submissions(cik)
+            recent: Any = payload["filings"]["recent"]  # type: ignore[index]
+            times = recent["acceptanceDateTime"]
+            recent["acceptanceDateTime"] = {
+                "short": times[1:],
+                "long": [*times, "2026-05-01T12:00:00Z"],
+                "empty": [],
+                "non-list": "untrusted-array-sentinel",
+            }[shape]
+            return payload
+
+    def no_enqueue(*args: object, **kwargs: object) -> None:
+        pytest.fail("misaligned acceptance metadata must not enqueue any filing")
+
+    monkeypatch.setattr(discovery.queue, "enqueue", no_enqueue)
+    with pytest.raises(DiscoveryError, match="acceptanceDateTime") as excinfo:
+        run_discovery_job(None, MisalignedClient(), {"cik": "9999997"})  # type: ignore[arg-type]
+    assert "untrusted-array-sentinel" not in str(excinfo.value)
+
+
+@pytest.mark.parametrize("invalid_field", ["filingDate", "acceptanceDateTime"])
+def test_discovery_errors_do_not_echo_untrusted_filing_values(invalid_field: str) -> None:
+    class UntrustedClient(AcceptanceSecClient):
+        def submissions(self, cik: str) -> dict[str, object]:
+            payload = super().submissions(cik)
+            recent: Any = payload["filings"]["recent"]  # type: ignore[index]
+            recent["accessionNumber"][0] = "untrusted-accession-sentinel"
+            recent[invalid_field][0] = (
+                "untrusted-date-sentinel" if invalid_field == "filingDate" else 1234
+            )
+            return payload
+
+    with pytest.raises(DiscoveryError, match=invalid_field) as excinfo:
+        discover_filings(UntrustedClient(), "9999997")
+    assert "untrusted-accession-sentinel" not in str(excinfo.value)
+    assert "untrusted-date-sentinel" not in str(excinfo.value)
+    assert (
+        excinfo.value.__suppress_context__
+    ), "untrusted parse errors must not reach traceback logs"
+
+
 class OldestFirstSecClient(AcceptanceSecClient):
     """The same index listed oldest first, as the corpus-QA harness lists it."""
 

@@ -57,6 +57,16 @@ def _recent_lists(payload: dict[str, object]) -> dict[str, list[object]]:
     ):
         value = recent.get(field, [])
         out[field] = list(value) if isinstance(value, list) else []
+    # Missing acceptance metadata is supported by legacy fixtures. A present
+    # array must align exactly: dropping one entry can shift every later time
+    # onto a different accession, so partial arrays cannot be used safely.
+    if "acceptanceDateTime" in recent:
+        if not isinstance(recent["acceptanceDateTime"], list):
+            raise DiscoveryError("submissions acceptanceDateTime must be a list")
+        if len(out["acceptanceDateTime"]) != len(out["accessionNumber"]):
+            raise DiscoveryError(
+                "submissions acceptanceDateTime and accessionNumber lengths differ"
+            )
     return out
 
 
@@ -82,14 +92,12 @@ def discover_filings(
         filed_text = str(dates[index]) if index < len(dates) else ""
         try:
             filed_on = date.fromisoformat(filed_text)
-        except ValueError as exc:
-            raise DiscoveryError(
-                f"filing {accession!r} has unparseable filingDate {filed_text!r}"
-            ) from exc
+        except ValueError:
+            raise DiscoveryError("submissions entry has an unparseable filingDate") from None
         primary = str(documents[index]) if index < len(documents) and documents[index] else None
         accepted = acceptances[index] if index < len(acceptances) else None
         if accepted is not None and not isinstance(accepted, str):
-            raise DiscoveryError(f"filing {accession!r} has a non-string acceptanceDateTime")
+            raise DiscoveryError("submissions entry has a non-string acceptanceDateTime") from None
         url = None
         if primary:
             accession_nodash = str(accession).replace("-", "")

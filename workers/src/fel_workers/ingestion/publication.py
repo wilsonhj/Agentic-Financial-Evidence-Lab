@@ -26,6 +26,9 @@ __all__ = ["EDGAR_TIMEZONE", "UNKNOWN_PUBLICATION", "Publication", "derive_publi
 EDGAR_TIMEZONE = ZoneInfo("America/New_York")
 # EDGAR opens at 06:00 ET: the earliest an after-hours filing could be public.
 _SESSION_OPEN = time(6, 0)
+_INVALID_ACCEPTANCE = (
+    "acceptanceDateTime is not a representable ISO-8601 timestamp with a UTC offset"
+)
 
 
 @dataclass(frozen=True)
@@ -46,12 +49,12 @@ def _acceptance_instant(acceptance_datetime: str) -> datetime:
     """Interpret the SEC string as an instant (see the module docstring)."""
     try:
         parsed = datetime.fromisoformat(acceptance_datetime)
-    except ValueError:
-        parsed = None
-    if parsed is None or parsed.utcoffset() is None:
+        if parsed.utcoffset() is None:
+            raise ValueError(_INVALID_ACCEPTANCE)
+        return parsed.astimezone(UTC)
+    except (ValueError, OverflowError):
         # The value is untrusted job input: never echo it into the error.
-        raise ValueError("acceptanceDateTime is not an ISO-8601 timestamp with a UTC offset")
-    return parsed.astimezone(UTC)
+        raise ValueError(_INVALID_ACCEPTANCE) from None
 
 
 def derive_publication(acceptance_datetime: str | None, filing_date: date) -> Publication:
@@ -75,7 +78,12 @@ def derive_publication(acceptance_datetime: str | None, filing_date: date) -> Pu
     if not isinstance(acceptance_datetime, str):
         raise TypeError("acceptanceDateTime must be the SEC string or None")
     accepted_at = _acceptance_instant(acceptance_datetime)
-    if filing_date > accepted_at.astimezone(EDGAR_TIMEZONE).date():
+    try:
+        acceptance_date = accepted_at.astimezone(EDGAR_TIMEZONE).date()
+    except OverflowError:
+        # A valid UTC boundary instant may not have a representable Eastern date.
+        raise ValueError(_INVALID_ACCEPTANCE) from None
+    if filing_date > acceptance_date:
         opened = datetime.combine(filing_date, _SESSION_OPEN, tzinfo=EDGAR_TIMEZONE)
         return Publication(accepted_at, opened.astimezone(UTC), "next_session_open", "second")
     return Publication(accepted_at, accepted_at, "acceptance", "second")

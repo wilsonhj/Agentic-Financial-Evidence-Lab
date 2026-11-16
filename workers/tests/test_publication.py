@@ -214,3 +214,41 @@ def test_backfill_records_unparseable_acceptance_and_not_a_missing_one() -> None
     assert conn.statements == []
     for raw in ("2026-05-12T09:00:00+25:00", "not-a-timestamp"):
         assert raw not in conflicts
+
+
+@pytest.mark.parametrize(
+    "accepted",
+    [
+        "0001-01-01T00:00:00+05:00",  # UTC conversion underflows.
+        "9999-12-31T23:59:59-05:00",  # UTC conversion overflows.
+        "0001-01-01T00:00:00Z",  # UTC fits, but the Eastern date underflows.
+    ],
+)
+def test_boundary_acceptance_is_a_static_value_error_and_backfill_conflict(accepted: str) -> None:
+    filed = date(2026, 5, 12)
+    with pytest.raises(ValueError, match="acceptanceDateTime") as excinfo:
+        derive_publication(accepted, filed)
+    assert accepted not in str(excinfo.value)
+    accession = "0009999997-26-000040"
+    row = {
+        "id": "boundary",
+        "accession": accession,
+        "filed_at": datetime.combine(filed, time(0), tzinfo=UTC),
+        "accepted_at": None,
+        "public_at": None,
+        "public_at_basis": None,
+        "timestamp_precision": "date",
+    }
+    conn = _StoredRows([row])
+    before = dict(row)
+    refs = {accession: FilingRef("0009999997", accession, "8-K", filed, None, accepted)}
+    assert _backfill_publication(conn, refs, "entity-1") == (0, (accession,))
+    assert row == before and conn.statements == []
+
+
+@pytest.mark.parametrize("accepted", ["0001-01-01T12:00:00Z", "9999-12-31T12:00:00Z"])
+def test_representable_boundary_years_remain_valid(accepted: str) -> None:
+    instant = datetime.fromisoformat(accepted)
+    assert derive_publication(accepted, instant.date()) == Publication(
+        instant, instant, "acceptance", "second"
+    )
