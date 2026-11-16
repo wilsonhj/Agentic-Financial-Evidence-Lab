@@ -126,9 +126,13 @@ A package is ready only when:
 - any credential requirement has been explicitly fulfilled; and
 - an issue and isolated branch/worktree exist.
 
-The general ceiling is four packages. ADR-0034 Amendment 2 imposes the stricter
-limit for the current repair wave: at most three implementation agents total
-plus the coordinator, including non-MCP fix or research writers. Independent
+The general ceiling is four packages. ADR-0034 Amendment 2 sets a stricter
+limit: "at most three implementation agents plus the coordinator". The
+November 15 repair wave applied that limit to every implementer, including
+non-MCP fix and research writers. That wider reading is the coordinator's
+conservative reading, not ADR text. It is open decision G8 in the
+[November 14 decision brief](decision-brief-2026-11-14.md). Apply the wider
+reading until the integration lead decides G8. Independent
 read-only reviewers do not own implementation packages. Serialize shared-file
 changes through the coordinator. Prefer PRs below roughly 600 changed lines and
 split work that cannot be reviewed independently.
