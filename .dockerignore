@@ -1,0 +1,29 @@
+# Build context allowlist for infra/docker/api.Dockerfile: send only what the
+# API image installs. Everything else, including .git, node_modules, .venv and
+# local .env files, stays out of the context.
+*
+!requirements.lock
+!scripts/runtime/
+!packages/providers/
+!packages/ontology/
+!packages/retrieval/
+!workers/
+!apps/api/
+
+# The directory exceptions above re-include everything under them, and Docker
+# does not read .gitignore. Keep local credentials out of the image layers.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ed25519*
+
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/tests/
+**/benchmarks/
