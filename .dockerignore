@@ -10,6 +10,17 @@
 !workers/
 !apps/api/
 
+# The directory exceptions above re-include everything under them, and Docker
+# does not read .gitignore. Keep local credentials out of the image layers.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ed25519*
+
 **/__pycache__/
 **/*.pyc
 **/.pytest_cache/
