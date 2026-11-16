@@ -9,6 +9,7 @@ import logging
 import threading
 import time
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -357,6 +358,25 @@ def test_database_time_exhausts_the_citation_deadline_without_starting_storage(
     _charge_queries(fake_conn, monkeypatch, deadline_clock, 0.075)
     with _raises("deadline_exceeded"):
         read(timeout=0.05)
+    assert not any("min(d.public_at)" in sql for sql in read.conn.sql)
+    assert read.texts.reads == 0
+
+
+def test_transaction_setup_can_exhaust_the_deadline_before_the_first_read(
+    read: Any, fake_conn: Any, monkeypatch: Any, deadline_clock: Any
+) -> None:
+    original = fake_conn.execute
+
+    def execute(self: Any, query: str, params: Any = None) -> Any:
+        result = original(self, query, params)
+        if "set_config" in query:
+            deadline_clock.now = 0.06
+        return result
+
+    monkeypatch.setattr(fake_conn, "execute", execute)
+    with _raises("deadline_exceeded"):
+        read(timeout=0.05)
+    assert not any("source_spans" in sql for sql in read.conn.sql)
     assert read.texts.reads == 0
 
 
@@ -366,8 +386,11 @@ def test_storage_receives_only_the_citation_deadline_remaining_after_sql(
     _charge_queries(fake_conn, monkeypatch, deadline_clock, 0.02)
     waits = []
 
-    def storage(texts: Any, key: str, limit: int, *, timeout: float) -> bytes:
+    def storage(
+        texts: Any, key: str, limit: int, *, timeout: float, deadline: float | None = None
+    ) -> bytes:
         waits.append(timeout)
+        assert deadline == 0.05
         result: bytes = texts.read(key, limit)
         return result
 
@@ -425,7 +448,44 @@ def test_an_expired_citation_call_never_creates_a_storage_worker(
     with _raises("deadline_exceeded"):
         read(timeout=0)
     assert starts == []
+    assert read.conn.statements == []
     assert read.texts.reads == 0
+
+
+@pytest.mark.parametrize("startup", [0.02, 0.06])
+def test_worker_startup_time_uses_the_remaining_deadline(
+    read: Any, monkeypatch: Any, deadline_clock: Any, startup: float
+) -> None:
+    waits = []
+    workers = []
+
+    class Finished:
+        def wait(self, timeout: float) -> bool:
+            waits.append(timeout)
+            return False
+
+        def set(self) -> None:
+            pass
+
+    class Scheduled:
+        def __init__(self, *, target: Any, name: str, daemon: bool) -> None:
+            self.target = target
+            assert daemon
+            workers.append(self)
+
+        def start(self) -> None:
+            deadline_clock.now += startup
+
+    # A scheduled worker has not executed its store call yet. Keep the real
+    # threading module untouched, and finish this owned slot explicitly below.
+    monkeypatch.setattr(citations, "threading", SimpleNamespace(Event=Finished, Thread=Scheduled))
+    try:
+        with _raises("deadline_exceeded"):
+            read(timeout=0.05)
+        assert waits == ([] if startup > 0.05 else [pytest.approx(0.03)])
+    finally:
+        for worker in workers:
+            worker.target()
 
 
 def test_timed_out_reads_keep_bounded_slots_until_the_store_finishes(

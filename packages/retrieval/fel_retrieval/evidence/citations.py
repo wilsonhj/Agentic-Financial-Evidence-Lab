@@ -104,7 +104,12 @@ def _remaining(deadline: float) -> float:
 
 
 def _read_with_deadline(
-    texts: CanonicalTextStore, key: str, limit: int, *, timeout: float
+    texts: CanonicalTextStore,
+    key: str,
+    limit: int,
+    *,
+    timeout: float,
+    deadline: float | None = None,
 ) -> bytes:
     """Read off the caller thread. A store that blocks past ``timeout`` is ``deadline_exceeded``.
 
@@ -113,6 +118,8 @@ def _read_with_deadline(
     finishes, bounding outstanding reads even across sequential retries.
     ``statement_timeout`` does not cover this read; the SQL transaction has ended.
     """
+    deadline = monotonic() + timeout if deadline is None else deadline
+    _remaining(deadline)
     # Capture the semaphore: the worker owns exactly the slot it acquired.
     slots = _READ_SLOTS
     if not slots.acquire(blocking=False):
@@ -136,6 +143,7 @@ def _read_with_deadline(
             finished.set()
 
     try:
+        _remaining(deadline)
         threading.Thread(target=_target, name="canonical-text-read", daemon=True).start()
     except RuntimeError as error:
         slots.release()
@@ -149,7 +157,7 @@ def _read_with_deadline(
     except BaseException:
         slots.release()
         raise
-    if not finished.wait(timeout):
+    if not finished.wait(_remaining(deadline)):
         raise _deadline_exceeded()
     result = outcome[0]
     if isinstance(result, BaseException):
@@ -166,10 +174,13 @@ def _verified_text(
     span_id: str,
     *,
     timeout: float = READ_TIMEOUT_SECONDS,
+    deadline: float | None = None,
 ) -> str:
     """The span's text, sliced by code points, once its recomputed hash matches."""
     try:
-        raw = _read_with_deadline(texts, key, MAX_CANONICAL_BYTES + 1, timeout=timeout)
+        raw = _read_with_deadline(
+            texts, key, MAX_CANONICAL_BYTES + 1, timeout=timeout, deadline=deadline
+        )
     except LookupError:
         raise _integrity_error("canonical text object is absent", span_id) from None
     except OSError as error:
@@ -222,14 +233,18 @@ def get_citation(
         query = _SPAN_BY_RANGE
         params.update(version=ref.document_version_id, start=ref.start_char, end=ref.end_char)
 
+    _remaining(deadline)
     with public_read_session(conn):
+        _remaining(deadline)
         rows = conn.execute(query, params).fetchall()
+        _remaining(deadline)
         company = companies.get(str(rows[0][9])) if rows else None
         if company is None:
             raise i.EvidenceReadError.not_found()
         row = rows[0]
         # An aggregate always returns one row, and it covers at least this filing.
         scope = {**visibility_params(context), "entity": row[9], "form": row[11]}
+        _remaining(deadline)
         coverage = conn.execute(_COVERAGE, scope)
         first, last = (instant.astimezone(UTC) for instant in coverage.fetchall()[0])
 
@@ -243,7 +258,14 @@ def get_citation(
     if not isinstance(company.cik, str) or _CIK.fullmatch(company.cik) is None:
         raise _integrity_error("served cohort issuer is not a 10-digit CIK", span_id)
     text = _verified_text(
-        texts, str(row[7]), start, end, str(row[3]), span_id, timeout=_remaining(deadline)
+        texts,
+        str(row[7]),
+        start,
+        end,
+        str(row[3]),
+        span_id,
+        timeout=_remaining(deadline),
+        deadline=deadline,
     )
     form = None if row[11] is None else str(row[11])
     citation = i.Citation(
