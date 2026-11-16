@@ -1,12 +1,19 @@
+Select the same kubeconfig and context used to install this release.
+For lab.sh, set these in your shell first:
+  export FEL_KUBECONFIG="${FEL_LAB_STATE:?Set the lab state directory}/kubeconfig"
+  export FEL_KUBE_CONTEXT="kind-${FEL_LAB_CLUSTER:-fel-helm-lab}"
+For another cluster, set FEL_KUBECONFIG and FEL_KUBE_CONTEXT to its explicit target.
+The commands below refuse unset or empty targets instead of using your default cluster.
+
 Local fixture UI:
-  kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "fel.fullname" . }}-web 3000:3000 --address 127.0.0.1
+  kubectl --kubeconfig "${FEL_KUBECONFIG:?Set the installation kubeconfig}" --context "${FEL_KUBE_CONTEXT:?Set the installation context}" -n {{ .Release.Namespace }} port-forward service/{{ include "fel.fullname" . }}-web 3000:3000 --address 127.0.0.1
   Open http://127.0.0.1:3000
 
 {{ if eq .Values.tests.hookMode "helm" -}}
 Check the fixture Deployment and, when enabled, the isolated acceptance stack:
-  helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --timeout 16m
-  kubectl -n {{ .Release.Namespace }} logs job/{{ include "fel.fullname" . }}-web-smoke -c web-smoke
-{{ if .Values.acceptance.enabled }}  kubectl -n {{ .Release.Namespace }} logs job/{{ include "fel.fullname" . }}-acceptance -c acceptance
+  helm --kubeconfig "${FEL_KUBECONFIG:?Set the installation kubeconfig}" --kube-context "${FEL_KUBE_CONTEXT:?Set the installation context}" test {{ .Release.Name }} -n {{ .Release.Namespace }} --timeout 16m
+  kubectl --kubeconfig "${FEL_KUBECONFIG:?Set the installation kubeconfig}" --context "${FEL_KUBE_CONTEXT:?Set the installation context}" -n {{ .Release.Namespace }} logs job/{{ include "fel.fullname" . }}-web-smoke -c web-smoke
+{{ if .Values.acceptance.enabled }}  kubectl --kubeconfig "${FEL_KUBECONFIG:?Set the installation kubeconfig}" --context "${FEL_KUBE_CONTEXT:?Set the installation context}" -n {{ .Release.Namespace }} logs job/{{ include "fel.fullname" . }}-acceptance -c acceptance
 {{ end }}
 {{ else -}}
 Argo CD owns the PostSync test Jobs. Run a full Argo CD sync, not helm test.

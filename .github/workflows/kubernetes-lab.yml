@@ -1,0 +1,92 @@
+name: Kubernetes lab
+
+on:
+  pull_request:
+    branches: [main, "integration/**"]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_cluster:
+        description: Build native ARM64 images and run disposable kind acceptance
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kubernetes-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: Kubernetes lab — chart and regression gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - name: Install hash-locked YAML dependency
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          text = Path("requirements-dev.lock").read_text()
+          block = "pyyaml==" + text.split("\npyyaml==", 1)[1].split("\n    #", 1)[0] + "\n"
+          Path(os.environ["RUNNER_TEMP"], "lab-pyyaml.lock").write_text(block)
+          PY
+          python -m pip install --require-hashes --no-deps -r "$RUNNER_TEMP/lab-pyyaml.lock"
+      - name: Install pinned tools with release checksum verification
+        run: |
+          bash infra/kubernetes/bootstrap-tools.sh "$RUNNER_TEMP/fel-lab-bin"
+          echo "$RUNNER_TEMP/fel-lab-bin" >> "$GITHUB_PATH"
+      - name: Run every lab check without skips
+        run: bash infra/kubernetes/check-lab.sh 2>&1 | tee "$RUNNER_TEMP/lab-checks.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kubernetes-lab-checks
+          path: ${{ runner.temp }}/lab-checks.log
+          retention-days: 14
+
+  cluster:
+    name: Kubernetes lab — manual ARM64 acceptance
+    if: github.event_name == 'workflow_dispatch' && inputs.run_cluster
+    needs: checks
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      FEL_LAB_STATE: ${{ runner.temp }}/fel-lab-state
+      FEL_LAB_CLUSTER: fel-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install pinned tools
+        run: |
+          bash infra/kubernetes/bootstrap-tools.sh "$RUNNER_TEMP/fel-lab-bin"
+          echo "$RUNNER_TEMP/fel-lab-bin" >> "$GITHUB_PATH"
+      - run: bash infra/kubernetes/lab.sh doctor
+      - run: bash infra/kubernetes/lab.sh build
+      - id: create
+        run: bash infra/kubernetes/lab.sh create
+      - run: bash infra/kubernetes/lab.sh deploy
+      - run: bash infra/kubernetes/lab.sh test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kubernetes-lab-arm64-evidence
+          path: ${{ runner.temp }}/fel-lab-state/evidence/
+          retention-days: 14
+      - name: Delete this job's owned cluster
+        if: always() && steps.create.outcome == 'success'
+        run: bash infra/kubernetes/lab.sh delete
