@@ -19,7 +19,8 @@ case ${1:-help} in
     if docker inspect "$name" >/dev/null 2>&1; then
       echo 'Registry container name already exists; refusing to replace it.' >&2; exit 2
     fi
-    if [[ -n "$(k get namespace fel-registry --ignore-not-found -o name)" ]]; then
+    existing_namespace=$(k get namespace fel-registry --ignore-not-found=true -o name --request-timeout=15s)
+    if [[ -n "$existing_namespace" ]]; then
       echo 'Registry namespace already exists; refusing to adopt it.' >&2; exit 2
     fi
     umask 077
@@ -89,12 +90,27 @@ EOF
     echo 'Registry did not become ready.' >&2; exit 1
     ;;
   delete)
-    [[ -f "$directory/container-id" && -s "$directory/namespace-uid" ]] || exit 2
-    actual=$(docker inspect --format '{{.Id}}' "$name")
-    [[ "$actual" = "$(cat "$directory/container-id")" ]] || exit 2
-    [[ "$(k get namespace fel-registry -o jsonpath='{.metadata.uid}')" = "$(cat "$directory/namespace-uid")" ]] || exit 2
-    docker rm -f "$name"
-    k delete namespace fel-registry --wait=true --timeout=60s
+    [[ -s "$directory/container-id" && -s "$directory/namespace-uid" ]] || exit 2
+    recorded_container=$(cat "$directory/container-id")
+    recorded_namespace=$(cat "$directory/namespace-uid")
+    [[ "$recorded_container" =~ ^[0-9a-f]{64}$ && "$recorded_namespace" =~ ^[0-9a-f-]{36}$ ]] || exit 2
+    # Successful empty queries mean absent. Docker/API failures must stop before
+    # deletion; a partially completed cleanup can then resume with its records.
+    actual=$(docker container ls --all --no-trunc --filter "name=^/$name$" --format '{{.ID}}')
+    [[ -z "$actual" || "$actual" = "$recorded_container" ]] || exit 2
+    namespace_uid=$(k get namespace fel-registry --ignore-not-found=true -o jsonpath='{.metadata.uid}' --request-timeout=15s)
+    [[ -z "$namespace_uid" || "$namespace_uid" = "$recorded_namespace" ]] || exit 2
+    if [[ -n "$actual" ]]; then
+      # An ID target cannot remove a same-name replacement after the check.
+      docker rm -f "$recorded_container"
+    fi
+    if [[ -n "$namespace_uid" ]]; then
+      # kubectl's normal name-based delete has no UID precondition. Send one
+      # through the raw API so a racing replacement namespace is preserved.
+      printf '{"apiVersion":"v1","kind":"DeleteOptions","preconditions":{"uid":"%s"}}\n' "$recorded_namespace" |
+        k delete --raw /api/v1/namespaces/fel-registry -f - --request-timeout=15s
+      k wait --for=delete namespace/fel-registry --timeout=60s --request-timeout=70s
+    fi
     # Keep published artifacts for inspection, erase only this lab's TLS key.
     rm -f "$directory/tls/server.key" "$directory/container-id" "$directory/namespace-uid"
     ;;
