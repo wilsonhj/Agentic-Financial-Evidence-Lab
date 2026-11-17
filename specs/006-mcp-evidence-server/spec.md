@@ -84,13 +84,14 @@ The nine original packages and two prerequisite corrections are registered in `d
 | `MCP-REPLAY-CONTRACT` | #404 | Replay contract corrections and bounded dispatch registration | `MCP-CONTRACT` |
 | `MCP-BACKFILL-PRIVILEGES` | #405 | Column-limited worker UPDATE grants and actual-role tests | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
 | `MCP-INGEST-ACCEPTED-AT` | #393 | Acceptance and publication timestamps at ingest, backfill, same-day amendment repair | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`, `MCP-BACKFILL-PRIVILEGES` |
-| `MCP-CUTOFF-PREDICATES` | #394 | Existing reads and lanes compare against publication time | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
+| `MCP-CUTOFF-PREDICATES` | #394 | Existing corpus and reader reads compare against publication time. The lane predicate ships in #417 (ADR-0034 Amendment 3) | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`, `MCP-INGEST-ACCEPTED-AT` |
 | `MCP-EVIDENCE-READ` | #395 | The shared evidence-read service and keyword-only search | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
 | `MCP-VERIFIER` | #396 | The promoted deterministic verifier and the verification report | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
-| `MCP-SERVER` | #397 | The MCP package, its tools, limits, errors and the mount | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`; integration needs #395 and #396 |
+| `MCP-SERVER` | #397 | The MCP package, its tools, limits, errors and the mount | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`, `MCP-INGEST-ACCEPTED-AT`; integration needs #395 and #396 |
 | `MCP-PLUGIN` | #398 | The Claude plugin and marketplace manifest | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT` |
-| `MCP-EVALS` | #399 | The acceptance suites of the design contract §12 | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`; full runs need #395, #396, #397 |
-| `MCP-HOSTED-PILOT` | #400 | The hosted invitation-only pilot | All of the above; #177; hosting |
+| `MCP-EVALS` | #399 | The acceptance suites of the design contract §12 | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`, `MCP-INGEST-ACCEPTED-AT`; full runs need #395, #396, #397 |
+| `MCP-HOSTED-PILOT` | #400 | The hosted invitation-only pilot | All of the above, with part 2 of #395 (`MCP-EVIDENCE-READ-2`, #418); #177; hosting |
+| `MCP-ACCEPTANCE-HEADER` | #441 | Acceptance time from the filing header, with the submissions JSON as a cross-check (ADR-0034 Amendment 3). Registered on 2026-11-16 | `MCP-CONTRACT`, `MCP-REPLAY-CONTRACT`, `MCP-BACKFILL-PRIVILEGES`, `MCP-INGEST-ACCEPTED-AT` |
 
 ## 5. Acceptance gates
 
@@ -121,7 +122,9 @@ Directory acceptance does not establish usefulness.
 
 - **Acceptance-time timezone is unverified.** A wrong assumption shifts every
   cutoff by hours and can misclassify after-hours filings. #393 isolates it; the lead confirms it before any hosted
-  run.
+  run. ADR-0034 Amendment 3 (2026-11-16) records reports that the submissions
+  JSON is not consistently UTC. It makes the filing header the source of the
+  acceptance time (#441). #417 keeps the JSON value at face value until then.
 - **Tighter cutoffs change existing goldens.** #394 must justify each change.
 - **`mcp` 2.x dependency fit is unverified** against the pinned HTTP stack.
   #392 reports it before lanes start.
@@ -137,5 +140,7 @@ Directory acceptance does not establish usefulness.
 2. Merge the design contract (PR #389) before or with this package.
 3. Review and merge `MCP-CONTRACT` (#392), then flip the lanes to `ready`.
 4. Confirm the acceptance-time timezone with an approved SEC user agent.
+   ADR-0034 Amendment 3 replaced the single request with a sample that
+   compares header, JSON and index-page times (#441).
 5. Decide whether to add canonical tasks for this scope.
 6. Provision hosting and the operating budget before #400.
