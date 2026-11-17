@@ -26,6 +26,7 @@ date it was first committed is used and marked "(committed)".
 
 | Document | Date | Status | Summary |
 | --- | --- | --- | --- |
+| [Persistent Kubernetes architecture](kubernetes-persistent-deployment.md) | 2026-11-16 | Proposed optional deployment milestone | Runtime/storage boundaries, prerequisites, recovery and acceptance gates (#439) |
 | [Kubernetes and Helm local lab](2026-11-15-kubernetes-helm-lab.md) | 2026-11-15 | Optional lab implementation and reproducible guide | Apple Silicon profiles, fixture UI and real synthetic acceptance, Argo CD/Kargo handoff (#435) |
 | [Local acceptance and production completion](2026-11-15-local-to-production-spec.md) | 2026-11-15 | Proposed implementation specification | Local lifecycle and HTTP acceptance, evidence correctness, MCP-first delivery, production integration, user-funded workflows and model/forecast release sequencing (#433) |
 | [Application load testing and load balancing](application-load-testing/README.md) | 2026-11-14 | Proposed implementation specification | Proposed tests for 1,000/5,000/10,000-user workloads and balancing; no measured capacity certification (#421) |

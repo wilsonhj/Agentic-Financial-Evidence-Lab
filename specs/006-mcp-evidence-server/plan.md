@@ -78,17 +78,26 @@ three implementation lanes plus the coordinator.
 |---|---|---|
 | 0. Decision | none | Done: ADR-0034 accepted on 2026-11-10 |
 | 1. Contract | `MCP-CONTRACT` (#392), `MCP-REPLAY-CONTRACT` (#404), `MCP-BACKFILL-PRIVILEGES` (#405) | Wave 0; corrections may be authored on the open #402 head |
-| 2. Lanes | `MCP-INGEST-ACCEPTED-AT` (#393), `MCP-CUTOFF-PREDICATES` (#394), `MCP-EVIDENCE-READ` (#395), `MCP-VERIFIER` (#396), `MCP-SERVER` (#397), `MCP-PLUGIN` (#398), `MCP-EVALS` (#399) | #392 and #404 merged; #393 also needs #405 |
+| 2. Lanes | `MCP-INGEST-ACCEPTED-AT` (#393), `MCP-CUTOFF-PREDICATES` (#394), `MCP-EVIDENCE-READ` (#395), `MCP-VERIFIER` (#396), `MCP-SERVER` (#397), `MCP-PLUGIN` (#398), `MCP-EVALS` (#399), `MCP-ACCEPTANCE-HEADER` (#441) | #392 and #404 merged; #393 also needs #405; #394, #397, #399 and #441 also need #393 (ADR-0034 Amendment 3) |
 | 3. Integration | #397 against real #395 and #396; #399 full runs | #395, #396 merged; #399 full runs also need #397 |
 | 4. Hosted pilot | `MCP-HOSTED-PILOT` (#400) | Wave 3 green; #177; hosting; budget |
 
 Wave 2 admits at most three implementers plus the coordinator (ADR-0034
-Amendment 2 and ADR-0017). Use the following refill order:
+Amendment 2 and ADR-0017). ADR-0034 Amendment 3 fixed the count at three
+implementers in total, with non-MCP fix and research writers included. Use
+the following refill order:
 
 - Lane A: #395, continuously staffed through service integration.
-- Lane B: #396, then #394, then #397. Finish #394 before mount/test edits.
+- Lane B: #396, then #394, then #397.
 - Lane C: #393, then #399; use #398's registered content work while #399
   awaits integrated endpoints. #398's transcript also waits for the server.
+
+Until 2026-11-16 Lane B finished #394 before any mount or test edit of
+#397, and a ruling of 2026-11-15 merged #394 before #393. ADR-0034
+Amendment 3 replaced both rules. #393 (PR #417) merges first, because it
+carries the lane predicate fix. #394, #397 and #399 are then dispatched
+together, and #394 starts from a base that contains #417. #441 follows #393
+in the same worker lane and is not dispatched with it.
 
 A package under review or paused for integration retains its path reservation
 until the coordinator explicitly releases it. Do not count paused ownership as
@@ -103,7 +112,7 @@ because #402 merged: #404 is a separate required dependency. #405 requires
 | #392 | `db/migrations/**`, `packages/contracts/**`, lockfiles and dependency tables, `packages/retrieval/fel_retrieval/evidence/interfaces.py` |
 | #404 | Replay schemas/interface and the named ADR, design, subordinate spec and registry corrections |
 | #405 | New backfill-privilege migration, its SQL harness and migration README |
-| #393 | `workers/src/fel_workers/ingestion/**`, `workers/src/fel_workers/consumer.py`, `workers/tests/**` |
+| #393 | `workers/src/fel_workers/ingestion/**`, `workers/src/fel_workers/consumer.py`, `workers/tests/**`. For PR #417 only (ADR-0034 Amendment 3): `evals/harness/synthetic_sec.py`, `evals/harness/reader_prod_smoke.py`, `evals/tests/test_reader_prod_smoke.py`, `evals/tests/test_corpus_qa_harness.py`, `packages/retrieval/fel_retrieval/lanes.py` and its two lane tests |
 | #394 | `apps/api/app/corpus.py`, `apps/api/app/reader.py`, `apps/api/tests/**`, `packages/retrieval/fel_retrieval/lanes.py`, lane tests |
 | #395 | `packages/retrieval/fel_retrieval/evidence/**` except `interfaces.py`, `packages/retrieval/tests/evidence/**` |
 | #396 | `packages/retrieval/fel_retrieval/verification.py`, `verification_report.py`, verification tests |
@@ -111,14 +120,20 @@ because #402 merged: #404 is a separate required dependency. #405 requires
 | #398 | `plugins/financial-evidence-lab/**`, `.claude-plugin/marketplace.json` |
 | #399 | `evals/mcp/**` |
 | #400 | `infra/**`, `docs/runbooks/**`, `docs/handoff/CREDENTIALS.md` |
+| #441 | The named publication, header, SEC client, backfill and consumer files under `workers/`, their named tests, `workers/tests/sec_headers/**`, and the named eval harness files; `docs/handoff/workstreams.yaml` has the list |
 
 Rules:
 
 - #394, #395 and #396 share `packages/retrieval` but no file. #395 imports
   `lanes.py` and must not edit it.
 - #394 and #397 both touch `apps/api`. #394 owns two modules and the test
-  tree; #397 owns the mount, one setting and one named test file. Serialize
-  their implementation and rebase #397 on merged #394.
+  tree; #397 owns the mount, one setting and one named test file. Until
+  2026-11-16 the two packages were serialized as a whole. ADR-0034
+  Amendment 3 dispatches them together and serializes only
+  `apps/api/tests/test_mcp_mount.py`. The `pyproject.toml` hunk of #397 and
+  #399 stays serialized also.
+- `lanes.py` stays in the lane of #394. PR #417 changed its predicate under
+  ADR-0034 Amendment 3, so #394 starts from a base that contains #417.
 - `evals/**` is claimed by other registered packages (#62, #67, #68, #108,
   #177, #201). #399 owns the new `evals/mcp/` subtree plus the exact pytest
   collection entry when its tests land. Schedule that root-config hunk
