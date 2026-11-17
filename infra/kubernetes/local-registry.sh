@@ -90,19 +90,32 @@ EOF
     echo 'Registry did not become ready.' >&2; exit 1
     ;;
   delete)
-    [[ -s "$directory/container-id" && -s "$directory/namespace-uid" ]] || exit 2
+    [[ -s "$directory/container-id" ]] || exit 2
     recorded_container=$(cat "$directory/container-id")
-    recorded_namespace=$(cat "$directory/namespace-uid")
-    [[ "$recorded_container" =~ ^[0-9a-f]{64}$ && "$recorded_namespace" =~ ^[0-9a-f-]{36}$ ]] || exit 2
+    recorded_namespace=
+    if [[ -f "$directory/namespace-uid" ]]; then
+      recorded_namespace=$(cat "$directory/namespace-uid")
+    fi
+    [[ "$recorded_container" =~ ^[0-9a-f]{64}$ ]] || exit 2
+    [[ -z "$recorded_namespace" || "$recorded_namespace" =~ ^[0-9a-f-]{36}$ ]] || exit 2
     # Successful empty queries mean absent. Docker/API failures must stop before
     # deletion; a partially completed cleanup can then resume with its records.
     actual=$(docker container ls --all --no-trunc --filter "name=^/$name$" --format '{{.ID}}')
     [[ -z "$actual" || "$actual" = "$recorded_container" ]] || exit 2
     namespace_uid=$(k get namespace fel-registry --ignore-not-found=true -o jsonpath='{.metadata.uid}' --request-timeout=15s)
-    [[ -z "$namespace_uid" || "$namespace_uid" = "$recorded_namespace" ]] || exit 2
+    if [[ -n "$recorded_namespace" ]]; then
+      [[ -z "$namespace_uid" || "$namespace_uid" = "$recorded_namespace" ]] || exit 2
+    fi
     if [[ -n "$actual" ]]; then
       # An ID target cannot remove a same-name replacement after the check.
       docker rm -f "$recorded_container"
+    fi
+    if [[ -z "$recorded_namespace" && -n "$namespace_uid" ]]; then
+      # A failed create response might have created this namespace, but gives
+      # us no proof. Remove only known-owned resources, retain diagnostic state.
+      rm -f "$directory/tls/server.key"
+      echo 'Owned registry container and TLS key removed; namespace has no recorded UID and is preserved for operator inspection.' >&2
+      exit 2
     fi
     if [[ -n "$namespace_uid" ]]; then
       # kubectl's normal name-based delete has no UID precondition. Send one

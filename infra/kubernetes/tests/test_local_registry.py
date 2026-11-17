@@ -121,6 +121,32 @@ elif "wait" in args and namespace.exists():
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.registry / "tls/server.key").exists())
 
+    def test_failed_namespace_creation_can_clean_recorded_container_and_key(self):
+        (self.registry / "namespace-uid").write_text("")
+        (self.state / "namespace").unlink()
+        result = self.run_registry()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.state / "container").exists())
+        self.assertFalse((self.registry / "tls/server.key").exists())
+
+    def test_unknown_namespace_is_preserved_after_lost_create_response(self):
+        (self.registry / "namespace-uid").unlink()
+        result = self.run_registry()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertFalse((self.state / "container").exists())
+        self.assertFalse((self.registry / "tls/server.key").exists())
+        self.assertEqual((self.state / "namespace").read_text(), NAMESPACE)
+        self.assertTrue((self.registry / "container-id").exists())
+        self.assertIn("namespace has no recorded UID", result.stderr)
+        self.assertFalse(any("delete" in call for call in self.calls()))
+
+    def test_partial_create_query_error_preserves_state_for_retry(self):
+        (self.registry / "namespace-uid").write_text("")
+        result = self.run_registry(TEST_NAMESPACE_QUERY_ERROR="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.state / "container").read_text(), CONTAINER)
+        self.assert_key_retained()
+
     def test_query_errors_never_mean_absence_or_permit_mutation(self):
         for variable in ("TEST_DOCKER_QUERY_ERROR", "TEST_NAMESPACE_QUERY_ERROR"):
             with self.subTest(variable=variable):
