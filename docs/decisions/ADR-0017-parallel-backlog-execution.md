@@ -274,3 +274,45 @@ current required checks, with reproducible local evidence and explicit
 unrun checks as required by #435. The package remains `review` until the
 lead records its verified merge. Existing dispatch limits, path ownership,
 review rules and release gates are unchanged.
+
+### November 17 local lab validation follow-up registration
+
+Status: Accepted for the bounded registration below by integration-lead
+ratification in [PR #440](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/440).
+
+[Issue #439](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/issues/439)
+records the owner's separate follow-up instruction: resolve findings and add
+CI; seek independent Claude reproduction; measure available Mac profiles and
+prepare the others; create a private environment repository; prove manual
+Argo CD/Kargo delivery; and document a persistent-deployment proposal. This
+ruling records that existing bounded authority and supplies the ADR required
+for the new `LOCAL-KUBERNETES-VALIDATION` dispatch key. The November 16
+registration for #435 does not supply this separate authority.
+
+Register the package for #439 on `agent/439-platform-validation`, with
+`tasks: []`, `depends_on: []` and `status: review`. Its base includes merged
+#436. Its allowed paths are `infra/kubernetes/**`, `infra/helm/fel/**`,
+`.github/workflows/kubernetes-lab.yml`,
+`docs/research/2026-11-15-kubernetes-helm-lab.md`,
+`docs/research/kubernetes-persistent-deployment.md`,
+`docs/research/README.md`, `docs/handoff/CREDENTIALS.md` and
+`docs/handoff/workstreams.yaml`. The lead serializes shared-path edits and
+this amendment. Credential documentation contains names and ownership only.
+Further overlapping work requires lead scheduling within the existing cap.
+
+PR #440 delivers local validation code, CI and documentation. Its record of
+the disposable GitOps exercise relies on #439's existing authority. This
+amendment authorizes no new private-repository mutation, publication,
+controller deployment, credential issuance or credential-policy change.
+ADR-0035 still governs Vercel/Neon hosting. The persistent Kubernetes
+document remains Proposed. Local fixture results establish no production
+capacity, hosted acceptance or live-provider readiness. No application
+contract, migration or canonical task completion is authorized.
+
+Merge requires independent review, lead approval and current required checks.
+The lead may accept the delivered code and documentation while keeping #439
+open for its remaining evidence: quota-blocked Claude reproduction, unrun
+Mac profiles, unavailable GHCR/private hosted CI and the other recorded
+limitations. OpenAI review does not replace the requested Claude
+reproduction. The registry stays `review` pending that outstanding work;
+merging this PR does not mark the entire issue complete.

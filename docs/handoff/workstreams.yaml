@@ -93,6 +93,22 @@ defaults:
 # two packages with overlapping paths concurrently: overlap is resolved by
 # time, not ownership.
 packages:
+  - id: LOCAL-KUBERNETES-VALIDATION
+    issue: 439
+    tasks: [] # ADR-0017 November 17 ratifies #439's bounded follow-up; no product gate completion.
+    depends_on: [] # Base includes merged #436; no concurrent writer in that closed lane.
+    team: integration
+    branch: agent/439-platform-validation
+    status: review # Code/docs under review; #439 retains outstanding reproduction evidence after PR #440 merges.
+    allowed_paths:
+      - infra/kubernetes/**
+      - infra/helm/fel/**
+      - .github/workflows/kubernetes-lab.yml # New isolated CI gate, owner-authorized in #439.
+      - docs/research/2026-11-15-kubernetes-helm-lab.md
+      - docs/research/kubernetes-persistent-deployment.md
+      - docs/research/README.md # Coordinator serializes the index entry.
+      - docs/handoff/CREDENTIALS.md # Names and ownership only.
+      - docs/handoff/workstreams.yaml # Coordinator registration; lead review before merge.
   - id: LOCAL-KUBERNETES-LAB
     issue: 435
     tasks: [] # Owner-requested optional local packaging; no release-gate completion.
