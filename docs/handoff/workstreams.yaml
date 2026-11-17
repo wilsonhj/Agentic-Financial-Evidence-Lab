@@ -1612,7 +1612,7 @@ packages:
   - id: MCP-CUTOFF-PREDICATES
     issue: 394
     tasks: [] # MCP-301..304
-    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-INGEST-ACCEPTED-AT] # MCP-INGEST-ACCEPTED-AT (#417) added 2026-11-16 under ADR-0034 Amendment 3, decision 7.
     team: api
     branch: agent/mcp-cutoff-predicates
     status: blocked # #392 and #404 merged in 517553e, and #396 (#414) in 2319c35; next in Lane B. The owner ruled on 2026-11-15 that this package merges before MCP-INGEST-ACCEPTED-AT (#417), and withdrew that order on 2026-11-16 (ADR-0034 Amendment 3), because #417 carries the lane predicate fix. This package now follows #417 and must start from a base that contains it; it keeps the reader and corpus cutoff work. Dispatch decision recorded 2026-11-16: dispatch with #397 and #399 after #417 merges. Must not run concurrently with FIX-REVIEW-CITATION-BLOCKERS (#409) or FIX-RUN-ERROR-REDACTION (#412), which also edit apps/api/tests/**.
@@ -1659,7 +1659,7 @@ packages:
   - id: MCP-SERVER
     issue: 397
     tasks: [] # MCP-601..606
-    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-INGEST-ACCEPTED-AT] # MCP-INGEST-ACCEPTED-AT (#417) added 2026-11-16 under ADR-0034 Amendment 3, decision 7.
     team: platform
     branch: agent/mcp-server
     status: blocked # Dependencies #392 and #404 merged in 517553e; the owner decided on 2026-11-16 to dispatch it with #394 and #399 after #417 merges, within the cap of three implementers in total (ADR-0034 Amendment 3). The status flip stays with the integration lead. Builds against an interface mock; final integration needs MCP-EVIDENCE-READ and MCP-VERIFIER merged.
@@ -1685,7 +1685,7 @@ packages:
   - id: MCP-EVALS
     issue: 399
     tasks: [] # MCP-801..806
-    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT]
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-INGEST-ACCEPTED-AT] # MCP-INGEST-ACCEPTED-AT (#417) added 2026-11-16 under ADR-0034 Amendment 3, decision 7.
     team: trust
     branch: agent/mcp-evals
     status: blocked # Dependencies #392 and #404 merged in 517553e; the owner decided on 2026-11-16 to dispatch it with #394 and #397 after #417 merges, within the cap of three implementers in total (ADR-0034 Amendment 3). The status flip stays with the integration lead. Confined to a new subtree of the evals/** claimed by #62/#67/#68/#108/#177/#201.
@@ -1704,6 +1704,32 @@ packages:
       - infra/**
       - docs/runbooks/**
       - docs/handoff/CREDENTIALS.md
+  - id: MCP-ACCEPTANCE-HEADER
+    issue: 441
+    tasks: [] # New scope under ADR-0034 Amendment 3, decision 1; proposed milestone tasks MCP-205..208.
+    depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-BACKFILL-PRIVILEGES, MCP-INGEST-ACCEPTED-AT]
+    team: data
+    branch: agent/mcp-acceptance-header
+    status: blocked # Registered 2026-11-16; not dispatched. Waits for #417, whose lane it shares, and for the lead to answer the open questions on #441. Must not run concurrently with READER-PROD-SMOKE (#108), M3-CONFIDENCE-GATE (#62), M5-FORECASTING (#66), M5-BACKTEST (#67), RELEASE-LIVE-CUTOVER (#177) or M5-AUDIT-RELEASE (#68), which claim `workers/tests/**` or `evals/**`.
+    allowed_paths:
+      - workers/src/fel_workers/ingestion/publication.py
+      - workers/src/fel_workers/ingestion/filing_header.py # New: header URL, capability protocol and parser.
+      - workers/src/fel_workers/ingestion/sec_client.py
+      - workers/src/fel_workers/ingestion/fixture_sec_client.py
+      - workers/src/fel_workers/ingestion/backfill.py
+      - workers/src/fel_workers/consumer.py
+      - workers/tests/test_publication.py
+      - workers/tests/test_publication_ingest.py
+      - workers/tests/test_filing_header.py
+      - workers/tests/test_sec_client.py
+      - workers/tests/test_fixture_sec_client.py
+      - workers/tests/test_consumer.py
+      - workers/tests/sec_headers/** # Outside workers/tests/fixtures/**, which #411 claims.
+      - evals/harness/synthetic_sec.py
+      - evals/harness/reader_prod_smoke.py
+      - evals/tests/test_reader_prod_smoke.py
+      - evals/tests/test_corpus_qa_harness.py
+      - evals/datasets/reader-prod-smoke/**
   # --- Fix packages from the 2026-11-13 repository code review ---
   # The four findings that survived independent re-verification as the top tier
   # (docs/research/2026-11-13-repository-code-review.md, "Verification status").
