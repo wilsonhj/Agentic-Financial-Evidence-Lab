@@ -4,9 +4,10 @@ import hashlib
 import json
 import os
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -149,6 +150,42 @@ def test_real_worker_setup_and_blob_recovery(database, monkeypatch, tmp_path):
     assert manifest["corpus"] != manifest["pinned_corpus"]
     assert manifest["denied_user"] != manifest["user"]
     assert "token" not in json.dumps(manifest)
+    with psycopg.connect(database) as conn:
+        publications = conn.execute(
+            "SELECT accepted_at,public_at,public_at_basis,timestamp_precision "
+            "FROM documents ORDER BY accession"
+        ).fetchall()
+    expected = [datetime(2026, 4, day, 16, tzinfo=UTC) for day in (1, 2, 3)] + [
+        datetime(2026, 7, 1, 16, tzinfo=UTC)
+    ]
+    assert publications == [(instant, instant, "acceptance", "second") for instant in expected]
+    # Exercise the production reader with the worker-created evidence and pin.
+    # These fixtures contain prose, so amendment navigation uses document
+    # form/period metadata rather than financial-fact restatement links.
+    from app.auth import TenantContext
+    from app.reader import get_document_reader
+
+    monkeypatch.setenv("FEL_DATABASE_URL", database)
+    monkeypatch.setenv("FEL_STORAGE_DIR", str(tmp_path))
+    body = get_document_reader(
+        UUID(manifest["documents"]["original"]["id"]),
+        TenantContext(manifest["org"], manifest["user"], "owner"),
+        as_of=datetime.fromisoformat(manifest["as_of"]),
+        corpus_version_id=UUID(manifest["corpus"]),
+        document_version_id=None,
+        include_siblings=True,
+        sibling_limit=10,
+        sibling_cursor=None,
+        sibling_order=None,
+    )
+    assert body["document"]["meta"]["id"] == manifest["documents"]["original"]["id"]
+    siblings = [block["meta"] for block in body["siblings"]]
+    assert {doc["id"] for doc in siblings} == {
+        manifest["documents"][name]["id"] for name in ("amendment1", "amendment2")
+    }
+    assert all(doc["form"] == "10-Q/A" for doc in siblings)
+    assert all(doc["period_start"] == "2026-01-01" for doc in siblings)
+    assert all(doc["period_end"] == "2026-03-31" for doc in siblings)
     for document in manifest["documents"].values():
         assert document["start_char"] > 0
         assert (

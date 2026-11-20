@@ -81,6 +81,7 @@ def setup(database_url: str, storage: Path, target: str) -> dict[str, Any]:
         )
         jobs = []
         for index, document in enumerate(fixtures["documents"]):
+            filed_on = "2026-07-01" if index == 3 else f"2026-04-0{index + 1}"
             jobs.append(
                 enqueue(
                     conn,
@@ -92,7 +93,9 @@ def setup(database_url: str, storage: Path, target: str) -> dict[str, Any]:
                         "accession": f"0009999998-26-00000{index + 1}",
                         "cik": "9999998",
                         "form": "10-Q" if index in (0, 3) else "10-Q/A",
-                        "filed_on": ("2026-07-01" if index == 3 else f"2026-04-0{index + 1}"),
+                        "filed_on": filed_on,
+                        # Synthetic intraday acceptance, known for every fixture.
+                        "acceptance_datetime": f"{filed_on}T16:00:00Z",
                         "period_start": "2026-01-01",
                         "period_end": "2026-03-31",
                     },

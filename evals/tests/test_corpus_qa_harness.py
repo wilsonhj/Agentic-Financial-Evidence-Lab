@@ -734,7 +734,13 @@ class _LateFilingClient:
             self._snapshotted.add(cik)
             self.late_documents.add(str(recent["primaryDocument"][-1]))
             self.late_accessions.add(str(recent["accessionNumber"][-1]))
-            for field in ("accessionNumber", "form", "filingDate", "primaryDocument"):
+            for field in (
+                "accessionNumber",
+                "form",
+                "filingDate",
+                "primaryDocument",
+                "acceptanceDateTime",
+            ):
                 recent[field] = recent[field][:-1]
         return payload
 
@@ -743,6 +749,18 @@ class _LateFilingClient:
         if self._late_fetch_fails and name in self.late_documents:
             raise RuntimeError("synthetic outage: late-arriving filing fetch refused")
         return self._inner.fetch_document(url)
+
+
+def test_late_filing_snapshot_preserves_parallel_submissions_arrays() -> None:
+    cik = _synthetic_ciks()[0]
+    client = _LateFilingClient(SyntheticCohortSecClient([cik]), late_fetch_fails=False)
+    initial_payload: Any = client.submissions(cik)
+    later_payload: Any = client.submissions(cik)
+    initial, later = initial_payload["filings"]["recent"], later_payload["filings"]["recent"]
+    fields = ("accessionNumber", "form", "filingDate", "primaryDocument", "acceptanceDateTime")
+    assert len({len(initial[field]) for field in fields}) == 1
+    for field in fields:
+        assert initial[field] == later[field][:-1]
 
 
 def test_surplus_fetch_job_failure_is_a_run_failure(
