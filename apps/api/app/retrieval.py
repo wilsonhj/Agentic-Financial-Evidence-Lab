@@ -6,6 +6,7 @@ Storage, pinned execution and complete bounded reads have explicit helper module
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -102,8 +103,11 @@ from fel_retrieval.verification import CitationIntegrityError
 from fel_retrieval.verification import MockCitationVerifier as MockCitationVerifier
 from fel_retrieval.verification import should_abstain as should_abstain
 from fel_retrieval.verification import verify_claims as verify_claims
+from fel_workers.redact import redact_error_text, redact_job_error_text
 
 router = APIRouter(prefix="/v1", tags=["retrieval"])
+
+_log = logging.getLogger(__name__)
 
 
 # Lanes are executed and emitted in the shared fusion order (``LANE_ORDER``) so
@@ -243,15 +247,38 @@ def _corpus_read_connection() -> psycopg.Connection[Any]:
     return conn
 
 
+# Messages stored for failures that wrap arbitrary exceptions. A lane or the
+# pipeline can raise driver, provider or filesystem errors whose text carries
+# connection strings, SQL, paths or provider payloads, so these codes never
+# store ``str(exc)``; the detail goes to the server log only.
+_LANE_FAILED_MESSAGE = "A retrieval lane failed; the run was stopped."
+_PIPELINE_FAILED_MESSAGE = "The retrieval run failed."
+
+
 def _failure_envelope(exc: Exception) -> dict[str, str]:
-    """Map a pipeline exception to the run's stored error envelope."""
+    """Map a pipeline exception to the run's stored (and API-visible) error envelope.
+
+    Redaction happens here, at capture, so unredacted exception text never reaches
+    ``retrieval_runs.error`` or the ``run_failed`` event payload that the trace and
+    event-history reads return verbatim. Codes are unchanged.
+    """
     if isinstance(exc, UnsupportedEmbeddingProvider):
-        return {"code": "EMBEDDING_PROVIDER_UNAVAILABLE", "message": str(exc)}
+        return {"code": "EMBEDDING_PROVIDER_UNAVAILABLE", "message": _safe_text(exc)}
     if isinstance(exc, LaneExecutionError):
-        return {"code": "LANE_EXECUTION_FAILED", "message": str(exc)}
+        return {"code": "LANE_EXECUTION_FAILED", "message": _LANE_FAILED_MESSAGE}
     if isinstance(exc, CitationIntegrityError):
-        return {"code": exc.code, "message": str(exc)}
-    return {"code": "PIPELINE_FAILED", "message": str(exc)}
+        return {"code": exc.code, "message": _safe_text(exc)}
+    return {"code": "PIPELINE_FAILED", "message": _PIPELINE_FAILED_MESSAGE}
+
+
+def _exc_text(exc: Exception) -> str:
+    # Not cut here: a raw cut can split a credential so the redactor no longer
+    # recognises it. The redactor bounds its own input and drops the cut tail.
+    return str(exc)
+
+
+def _safe_text(exc: Exception) -> str:
+    return redact_job_error_text(_exc_text(exc))
 
 
 def _run_pipeline_or_fail(
@@ -314,6 +341,16 @@ def _record_run_failure(
 ) -> None:
     """Append ``run_failed`` and move the run to ``failed`` in a fresh transaction."""
     error = _failure_envelope(exc)
+    # Never pass exc_info: the root logger is wired to Sentry's logging
+    # integration, which would ship the raw exception and its chained causes.
+    # Log the type name and the strictly redacted message instead.
+    _log.error(
+        "retrieval run %s failed (%s): %s: %s",
+        run_id,
+        error["code"],
+        type(exc).__name__,
+        redact_error_text(_exc_text(exc)),
+    )
     with tenant_connection(ctx) as conn:
         conn.execute("SELECT set_config('statement_timeout', %s, true)", (_STATEMENT_TIMEOUT,))
         _RunWriter(conn, run_id=run_id, org_id=ctx.org_id).fail(

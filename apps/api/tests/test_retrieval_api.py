@@ -17,7 +17,8 @@ import time
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -734,6 +735,84 @@ def test_lane_failure_persists_failed_run(
     assert row["candidate_count"] == 0
 
 
+_FAKE_DSN = "postgresql://fel_app:FAKE-DB-PASSWORD-412@db.internal.invalid:5432/fel"
+_FAKE_BEARER = "FAKE-BEARER-TOKEN-412"
+_LEAKY_MESSAGE = f"connect failed {_FAKE_DSN} Authorization: Bearer {_FAKE_BEARER}"
+_SECRET_FRAGMENTS = ("FAKE-DB-PASSWORD-412", _FAKE_BEARER, "db.internal.invalid")
+# The log keeps the (non-secret) host for diagnosis; credentials must still go.
+_LOG_SECRET_FRAGMENTS = _SECRET_FRAGMENTS[:2]
+
+
+@pytest.mark.parametrize("failing_stage", ["lane", "generation"])
+def test_failed_run_error_text_is_redacted_everywhere(
+    client: TestClient,
+    org: tuple[str, str],
+    seeded: dict[str, str],
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    failing_stage: str,
+) -> None:
+    """Exception text (DSN, bearer token) never lands in the row, event or API reads (#412)."""
+    from fel_retrieval.generation import StructuredClaimGenerator
+
+    def _lane_boom(_conn: Any, _query: Any) -> list[Any]:
+        raise RuntimeError(_LEAKY_MESSAGE)
+
+    def _generate_boom(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError(_LEAKY_MESSAGE)
+
+    if failing_stage == "lane":
+        monkeypatch.setitem(retrieval._LANE_FUNCS, "dense", _lane_boom)
+        expected_code = "LANE_EXECUTION_FAILED"
+    else:
+        monkeypatch.setattr(StructuredClaimGenerator, "generate", _generate_boom)
+        expected_code = "PIPELINE_FAILED"
+
+    with caplog.at_level("ERROR", logger=retrieval._log.name):
+        created = _create(client, org, seeded["workspace_id"])
+    run_id = created["run_id"]
+
+    failure_records = [r for r in caplog.records if r.name == retrieval._log.name]
+    assert failure_records
+    for record in failure_records:
+        # Sentry's logging integration forwards exc_info (and chained causes)
+        # verbatim, so the failure log must carry redacted text only.
+        assert record.exc_info is None
+        assert not record.exc_text
+        for fragment in _LOG_SECRET_FRAGMENTS:
+            assert fragment not in record.getMessage()
+
+    row = _run_row(db_url, run_id)
+    assert row["status"] == "failed"
+    assert row["error"]["code"] == expected_code
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        stored = conn.execute(
+            "SELECT payload::text FROM retrieval_events"
+            " WHERE run_id = %s AND event_type = 'run_failed'",
+            (run_id,),
+        ).fetchone()
+    assert stored is not None
+    persisted = json.dumps(row["error"]) + stored[0]
+
+    headers = _headers(*org)
+    responses = {
+        "trace": client.get(f"/v1/retrieval-runs/{run_id}", headers=headers),
+        "event-history": client.get(f"/v1/retrieval-runs/{run_id}/event-history", headers=headers),
+        "sse": client.get(f"/v1/retrieval-runs/{run_id}/events", headers=headers),
+    }
+    for name, resp in responses.items():
+        assert resp.status_code == 200, (name, resp.text)
+    trace_error = responses["trace"].json()["events"][-1]["payload"]["error"]
+    assert trace_error["code"] == expected_code
+    assert trace_error["message"]  # stable, non-empty safe message
+
+    for fragment in _SECRET_FRAGMENTS:
+        assert fragment not in persisted, f"{fragment} reached durable storage"
+        for name, resp in responses.items():
+            assert fragment not in resp.text, f"{fragment} leaked through {name}"
+
+
 def test_dangling_citation_persists_failed_run(
     client: TestClient,
     org: tuple[str, str],
@@ -1045,3 +1124,107 @@ def test_query_run_page_preserves_snapshot(client, org, seeded):
     assert after.json()["runs"][0]["run_id"] == rerun.json()["run_id"]
     assert after.json()["question"] == page.json()["question"]
     assert after.json()["plan"] == page.json()["plan"]
+
+
+def test_record_run_failure_logs_redacted_text_without_exc_info(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The failure log omits exc_info: Sentry would ship the raw exception chain (#412)."""
+    import contextlib
+
+    class _Conn:
+        def execute(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+    class _Writer:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def fail(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+    @contextlib.contextmanager
+    def _fake_tenant_connection(_ctx: Any) -> Any:
+        yield _Conn()
+
+    monkeypatch.setattr(retrieval, "tenant_connection", _fake_tenant_connection)
+    monkeypatch.setattr(retrieval, "_RunWriter", _Writer)
+    try:
+        try:
+            raise RuntimeError(f"cause {_FAKE_DSN}")
+        except RuntimeError as cause:
+            raise ValueError(_LEAKY_MESSAGE) from cause
+    except ValueError as exc:
+        with caplog.at_level("ERROR", logger=retrieval._log.name):
+            retrieval._record_run_failure(
+                cast(Any, SimpleNamespace(org_id="org")),
+                run_id="run-1",
+                exc=exc,
+                usage_kind="research_query",
+                cost_usd=Decimal("0"),
+                generation=None,
+            )
+
+    records = [r for r in caplog.records if r.name == retrieval._log.name]
+    assert len(records) == 1
+    record = records[0]
+    assert record.exc_info is None
+    assert not record.exc_text
+    message = record.getMessage()
+    assert "run-1" in message
+    assert "ValueError" in message  # diagnostic detail survives, as a type name
+    for fragment in _LOG_SECRET_FRAGMENTS:
+        assert fragment not in message
+
+
+def test_failure_text_is_bounded_by_the_redactor() -> None:
+    """Defence in depth for #412: oversized exception text is bounded, not stored whole."""
+    out = retrieval._safe_text(ValueError("password=SECRET1 " + "x" * 1_000_000))
+    assert "SECRET1" not in out
+    assert len(out) <= 256
+
+
+def test_failure_path_is_bounded_on_adversarial_exception_text() -> None:
+    """A hostile message must not stall the synchronous failure path (#412, PR #445).
+
+    Runs in a child interpreter with a hard timeout so a catastrophic pattern
+    fails this test instead of hanging the suite.
+    """
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, time\n"
+        "from app import retrieval\n"
+        "text = sys.stdin.read()\n"
+        "t = time.perf_counter()\n"
+        "retrieval._safe_text(ValueError(text))\n"
+        "retrieval.redact_error_text(retrieval._exc_text(ValueError(text)))\n"
+        "print(time.perf_counter() - t)\n"
+    )
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
+    for message in ("password='" + "\\a" * 40, "password='" + "\\a" * 5000, "secret-" * 20000):
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", code],
+                input=message,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                env=env,
+                check=True,
+            )
+        except subprocess.TimeoutExpired:
+            pytest.fail("failure path did not finish within 20 s (catastrophic backtracking)")
+        assert float(proc.stdout.strip()) < 1.0
+
+
+def test_failure_text_straddling_the_bound_keeps_no_secret_prefix() -> None:
+    """The API path must not pre-cut exception text where a secret can straddle the cut (#412)."""
+    from fel_workers.redact import MAX_INPUT_CHARS
+
+    secret = "{'api_key': 'FAKESTRADDLE0123456789'}"
+    for inside in range(1, len(secret)):
+        text = "x" + " " * (MAX_INPUT_CHARS - 2 - inside) + " " + secret
+        assert "FAKE" not in retrieval._safe_text(ValueError(text))
