@@ -52,6 +52,30 @@ _NUM_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Currency markers that may sit between a sign (or opening paren) and the digits.
+# They carry no magnitude or sign of their own, so they are removed before the
+# match; leaving them in made '-EUR100' / '(US$100)' match only '100' and drop
+# the sign into the discarded prefix (issue #410). Prefixed dollars come first so
+# 'US$' is consumed whole. ISO codes need word boundaries so they never eat a
+# fragment of a longer word.
+_CURRENCY_MARKER_RE = re.compile(
+    r"(?:US|CA|C|AU|A|HK|NZ|S)\$|[$\u20ac\u00a3\u00a5\u20b9\u20a9]"
+    r"|\b(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|RMB|INR)\b",
+    re.IGNORECASE,
+)
+
+# U+2212 MINUS SIGN is always a minus. En/em dash and figure dash are also
+# written as a minus in filings, but they double as sentence punctuation
+# ('Revenue \u2014 $100 million'), so they count as a minus only when glued to
+# what follows; a dash set off by whitespace stays punctuation.
+_ALWAYS_MINUS_RE = re.compile("\u2212")
+_GLUED_DASH_RE = re.compile(r"[\u2012\u2013\u2014](?=\S)")
+
+# What is left in front of the match must not be able to carry a sign. A
+# sign/open-paren followed by at most one short unrecognised token ('-kr 100',
+# '(Fr. 100)') is a sign we could not attach to the number, so it fails closed.
+_ORPHAN_SIGN_PREFIX_RE = re.compile(r"[-+(]\s*\S{0,3}\s*$")
+
 # A grouping/decimal separator touching the matched body means the match only
 # covered part of a malformed number ('1,23' -> '1').
 _ADJACENT_GROUPING = frozenset({",", "."})
@@ -68,6 +92,11 @@ def _require_full_consumption(raw_value: str, cleaned: str, match: re.Match[str]
     rather than persisted with a wrong magnitude.
     """
     leftover = cleaned[: match.start()] + cleaned[match.end() :]
+    if _ORPHAN_SIGN_PREFIX_RE.search(cleaned[: match.start()]):
+        raise ValueError(
+            f"raw_value has a sign or parenthesis that could not be attached "
+            f"to its number: {raw_value!r} (read only {cleaned[match.start() : match.end()]!r})"
+        )
     if any(char.isdigit() for char in leftover):
         raise ValueError(
             f"raw_value has an unconsumed numeric remainder: {raw_value!r} "
@@ -97,7 +126,9 @@ def parse_numeric(raw_value: str) -> tuple[Decimal, int, str]:
     """
     if not raw_value or not isinstance(raw_value, str):
         raise ValueError("raw_value required")
-    cleaned = raw_value.replace("$", "").replace("%", "").strip()
+    cleaned = _ALWAYS_MINUS_RE.sub("-", raw_value)
+    cleaned = _GLUED_DASH_RE.sub("-", cleaned)
+    cleaned = _CURRENCY_MARKER_RE.sub("", cleaned).replace("%", "").strip()
     match = _NUM_RE.search(cleaned)
     if match is None:
         raise ValueError(f"no numeric token in raw_value: {raw_value!r}")

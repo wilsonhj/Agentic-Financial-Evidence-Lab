@@ -230,3 +230,77 @@ def test_normalize_rejects_floatish_types() -> None:
     }
     with pytest.raises(ValueError):
         normalize_payload(raw)
+
+
+# ---------------------------------------------------------------------------
+# #410 — a sign next to a non-dollar currency marker, or written as a Unicode
+# minus / en dash / em dash, was dropped and a loss normalized as positive.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "(€100 million)",
+        "-€100 million",
+        "(US$100 million)",
+        "(£100 million)",
+        "−100 million",  # U+2212 MINUS SIGN
+        "−$100 million",
+        "$−100 million",
+        "–100 million",  # EN DASH glued to the figure
+        "—100 million",  # EM DASH glued to the figure
+        "-¥100 million",
+        "(USD 100 million)",
+        "-EUR 100 million",
+        "(100 million EUR)",
+        "(£100) million",
+        "-100 million",  # already correct before #410
+        "($100 million)",  # already correct before #410
+    ],
+)
+def test_parse_numeric_negative_markers_are_negative(raw: str) -> None:
+    value, scale, sign = parse_numeric(raw)
+    assert value == Decimal("-100")
+    assert scale == 6
+    assert sign == "negative"
+    assert isinstance(value, Decimal)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_value", "expected_sign"),
+    [
+        ("(2.5%)", Decimal("-2.5"), "negative"),
+        ("−2.5%", Decimal("-2.5"), "negative"),
+        ("-2.5%", Decimal("-2.5"), "negative"),
+        ("2.5%", Decimal("2.5"), "positive"),
+        ("€100 million", Decimal("100"), "positive"),
+        ("US$100 million", Decimal("100"), "positive"),
+        ("+€100 million", Decimal("100"), "positive"),
+        ("£100 million", Decimal("100"), "positive"),
+        # A spaced dash is punctuation, not a minus: "Revenue — $100 million".
+        ("— $100 million", Decimal("100"), "positive"),
+        # Trailing parenthetical commentary is not a sign.
+        ("$100 million (approx.)", Decimal("100"), "positive"),
+    ],
+)
+def test_parse_numeric_sign_non_regressions(
+    raw: str, expected_value: Decimal, expected_sign: str
+) -> None:
+    value, _scale, sign = parse_numeric(raw)
+    assert value == expected_value
+    assert sign == expected_sign
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "-kr 100 million",  # unknown currency token after a sign: cannot drop the sign
+        "(kr 100 million)",
+        "-Fr. 100",
+        "-€1,23",  # still fails closed on malformed grouping
+    ],
+)
+def test_parse_numeric_unrecognized_marker_after_sign_fails_closed(raw: str) -> None:
+    with pytest.raises(ValueError):
+        parse_numeric(raw)
