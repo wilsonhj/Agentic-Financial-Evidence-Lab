@@ -54,7 +54,7 @@ waves and 0 errors:
 Two values are the first run and the repeat. The 2-process repeat had one slow
 wave, because the load client and the database share the host. These runs are
 diagnostic, not acceptance runs. The data is in
-`apps/api/benchmarks/results/2026-11-20-worker-diagnostic/`.
+[`apps/api/benchmarks/results/2026-11-20-worker-diagnostic/`](../../apps/api/benchmarks/results/2026-11-20-worker-diagnostic/README.md).
 
 `EXTRACTION_LOAD.md` forbids tuning the pool "to relabel a failure", and says
 the runner owns one Uvicorn process. A change to the process count is therefore
