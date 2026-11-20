@@ -271,8 +271,17 @@ def _failure_envelope(exc: Exception) -> dict[str, str]:
     return {"code": "PIPELINE_FAILED", "message": _PIPELINE_FAILED_MESSAGE}
 
 
+# Exception text is cut before redaction as defence in depth: the stored message
+# is capped at a few hundred characters, so scanning more only costs time.
+_MAX_EXC_TEXT_CHARS = 4096
+
+
+def _exc_text(exc: Exception) -> str:
+    return str(exc)[:_MAX_EXC_TEXT_CHARS]
+
+
 def _safe_text(exc: Exception) -> str:
-    return redact_job_error_text(str(exc))
+    return redact_job_error_text(_exc_text(exc))
 
 
 def _run_pipeline_or_fail(
@@ -343,7 +352,7 @@ def _record_run_failure(
         run_id,
         error["code"],
         type(exc).__name__,
-        redact_error_text(str(exc)),
+        redact_error_text(_exc_text(exc)),
     )
     with tenant_connection(ctx) as conn:
         conn.execute("SELECT set_config('statement_timeout', %s, true)", (_STATEMENT_TIMEOUT,))
