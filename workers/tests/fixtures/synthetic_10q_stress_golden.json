@@ -4,12 +4,12 @@
   "normalizer_version": "fel-xbrl/1.0.0",
   "golden_entity_id": "00000000-0000-4000-8000-0000000000e1",
   "golden_version_id": "00000000-0000-4000-8000-0000000000d1",
-  "content_hash": "sha256:1adea6a07418f3c4fe8546dfc768cd3cecdbf1e8ba79ad5d207e367f4cafadce",
-  "text_length": 1757,
-  "text_hash": "sha256:8c9d6ff9764a3e217e32c24ea37a75192d0aed7432ff2f499f3ef4f050573d37",
+  "content_hash": "sha256:e708749230019452e587fb6f46f3735342c22b8d2f63b103560b1c4bb47d72b5",
+  "text_length": 1840,
+  "text_hash": "sha256:55a43fc773e2f1a38a92753b319e5b525eb53acd651b2486df563a9c9d6b4f6c",
   "sections": [
     {
-      "id": "830f7ae1-99af-5fea-ba41-044335976972",
+      "id": "b2b689cf-4fe6-5eee-ae05-b5f51360f059",
       "parent_id": null,
       "heading": "(document)",
       "heading_path": [
@@ -20,8 +20,8 @@
       "end_char": 61
     },
     {
-      "id": "77b58ee6-ab47-595b-beea-6c060d79fb12",
-      "parent_id": "830f7ae1-99af-5fea-ba41-044335976972",
+      "id": "2d1637a8-ad2c-5c13-8302-71c089b05e99",
+      "parent_id": "b2b689cf-4fe6-5eee-ae05-b5f51360f059",
       "heading": "Synthetic Stress Corporation",
       "heading_path": [
         "(document)",
@@ -32,8 +32,8 @@
       "end_char": 229
     },
     {
-      "id": "5f46149e-218b-5672-9db4-b28345a6c108",
-      "parent_id": "77b58ee6-ab47-595b-beea-6c060d79fb12",
+      "id": "ca09c83e-ae5c-5f8b-9dd2-cf94d5afa749",
+      "parent_id": "2d1637a8-ad2c-5c13-8302-71c089b05e99",
       "heading": "Part I. Financial Information",
       "heading_path": [
         "(document)",
@@ -45,8 +45,8 @@
       "end_char": 259
     },
     {
-      "id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
-      "parent_id": "5f46149e-218b-5672-9db4-b28345a6c108",
+      "id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
+      "parent_id": "ca09c83e-ae5c-5f8b-9dd2-cf94d5afa749",
       "heading": "Item 1. Financial Statements",
       "heading_path": [
         "(document)",
@@ -59,8 +59,8 @@
       "end_char": 520
     },
     {
-      "id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
-      "parent_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
+      "parent_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "heading": "Segment and geographic detail",
       "heading_path": [
         "(document)",
@@ -71,11 +71,11 @@
       ],
       "order": 4,
       "start_char": 520,
-      "end_char": 1183
+      "end_char": 1266
     },
     {
-      "id": "5e8e4299-33d6-56c7-b7be-24aa47dfa35c",
-      "parent_id": "5f46149e-218b-5672-9db4-b28345a6c108",
+      "id": "23609a9f-7442-5564-884b-1b79005872c9",
+      "parent_id": "ca09c83e-ae5c-5f8b-9dd2-cf94d5afa749",
       "heading": "Item 2. Management’s Discussion and Analysis",
       "heading_path": [
         "(document)",
@@ -84,12 +84,12 @@
         "Item 2. Management’s Discussion and Analysis"
       ],
       "order": 5,
-      "start_char": 1183,
-      "end_char": 1616
+      "start_char": 1266,
+      "end_char": 1699
     },
     {
-      "id": "d6f4b11a-209f-5f67-9221-d3f63f948b0c",
-      "parent_id": "77b58ee6-ab47-595b-beea-6c060d79fb12",
+      "id": "864d31e3-ccf1-5347-bbca-246cdca9378a",
+      "parent_id": "2d1637a8-ad2c-5c13-8302-71c089b05e99",
       "heading": "Part II. Other Information",
       "heading_path": [
         "(document)",
@@ -97,191 +97,205 @@
         "Part II. Other Information"
       ],
       "order": 6,
-      "start_char": 1616,
-      "end_char": 1757
+      "start_char": 1699,
+      "end_char": 1840
     }
   ],
   "spans": [
     {
-      "id": "78dc1ba2-9da1-552a-a3f9-2273c106ff87",
-      "section_id": "77b58ee6-ab47-595b-beea-6c060d79fb12",
+      "id": "63a4b252-7a08-5c99-ac2f-78106a6b1df4",
+      "section_id": "2d1637a8-ad2c-5c13-8302-71c089b05e99",
       "start_char": 90,
       "end_char": 228,
       "text_hash": "sha256:5d1e4314967441ffad721b88c325c29fbd0bc7b590ca577140b72e2361f9cff6"
     },
     {
-      "id": "50aaa77d-e104-541d-ad86-62302bc65856",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "id": "374f93a8-7822-5077-898a-f01e74b15eca",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 288,
       "end_char": 365,
       "text_hash": "sha256:35c458b981ffa692149e5338024f867fb0caf2a3032ccb5437ad5b700126ac9f"
     },
     {
-      "id": "200ab8b1-8869-5080-9412-528f6aba4d83",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "id": "e171359a-c40b-5245-bc31-245a16d9f8af",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 366,
       "end_char": 438,
       "text_hash": "sha256:a9674ddc4b0a0bb436d933221aa7951c87a47b0307ca1b8b34ef93c904f76e41"
     },
     {
-      "id": "e8680965-9e30-57bf-9700-ffd1a3263376",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "id": "d189effb-729d-5c3e-adeb-0c971906a231",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 439,
       "end_char": 519,
       "text_hash": "sha256:a4697783926efe4aa0d47ab67ecaf27bc8a671686162bf2bb7e509487bb1b8a3"
     },
     {
-      "id": "baac9001-bf9f-5e2d-8f28-21dd708c9c45",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "1a0aab37-a793-5f4b-a738-af79243cbbdd",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 550,
       "end_char": 633,
       "text_hash": "sha256:5468e12317cb71e202b5568cfb39d2628dfd2474a9b8c8967c71bb34ae2f43f7"
     },
     {
-      "id": "94b37164-73de-504f-b357-0ab8957adece",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "2fbf980e-12a2-57c6-bcf6-e6c1f36b12bd",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 634,
       "end_char": 692,
       "text_hash": "sha256:723708b4fe17eecdb5758225263e25939d8eecaa35595962855ea8387c64e480"
     },
     {
-      "id": "e3b393f4-35df-5ac7-85a2-9a1fa7b162a8",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "2fa10fcf-acc4-59d7-8f14-abcc2d2eb0a5",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 693,
       "end_char": 772,
       "text_hash": "sha256:4c173de3486ab5daee6e49c30f44718b1bbebb47b347b19f3910ab759f3176b6"
     },
     {
-      "id": "8520220d-8cc7-5f55-94f2-cebc41fa0f58",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "5703c401-36ba-5a12-8107-75bdf700bfc7",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 773,
       "end_char": 855,
       "text_hash": "sha256:4073d4d5285419f8e4da5030aa22b277d51a5218a2a8c76adc0b4a74e9f49605"
     },
     {
-      "id": "3db2ad71-15fb-596a-8e36-0b738e8edd2b",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "ba377d4b-d158-5e89-959b-a54d09aaa0ce",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 856,
-      "end_char": 956,
+      "end_char": 938,
+      "text_hash": "sha256:0e80cb925630d5365d79f7315220a7c9d5e5676ade7dd3abb069a45c28a62662"
+    },
+    {
+      "id": "4b4c8c38-4893-57d2-95d6-d052efb03f12",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
+      "start_char": 939,
+      "end_char": 1039,
       "text_hash": "sha256:200b630821f25d4e9ba5da11c17bd64c268b2814845ffa1df8fe1ab97dc55c27"
     },
     {
-      "id": "f14c13b0-260d-53b1-a07f-29dafdb3f30a",
-      "section_id": "5e8e4299-33d6-56c7-b7be-24aa47dfa35c",
-      "start_char": 1228,
-      "end_char": 1283,
+      "id": "d4a24a13-31f8-57c3-8d77-2a633bf12b9c",
+      "section_id": "23609a9f-7442-5564-884b-1b79005872c9",
+      "start_char": 1311,
+      "end_char": 1366,
       "text_hash": "sha256:2d13a63de3495e5439ca52eb17f2112bd7615c7a3f7935af72608630f01b9040"
     },
     {
-      "id": "8f4f2c85-3827-541c-ae23-ebff10d21d51",
-      "section_id": "5e8e4299-33d6-56c7-b7be-24aa47dfa35c",
-      "start_char": 1284,
-      "end_char": 1522,
+      "id": "45d5f7e7-815b-50bc-9066-675d5022133a",
+      "section_id": "23609a9f-7442-5564-884b-1b79005872c9",
+      "start_char": 1367,
+      "end_char": 1605,
       "text_hash": "sha256:fef9d0e45ef93a9ea0061260de785dce828557b4733af2b11bdc9d2d8b50f041"
     },
     {
-      "id": "ad4a3aca-cc20-5579-9e38-21f00731bbf7",
-      "section_id": "5e8e4299-33d6-56c7-b7be-24aa47dfa35c",
-      "start_char": 1523,
-      "end_char": 1615,
+      "id": "723d215c-a444-570f-ac6a-973b335a4529",
+      "section_id": "23609a9f-7442-5564-884b-1b79005872c9",
+      "start_char": 1606,
+      "end_char": 1698,
       "text_hash": "sha256:79c0a88b9319f698671dc3b7583ee906be7383fc88effb0f4bac33f3fc470bfc"
     },
     {
-      "id": "b0448349-abc1-5095-b873-700802d655e6",
-      "section_id": "d6f4b11a-209f-5f67-9221-d3f63f948b0c",
-      "start_char": 1643,
-      "end_char": 1707,
+      "id": "40f84c86-fe6d-53f8-9bff-abaf5d1f0c6d",
+      "section_id": "864d31e3-ccf1-5347-bbca-246cdca9378a",
+      "start_char": 1726,
+      "end_char": 1790,
       "text_hash": "sha256:63222ff295477c4116a50b12fdfb12b5a1709c77164e299f873620d0ae450c3f"
     },
     {
-      "id": "00b001c2-c0eb-5621-a43a-04b94037b954",
-      "section_id": "d6f4b11a-209f-5f67-9221-d3f63f948b0c",
-      "start_char": 1708,
-      "end_char": 1756,
+      "id": "3a4ef98a-cdfb-5450-af28-d00c3247e987",
+      "section_id": "864d31e3-ccf1-5347-bbca-246cdca9378a",
+      "start_char": 1791,
+      "end_char": 1839,
       "text_hash": "sha256:5acc209f48652b5bd9b45e9ab10f6981926ab7efa556bb79fb17895ea9c24c3d"
     },
     {
-      "id": "79898d90-1c9d-5a85-a583-488053a50381",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "id": "e912fede-20dd-5211-aab3-38067baef042",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 318,
       "end_char": 325,
       "text_hash": "sha256:e94e324637f336743695ce666fa388f7be979cbe75366e2b782e6e397cb2a356"
     },
     {
-      "id": "b93931b3-5eb7-50fb-8c9e-10b0727302a0",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "id": "938b3e34-5c55-53ec-a965-eff102c49bbf",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 393,
       "end_char": 400,
       "text_hash": "sha256:c0fd232737d3d64d337ba68faeec7604d7b60ad9f0458fdb6fe1d5b29530f81d"
     },
     {
-      "id": "e0301d2a-f914-5c07-a81b-4fe68e8f75a7",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "id": "370f1ffc-f1f4-5093-a0c6-ff29e6a5b5fb",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 469,
       "end_char": 472,
       "text_hash": "sha256:983bd614bb5afece5ab3b6023f71147cd7b6bc2314f9d27af7422541c6558389"
     },
     {
-      "id": "99c066e7-2123-53e1-a5a9-4a901f5a198c",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "cad5eb48-f4ff-549e-a361-3c7ccbb2a1b7",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 613,
       "end_char": 623,
       "text_hash": "sha256:929bfa3382c31a967c10a4f7fdafcfb78d13c6dbb845895c5c7932a71e0cc04d"
     },
     {
-      "id": "f295a235-1130-5caa-aa1e-a44a2847c322",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "ab09d418-2053-53d2-b0e3-27320e55630a",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 676,
       "end_char": 682,
       "text_hash": "sha256:b6b3558797a4cba310661736ede13da6a2d3be6123e50e4520b702ca1ad7a87c"
     },
     {
-      "id": "d4c4d485-1d93-5ca4-91ad-7c65dccd5f15",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "6b96d313-c52b-581b-9368-3157883bb83d",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 725,
       "end_char": 726,
       "text_hash": "sha256:d4f85d36757c12f0c6dab57721287f327efbfc46ea8c0f820301067f8627fc0f"
     },
     {
-      "id": "0fe7693c-b911-5983-89e4-6e724ca9f947",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "219179f6-b1ff-5450-95a2-97df1614318b",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 806,
       "end_char": 807,
       "text_hash": "sha256:bda050585a00f0f6cb502350559d75532ae3b244c9498b996e7c5df2d98dfc8d"
     },
     {
-      "id": "481342bd-e045-509f-96bd-9042cfb456b8",
-      "section_id": "5e8e4299-33d6-56c7-b7be-24aa47dfa35c",
-      "start_char": 1248,
-      "end_char": 1253,
+      "id": "e2da898f-b63d-5707-98fa-5b5cafbc1952",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
+      "start_char": 890,
+      "end_char": 894,
+      "text_hash": "sha256:004a9e0878ff83e6b91f50d50dad439d2065c6cbb0d20f1f328b2fd75e085d6a"
+    },
+    {
+      "id": "8a26de76-3e22-58a6-8cc9-59e75d0e804d",
+      "section_id": "23609a9f-7442-5564-884b-1b79005872c9",
+      "start_char": 1331,
+      "end_char": 1336,
       "text_hash": "sha256:74df1a8f5d8ebfc937c12b9ac7a8911566db27d1a574322f2682c482f824cc95"
     },
     {
-      "id": "4c4376fa-7992-52f4-861c-ac3d86338c92",
-      "section_id": "5e8e4299-33d6-56c7-b7be-24aa47dfa35c",
-      "start_char": 1560,
-      "end_char": 1567,
+      "id": "2b01c2b3-8e3f-59df-973d-be8e848fa145",
+      "section_id": "23609a9f-7442-5564-884b-1b79005872c9",
+      "start_char": 1643,
+      "end_char": 1650,
       "text_hash": "sha256:e94e324637f336743695ce666fa388f7be979cbe75366e2b782e6e397cb2a356"
     },
     {
-      "id": "37b9ddb9-3f8f-5ea8-b4af-6b0b11a06777",
-      "section_id": "d6f4b11a-209f-5f67-9221-d3f63f948b0c",
-      "start_char": 1690,
-      "end_char": 1697,
+      "id": "b03c4286-6306-5439-924c-983a752c1457",
+      "section_id": "864d31e3-ccf1-5347-bbca-246cdca9378a",
+      "start_char": 1773,
+      "end_char": 1780,
       "text_hash": "sha256:c406d2c219087128469c23ed541129e7101cc81d35b6e4e7a7570fb8fa51b135"
     },
     {
-      "id": "c493e37c-7125-5521-a296-0dd951d784fb",
-      "section_id": "d6f4b11a-209f-5f67-9221-d3f63f948b0c",
-      "start_char": 1735,
-      "end_char": 1739,
+      "id": "f1306ed1-aa5e-5daf-8e04-34db29b504b1",
+      "section_id": "864d31e3-ccf1-5347-bbca-246cdca9378a",
+      "start_char": 1818,
+      "end_char": 1822,
       "text_hash": "sha256:1e181f0934d441445f03ff51c972ef44275b830c10a80401e53b27bf5baf327a"
     }
   ],
   "tables": [
     {
-      "id": "dcda6b74-6857-5c60-9be0-33bbdc2f0463",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "dd55c0b7-af12-5315-88e4-dcf78a29f5f7",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "order": 0,
       "caption": "Condensed consolidated results (synthetic)",
       "headers": [
@@ -308,8 +322,8 @@
       ]
     },
     {
-      "id": "d4fecc1e-c331-52fe-9354-fae5a2299cc0",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "id": "6b9b2f53-3e2a-5e43-af21-bff7beb6c234",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "order": 1,
       "caption": "Inner detail (synthetic)",
       "headers": [
@@ -363,7 +377,8 @@
     "eur": "iso4217:EUR",
     "pure": "xbrli:pure",
     "shares": "xbrli:shares",
-    "usd": "iso4217:USD"
+    "usd": "iso4217:USD",
+    "usdPerShare": "iso4217:USD/xbrli:shares"
   },
   "facts": [
     {
@@ -375,8 +390,8 @@
       "sign": null,
       "format": "ixt:num-dot-decimal",
       "raw_text": "1,234.5",
-      "span_id": "79898d90-1c9d-5a85-a583-488053a50381",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "span_id": "e912fede-20dd-5211-aab3-38067baef042",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 318,
       "end_char": 325
     },
@@ -389,8 +404,8 @@
       "sign": null,
       "format": "ixt:num-dot-decimal",
       "raw_text": "(2,500)",
-      "span_id": "b93931b3-5eb7-50fb-8c9e-10b0727302a0",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "span_id": "938b3e34-5c55-53ec-a965-eff102c49bbf",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 393,
       "end_char": 400
     },
@@ -403,8 +418,8 @@
       "sign": "-",
       "format": null,
       "raw_text": "300",
-      "span_id": "e0301d2a-f914-5c07-a81b-4fe68e8f75a7",
-      "section_id": "1caedeac-a809-5810-82d1-5c1ee86dd542",
+      "span_id": "370f1ffc-f1f4-5093-a0c6-ff29e6a5b5fb",
+      "section_id": "44bff559-6f49-5d2c-a8d6-02d2bb7275f4",
       "start_char": 469,
       "end_char": 472
     },
@@ -417,8 +432,8 @@
       "sign": null,
       "format": "ixt:num-comma-decimal",
       "raw_text": "987.654,32",
-      "span_id": "99c066e7-2123-53e1-a5a9-4a901f5a198c",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "span_id": "cad5eb48-f4ff-549e-a361-3c7ccbb2a1b7",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 613,
       "end_char": 623
     },
@@ -431,8 +446,8 @@
       "sign": null,
       "format": "ixt:num-dot-decimal",
       "raw_text": "45,600",
-      "span_id": "f295a235-1130-5caa-aa1e-a44a2847c322",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "span_id": "ab09d418-2053-53d2-b0e3-27320e55630a",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 676,
       "end_char": 682
     },
@@ -445,8 +460,8 @@
       "sign": null,
       "format": "ixt:num-dot-decimal",
       "raw_text": "–",
-      "span_id": "d4c4d485-1d93-5ca4-91ad-7c65dccd5f15",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "span_id": "6b96d313-c52b-581b-9368-3157883bb83d",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 725,
       "end_char": 726
     },
@@ -459,10 +474,24 @@
       "sign": null,
       "format": "ixt:fixed-zero",
       "raw_text": "—",
-      "span_id": "0fe7693c-b911-5983-89e4-6e724ca9f947",
-      "section_id": "dfb0cbc0-43ca-55e5-9c5f-636f62207836",
+      "span_id": "219179f6-b1ff-5450-95a2-97df1614318b",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
       "start_char": 806,
       "end_char": 807
+    },
+    {
+      "concept": "us-gaap:EarningsPerShareDiluted",
+      "context_ref": "d2027q1",
+      "unit_ref": "usdPerShare",
+      "scale": 0,
+      "decimals": "2",
+      "sign": null,
+      "format": "ixt:num-dot-decimal",
+      "raw_text": "1.25",
+      "span_id": "e2da898f-b63d-5707-98fa-5b5cafbc1952",
+      "section_id": "5cc32496-a7db-5625-aa8f-b52a3d0a3b9b",
+      "start_char": 890,
+      "end_char": 894
     },
     {
       "concept": "us-gaap:Assets",
@@ -473,10 +502,10 @@
       "sign": null,
       "format": "ixt:num-dot-decimal",
       "raw_text": "9,850",
-      "span_id": "481342bd-e045-509f-96bd-9042cfb456b8",
-      "section_id": "5e8e4299-33d6-56c7-b7be-24aa47dfa35c",
-      "start_char": 1248,
-      "end_char": 1253
+      "span_id": "8a26de76-3e22-58a6-8cc9-59e75d0e804d",
+      "section_id": "23609a9f-7442-5564-884b-1b79005872c9",
+      "start_char": 1331,
+      "end_char": 1336
     },
     {
       "concept": "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
@@ -487,10 +516,10 @@
       "sign": null,
       "format": "ixt:num-dot-decimal",
       "raw_text": "1,234.5",
-      "span_id": "4c4376fa-7992-52f4-861c-ac3d86338c92",
-      "section_id": "5e8e4299-33d6-56c7-b7be-24aa47dfa35c",
-      "start_char": 1560,
-      "end_char": 1567
+      "span_id": "2b01c2b3-8e3f-59df-973d-be8e848fa145",
+      "section_id": "23609a9f-7442-5564-884b-1b79005872c9",
+      "start_char": 1643,
+      "end_char": 1650
     },
     {
       "concept": "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic",
@@ -501,10 +530,10 @@
       "sign": null,
       "format": "ixt:num-dot-decimal",
       "raw_text": "250,000",
-      "span_id": "37b9ddb9-3f8f-5ea8-b4af-6b0b11a06777",
-      "section_id": "d6f4b11a-209f-5f67-9221-d3f63f948b0c",
-      "start_char": 1690,
-      "end_char": 1697
+      "span_id": "b03c4286-6306-5439-924c-983a752c1457",
+      "section_id": "864d31e3-ccf1-5347-bbca-246cdca9378a",
+      "start_char": 1773,
+      "end_char": 1780
     },
     {
       "concept": "syn:GrossMarginRatio",
@@ -515,10 +544,10 @@
       "sign": null,
       "format": "ixt:num-dot-decimal",
       "raw_text": "0.85",
-      "span_id": "c493e37c-7125-5521-a296-0dd951d784fb",
-      "section_id": "d6f4b11a-209f-5f67-9221-d3f63f948b0c",
-      "start_char": 1735,
-      "end_char": 1739
+      "span_id": "f1306ed1-aa5e-5daf-8e04-34db29b504b1",
+      "section_id": "864d31e3-ccf1-5347-bbca-246cdca9378a",
+      "start_char": 1818,
+      "end_char": 1822
     }
   ],
   "normalized_facts": [
@@ -533,7 +562,7 @@
       "period_start": "2027-01-01",
       "period_end": "2027-03-31",
       "dimensions": {},
-      "source_span_id": "79898d90-1c9d-5a85-a583-488053a50381",
+      "source_span_id": "e912fede-20dd-5211-aab3-38067baef042",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax|USD|duration:2027-01-01:2027-03-31|",
@@ -551,7 +580,7 @@
       "period_start": "2027-01-01",
       "period_end": "2027-03-31",
       "dimensions": {},
-      "source_span_id": "b93931b3-5eb7-50fb-8c9e-10b0727302a0",
+      "source_span_id": "938b3e34-5c55-53ec-a965-eff102c49bbf",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:RestructuringCharges|USD|duration:2027-01-01:2027-03-31|",
@@ -569,7 +598,7 @@
       "period_start": "2027-01-01",
       "period_end": "2027-03-31",
       "dimensions": {},
-      "source_span_id": "e0301d2a-f914-5c07-a81b-4fe68e8f75a7",
+      "source_span_id": "370f1ffc-f1f4-5093-a0c6-ff29e6a5b5fb",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:OperatingIncomeLoss|USD|duration:2027-01-01:2027-03-31|",
@@ -589,7 +618,7 @@
       "dimensions": {
         "srt:StatementGeographicalAxis": "syn:EuropeMember"
       },
-      "source_span_id": "99c066e7-2123-53e1-a5a9-4a901f5a198c",
+      "source_span_id": "cad5eb48-f4ff-549e-a361-3c7ccbb2a1b7",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax|EUR|duration:2027-01-01:2027-03-31|srt:StatementGeographicalAxis=syn:EuropeMember",
@@ -610,7 +639,7 @@
         "srt:StatementGeographicalAxis": "syn:EuropeMember",
         "srt:ProductOrServiceAxis": "syn:CloudSubscriptionMember"
       },
-      "source_span_id": "f295a235-1130-5caa-aa1e-a44a2847c322",
+      "source_span_id": "ab09d418-2053-53d2-b0e3-27320e55630a",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax|USD|duration:2027-01-01:2027-03-31|srt:ProductOrServiceAxis=syn:CloudSubscriptionMember;srt:StatementGeographicalAxis=syn:EuropeMember",
@@ -628,7 +657,7 @@
       "period_start": "2027-01-01",
       "period_end": "2027-03-31",
       "dimensions": {},
-      "source_span_id": "d4c4d485-1d93-5ca4-91ad-7c65dccd5f15",
+      "source_span_id": "6b96d313-c52b-581b-9368-3157883bb83d",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:ImpairmentOfIntangibleAssetsExcludingGoodwill|USD|duration:2027-01-01:2027-03-31|",
@@ -646,7 +675,7 @@
       "period_start": null,
       "period_end": null,
       "dimensions": {},
-      "source_span_id": "0fe7693c-b911-5983-89e4-6e724ca9f947",
+      "source_span_id": "219179f6-b1ff-5450-95a2-97df1614318b",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:LossContingencyAccrualAtCarryingValue|USD|instant:2027-03-31|",
@@ -654,7 +683,25 @@
       "restates": null
     },
     {
-      "id": "bbf45124-5250-587b-ba84-152b0b6f7d79",
+      "id": "e6b7f642-6331-5e33-aab7-a6a8e0a983b1",
+      "concept": "us-gaap:EarningsPerShareDiluted",
+      "value": "1.25",
+      "unit": "USD/shares",
+      "scale": 0,
+      "period_type": "duration",
+      "period_instant": null,
+      "period_start": "2027-01-01",
+      "period_end": "2027-03-31",
+      "dimensions": {},
+      "source_span_id": "e2da898f-b63d-5707-98fa-5b5cafbc1952",
+      "reported_or_derived": "reported",
+      "confidence": 1.0,
+      "fact_key": "us-gaap:EarningsPerShareDiluted|USD/shares|duration:2027-01-01:2027-03-31|",
+      "duplicate_of": null,
+      "restates": null
+    },
+    {
+      "id": "6ebb8526-14d9-5c23-9cd7-3811d0701009",
       "concept": "us-gaap:Assets",
       "value": "9850000000",
       "unit": "USD",
@@ -664,7 +711,7 @@
       "period_start": null,
       "period_end": null,
       "dimensions": {},
-      "source_span_id": "481342bd-e045-509f-96bd-9042cfb456b8",
+      "source_span_id": "8a26de76-3e22-58a6-8cc9-59e75d0e804d",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:Assets|USD|instant:2027-03-31|",
@@ -672,7 +719,7 @@
       "restates": null
     },
     {
-      "id": "40cc30a1-e072-539e-aa33-e79831de45d3",
+      "id": "4fe4afd1-81eb-5a19-95c5-1ede96990291",
       "concept": "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
       "value": "1234500000",
       "unit": "USD",
@@ -682,7 +729,7 @@
       "period_start": "2027-01-01",
       "period_end": "2027-03-31",
       "dimensions": {},
-      "source_span_id": "4c4376fa-7992-52f4-861c-ac3d86338c92",
+      "source_span_id": "2b01c2b3-8e3f-59df-973d-be8e848fa145",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax|USD|duration:2027-01-01:2027-03-31|",
@@ -690,7 +737,7 @@
       "restates": null
     },
     {
-      "id": "eaef347c-4bd1-5edd-a002-50ab87b3375a",
+      "id": "5f79915b-6e0c-5e05-b3e5-4d19c4c7303c",
       "concept": "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic",
       "value": "250000000",
       "unit": "shares",
@@ -700,7 +747,7 @@
       "period_start": "2027-01-01",
       "period_end": "2027-03-31",
       "dimensions": {},
-      "source_span_id": "37b9ddb9-3f8f-5ea8-b4af-6b0b11a06777",
+      "source_span_id": "b03c4286-6306-5439-924c-983a752c1457",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic|shares|duration:2027-01-01:2027-03-31|",
@@ -708,7 +755,7 @@
       "restates": null
     },
     {
-      "id": "36f7b2da-6ae0-5fa5-b1ed-bf7b1de544bf",
+      "id": "1f09a155-f8ef-5d83-9ae2-cc485ef112d9",
       "concept": "syn:GrossMarginRatio",
       "value": "0.85",
       "unit": "pure",
@@ -718,7 +765,7 @@
       "period_start": "2027-01-01",
       "period_end": "2027-03-31",
       "dimensions": {},
-      "source_span_id": "c493e37c-7125-5521-a296-0dd951d784fb",
+      "source_span_id": "f1306ed1-aa5e-5daf-8e04-34db29b504b1",
       "reported_or_derived": "reported",
       "confidence": 1.0,
       "fact_key": "syn:GrossMarginRatio|pure|duration:2027-01-01:2027-03-31|",
@@ -727,7 +774,7 @@
     }
   ],
   "diagnostics": [
-    "skipped nil inline fact 'us-gaap:GoodwillImpairmentLoss' at chars 876-876",
-    "skipped empty inline fact 'us-gaap:DeferredCostsCurrent' at chars 908-908"
+    "skipped nil inline fact 'us-gaap:GoodwillImpairmentLoss' at chars 959-959",
+    "skipped empty inline fact 'us-gaap:DeferredCostsCurrent' at chars 991-991"
   ]
 }
