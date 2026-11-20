@@ -1761,7 +1761,7 @@ packages:
     depends_on: []
     team: extraction
     branch: agent/fix-numeric-sign-parsing
-    status: merged # PR #443 @ 7902a5e (2026-11-19). Merged on the owner's instruction ahead of #393/#417, with no path conflict against #416-#418. Independent review found a silent sign flip (a dash after a label) and spurious raises on hyphenated labels; both fixed test-first (7131a40, 399b1e0) and re-reviewed. Exact-head required CI passed. Paths are free to claim again.
+    status: merged # PR #443 @ 7902a5e (2026-11-19). Merged on the owner's instruction ahead of #393/#417, with no path conflict against #416-#418. Independent review fixed a silent sign flip (a dash after a label) and errors on labels such as pre-tax (7131a40, 399b1e0). Currency-code labels such as USD-denominated and EUR-denominated still raise during raw-value parsing (unresolved review finding on #443). Exact-head required CI passed. #410 released its own claim. #417 retains workers/tests/**.
     allowed_paths:
       - workers/src/fel_workers/extraction/normalize/**
       - workers/tests/extraction/test_normalize.py
@@ -1773,7 +1773,7 @@ packages:
     depends_on: []
     team: data
     branch: agent/fix-xbrl-divide-units
-    status: merged # PR #444 @ 51e6e29 (2026-11-19). Merged on the owner's instruction ahead of #393/#417, with no path conflict against #416-#418. Independent review moved the unit tests into test_xbrl_normalize.py (inside this lane) and turned a bare KeyError on stray divide markup into ParseError(UNKNOWN_UNIT); re-reviewed. Exact-head required CI passed. PARSER_VERSION and NORMALIZER_VERSION were not bumped, so stored filings keep collapsed per-share units until #446. Paths, including workers/tests/fixtures/**, are free to claim again.
+    status: merged # PR #444 @ 51e6e29 (2026-11-19). Merged on the owner's instruction ahead of #393/#417, with no path conflict against #416-#418. Independent review moved the unit tests into test_xbrl_normalize.py (inside this lane) and turned a bare KeyError on stray divide markup into ParseError(UNKNOWN_UNIT); re-reviewed. Exact-head required CI passed. PARSER_VERSION and NORMALIZER_VERSION were not bumped, so stored filings keep collapsed per-share units until #446. #411 released its own claim. #417 retains workers/src/fel_workers/ingestion/** and workers/tests/**, including workers/tests/fixtures/**.
     allowed_paths:
       - workers/src/fel_workers/ingestion/parser.py
       - workers/src/fel_workers/ingestion/xbrl.py
@@ -1787,7 +1787,7 @@ packages:
     depends_on: []
     team: trust
     branch: agent/fix-run-error-redaction
-    status: merged # PR #445 @ 6b61ed3 (2026-11-19). Merged on the owner's instruction ahead of #393/#417 and #394, with no path conflict against #416-#418. Six independent review rounds, each fixed test-first: raw exception chain sent to Sentry through exc_info, an Authorization masking regression, exponential and quadratic patterns on the API failure path, and three ways a secret cut by the input bound left a fragment. Final sweep: 0 cut-induced leaks, 0 inputs main masks that head leaks. Exact-head required CI, including the DB-backed API test, passed. Redaction gaps that predate the PR are tracked in #447. Paths are free to claim again.
+    status: merged # PR #445 @ 6b61ed3 (2026-11-19). Merged on the owner's instruction ahead of #393/#417 and #394, with no path conflict against #416-#418. Six independent review rounds, each fixed test-first: raw exception chain sent to Sentry through exc_info, an Authorization masking regression, exponential and quadratic patterns on the API failure path, and three ways a secret cut by the input bound left a fragment. Final sweep: 0 cut-induced leaks, 0 inputs main masks that head leaks. Exact-head required CI, including the DB-backed API test, passed. Redaction gaps that predate the PR are tracked in #447. #412 released its own claim. #417 retains workers/tests/**.
     allowed_paths:
       - apps/api/app/retrieval.py
       - apps/api/app/retrieval_run_store.py

@@ -4,20 +4,24 @@
 
 On 2026-11-19 the owner had the three registered review-finding fixes
 implemented, independently reviewed, tested and merged. They merged ahead of
-#417, which the November 16 decisions below had them wait for, because none of
-their paths conflicted with #416, #417 or #418. Each merged at the exact head
-that passed all seven required checks. GitHub does not let the author account
+#417, which the November 16 decisions below had them wait for. Their PRs
+changed different files from #416, #417 and #418. Each merged at the exact
+head that passed all seven required checks. GitHub does not let the author account
 formally approve its own PR, so each PR carries a comment review that records
 the findings, fixes and evidence.
 
 | Package | PR | Merge | Review outcome |
 |---|---|---|---|
-| `FIX-NUMERIC-SIGN-PARSING` (#410) | #443 | `7902a5e` | A dash after a label silently turned values negative, and hyphenated labels raised. Both fixed test-first. A 443-string probe found no wrong signs. Ambiguous forms now raise and block one payload. |
+| `FIX-NUMERIC-SIGN-PARSING` (#410) | #443 | `7902a5e` | Fixed the sign flip after a label and errors on labels such as `pre-tax`. The 443-string review probe found no wrong signs. Ambiguous forms raise and block the affected payload. |
 | `FIX-XBRL-DIVIDE-UNITS` (#411) | #444 | `51e6e29` | Unit tests moved inside the lane. Stray divide markup now quarantines instead of raising `KeyError`. |
 | `FIX-RUN-ERROR-REDACTION` (#412) | #445 | `6b61ed3` | Six review rounds, each fixed test-first: the raw exception chain reached Sentry through `exc_info`, an Authorization masking regression, exponential and quadratic patterns on the API failure path, and three ways a secret cut by the input bound left a fragment. |
 
-Follow-ups opened from these reviews:
+Follow-ups from these reviews:
 
+- **#443:** [An unresolved review finding](https://github.com/wilsonhj/Agentic-Financial-Evidence-Lab/pull/443#discussion_r4638789740)
+  covers currency-code labels such as `USD-denominated $100 million` and
+  `EUR-denominated €100 million`. Both still raise `ValueError` and block the
+  affected payload when normalization parses its raw value.
 - **#446:** bump `PARSER_VERSION` and/or `NORMALIZER_VERSION` so stored
   filings are re-parsed with `USD/shares` units. A bump alone may reuse version
   ids, because `version_id` omits the parser version.
@@ -25,8 +29,10 @@ Follow-ups opened from these reviews:
   comma-split values, multi-word Bearer/Basic credentials, and DSN passwords
   with spaces.
 
-The overlap between #394 (`apps/api/tests/**`) and #412 is gone. #411 no
-longer claims `workers/tests/fixtures/**`.
+The merges released #410, #411 and #412's own path claims, including the
+overlap between #394 and #412 in `apps/api/tests/**`. The registered lane for
+#417 (#393) still covers `workers/src/fel_workers/ingestion/**` and
+`workers/tests/**`, including `workers/tests/fixtures/**`.
 
 ## November 16 owner decisions
 
