@@ -25,11 +25,15 @@ from __future__ import annotations
 import re
 
 MAX_ERROR_CHARS = 256
-# Redaction input is cut to this many characters (or four times the output
-# limit, if larger) before any pattern runs. Stored text is capped far lower, so
-# nothing useful is lost, and a runaway message cannot make the redactor scan
-# megabytes.
-MAX_INPUT_CHARS = 4096
+# Redaction input is bounded to this many characters (or four times the output
+# limit, if larger) before any pattern runs, so a runaway message cannot make the
+# redactor scan megabytes. Every pattern is linear, so the bound is generous: the
+# stored text is capped far lower. When the bound cuts the text, the trailing
+# partial token is dropped too (see ``_bound``), because a secret cut in half
+# no longer matches the credential patterns and whitespace collapse can pull
+# text from near the bound into the stored message.
+MAX_INPUT_CHARS = 65536
+_TOKEN_BOUNDARY = frozenset(" \t\r\n\f\v,;")
 _TRUNCATED = "...[truncated]"
 
 # Every pattern below is linear in the input. Each character of a quoted value
@@ -123,12 +127,20 @@ def _mask_credentials(message: str) -> str:
 
 
 def _bound(message: str, limit: int) -> tuple[str, bool]:
-    """Cut the input to what can matter, and say whether anything was cut."""
+    """Cut the input to what can matter, and say whether anything was cut.
+
+    A cut can land inside a credential. The cut-off tail, back to the last
+    whitespace, comma or semicolon, is dropped as well, so no fragment of a
+    secret that the patterns can no longer recognise survives the cut.
+    """
     text = str(message)
     cap = max(MAX_INPUT_CHARS, 4 * limit)
-    if len(text) > cap:
-        return text[:cap], True
-    return text, False
+    if len(text) <= cap:
+        return text, False
+    end = cap
+    while end > 0 and text[end - 1] not in _TOKEN_BOUNDARY:
+        end -= 1
+    return text[:end], True
 
 
 def _collapse_and_cap(message: str, *, limit: int, cut: bool = False) -> str:

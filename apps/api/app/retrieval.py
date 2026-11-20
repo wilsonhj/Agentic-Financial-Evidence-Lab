@@ -271,13 +271,10 @@ def _failure_envelope(exc: Exception) -> dict[str, str]:
     return {"code": "PIPELINE_FAILED", "message": _PIPELINE_FAILED_MESSAGE}
 
 
-# Exception text is cut before redaction as defence in depth: the stored message
-# is capped at a few hundred characters, so scanning more only costs time.
-_MAX_EXC_TEXT_CHARS = 4096
-
-
 def _exc_text(exc: Exception) -> str:
-    return str(exc)[:_MAX_EXC_TEXT_CHARS]
+    # Not cut here: a raw cut can split a credential so the redactor no longer
+    # recognises it. The redactor bounds its own input and drops the cut tail.
+    return str(exc)
 
 
 def _safe_text(exc: Exception) -> str:

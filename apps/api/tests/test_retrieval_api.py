@@ -1177,9 +1177,11 @@ def test_record_run_failure_logs_redacted_text_without_exc_info(
         assert fragment not in message
 
 
-def test_failure_text_is_cut_before_redaction() -> None:
-    """Defence in depth for #412: the redactor never sees more than 4096 characters."""
-    assert len(retrieval._exc_text(ValueError("x" * 1_000_000))) == 4096
+def test_failure_text_is_bounded_by_the_redactor() -> None:
+    """Defence in depth for #412: oversized exception text is bounded, not stored whole."""
+    out = retrieval._safe_text(ValueError("password=SECRET1 " + "x" * 1_000_000))
+    assert "SECRET1" not in out
+    assert len(out) <= 256
 
 
 def test_failure_path_is_bounded_on_adversarial_exception_text() -> None:
