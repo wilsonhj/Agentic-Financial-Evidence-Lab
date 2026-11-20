@@ -1175,3 +1175,44 @@ def test_record_run_failure_logs_redacted_text_without_exc_info(
     assert "ValueError" in message  # diagnostic detail survives, as a type name
     for fragment in _LOG_SECRET_FRAGMENTS:
         assert fragment not in message
+
+
+def test_failure_text_is_cut_before_redaction() -> None:
+    """Defence in depth for #412: the redactor never sees more than 4096 characters."""
+    assert len(retrieval._exc_text(ValueError("x" * 1_000_000))) == 4096
+
+
+def test_failure_path_is_bounded_on_adversarial_exception_text() -> None:
+    """A hostile message must not stall the synchronous failure path (#412, PR #445).
+
+    Runs in a child interpreter with a hard timeout so a catastrophic pattern
+    fails this test instead of hanging the suite.
+    """
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, time\n"
+        "from app import retrieval\n"
+        "text = sys.stdin.read()\n"
+        "t = time.perf_counter()\n"
+        "retrieval._safe_text(ValueError(text))\n"
+        "retrieval.redact_error_text(retrieval._exc_text(ValueError(text)))\n"
+        "print(time.perf_counter() - t)\n"
+    )
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
+    for message in ("password='" + "\\a" * 40, "password='" + "\\a" * 5000, "secret-" * 20000):
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", code],
+                input=message,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                env=env,
+                check=True,
+            )
+        except subprocess.TimeoutExpired:
+            pytest.fail("failure path did not finish within 20 s (catastrophic backtracking)")
+        assert float(proc.stdout.strip()) < 1.0

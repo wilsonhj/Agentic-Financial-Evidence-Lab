@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import time
 
 import pytest
@@ -185,3 +188,106 @@ def test_long_scheme_userinfo_is_still_masked() -> None:
     out = redact_job_error_text("a" * 40 + "://user:FAKEPW@host/x")
 
     assert "FAKEPW" not in out
+
+
+# --- ReDoS regressions (#412 / PR #445) -------------------------------------
+#
+# Each case runs in a child interpreter with a hard wall-clock timeout, so a
+# catastrophic pattern fails the test instead of hanging CI. The child times
+# the public functions and the private pattern stage (which is not subject to
+# the public input cap), so an uncapped quadratic or exponential pattern is
+# caught even if the cap hides it.
+
+_CHILD = """
+import sys, time
+from fel_workers import redact
+text = sys.stdin.read()
+t = time.perf_counter()
+redact.redact_error_text(text)
+redact.redact_job_error_text(text)
+redact._mask_credentials(text)
+redact._mask_credentials(text[:20000])
+print(time.perf_counter() - t)
+"""
+
+_BACKSLASH_RUN = "\\a" * 5000
+
+_ADVERSARIAL = {
+    "single-quote-backslashes": "password='" + _BACKSLASH_RUN,
+    "double-quote-backslashes": 'password="' + _BACKSLASH_RUN,
+    "api-key-backslashes": "api_key='" + _BACKSLASH_RUN,
+    "quoted-key-backslashes": "{'client_secret': '" + _BACKSLASH_RUN,
+    "quoted-key-dq-backslashes": '{"token": "' + _BACKSLASH_RUN,
+    "authorization-quoted-backslashes": "authorization='" + _BACKSLASH_RUN,
+    "bare-quote-backslashes": "'" + _BACKSLASH_RUN,
+    "escaped-quote-run": "password='" + "\\'" * 20000,
+    "secret-dash-run": "secret-" * 20000,
+    "password-dash-run": "password-" * 20000,
+    "authorization-run": "authorization" * 20000,
+    "token-underscore-run": "my_token_" * 20000,
+    "quoted-key-run": '"secret-' * 20000,
+    "mixed-200k": ("password='\\a\"secret-token=authorization \\" * 6000)[:200_000],
+    "mixed-quotes-200k": ("api_key=\"\\a'\\\"token: 'x\\" * 8000)[:200_000],
+    "userinfo-ats": "http://" + "a@" * 50_000,
+    "bearer-spaces": "bearer" + " " * 200_000,
+}
+
+
+@pytest.mark.parametrize("message", list(_ADVERSARIAL.values()), ids=list(_ADVERSARIAL))
+def test_redaction_is_linear_on_adversarial_input(message: str) -> None:
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _CHILD],
+            input=message,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=env,
+            check=True,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("redaction did not finish within 20 s (catastrophic backtracking)")
+    assert float(proc.stdout.strip()) < 1.0
+
+
+@pytest.mark.parametrize(
+    ("message", "secrets"),
+    [
+        ("password='abc\\'def SECRET1'", ["abc", "def", "SECRET1"]),
+        ('password="abc\\"def SECRET1"', ["abc", "def", "SECRET1"]),
+        ("{'api_key': 'a\\'b SECRET1', 'ok': 1}", ["SECRET1", "a\\'b"]),
+        ('{"token": "a\\"b SECRET1"}', ["SECRET1"]),
+        ("password='C:\\\\dir\\\\SECRET1\\'", ["SECRET1"]),
+        ("password='a\\'SECRET1\\'", ["SECRET1"]),
+        ("secret='x' then token='SECRET1'", ["SECRET1"]),
+    ],
+)
+def test_escaped_quotes_inside_credential_values_are_fully_masked(
+    message: str, secrets: list[str]
+) -> None:
+    for fn in (redact_error_text, redact_job_error_text):
+        out = fn(message)
+        for secret in secrets:
+            assert secret not in out, (message, out)
+
+
+def test_text_after_a_terminated_quoted_credential_is_kept() -> None:
+    out = redact_job_error_text("password='a\\'b' while parsing row 7")
+
+    assert "while parsing row 7" in out
+    assert "password='a" not in out
+
+
+def test_strict_policy_masks_escaped_quoted_literals() -> None:
+    out = redact_error_text("bad value 'a\\'SECRET1' in row")
+
+    assert "SECRET1" not in out
+    assert "in row" in out
+
+
+def test_oversized_input_is_capped_before_redaction() -> None:
+    out = redact_job_error_text("password=SECRET1 " + "x" * 1_000_000)
+
+    assert "SECRET1" not in out
+    assert len(out) <= MAX_ERROR_CHARS
