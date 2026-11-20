@@ -11,7 +11,7 @@ import argparse
 import json
 import os
 import socket
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
@@ -32,20 +32,32 @@ p.add_argument("--waves", type=int, default=4)
 p.add_argument("--port", type=int, default=8231)
 p.add_argument("--warmup", type=int, default=25)
 a = p.parse_args()
-assert a.waves >= 4
+
+
+def require(ok: bool, why: str) -> None:
+    # These guards must also hold under python -O.
+    if not ok:
+        raise SystemExit(f"refused: {why}")
+
+
+require(a.waves >= 4, "at least 4 measured waves")
 database = os.environ["FEL_DATABASE_URL"]
-assert psycopg.conninfo.conninfo_to_dict(database)["dbname"].startswith("fel_load")
-assert os.environ["FEL_AUTH_MODE"] == "mock" and os.environ["FEL_WORKER_DB_ROLE"] == "fel_worker"
+require(
+    psycopg.conninfo.conninfo_to_dict(database)["dbname"].startswith("fel_load"),
+    "database name must start with fel_load",
+)
+require(
+    os.environ["FEL_AUTH_MODE"] == "mock" and os.environ["FEL_WORKER_DB_ROLE"] == "fel_worker",
+    "mock auth and the fel_worker role are required",
+)
 a.output.mkdir(parents=True, exist_ok=False)
 storage = Path(os.environ["FEL_STORAGE_DIR"])
 prepare_synthetic_target(
     database, storage, os.environ.get("FEL_SYNTHETIC_HTTP_TARGET", ""), "fel_load"
 )
 with psycopg.connect(database) as conn:
-    assert (
-        conn.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]
-        == 0
-    )
+    active = conn.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')")
+    require(active.fetchone()[0] == 0, "no queued or running jobs")
     pg = {
         k: conn.execute("SELECT current_setting(%s)", (k,)).fetchone()[0]
         for k in (
@@ -79,7 +91,7 @@ base = f"http://127.0.0.1:{a.port}"
 with socket.socket() as listener, (a.output / "server.log").open("w") as log:
     listener.bind(("127.0.0.1", a.port))
     listener.listen(128)
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # nosec B603
         [
             sys.executable,
             str(HERE / "instrumented_uvicorn.py"),
