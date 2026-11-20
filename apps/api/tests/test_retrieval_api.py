@@ -17,7 +17,8 @@ import time
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import psycopg
 import pytest
@@ -747,6 +748,7 @@ def test_failed_run_error_text_is_redacted_everywhere(
     seeded: dict[str, str],
     db_url: str,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
     failing_stage: str,
 ) -> None:
     """Exception text (DSN, bearer token) never lands in the row, event or API reads (#412)."""
@@ -765,8 +767,19 @@ def test_failed_run_error_text_is_redacted_everywhere(
         monkeypatch.setattr(StructuredClaimGenerator, "generate", _generate_boom)
         expected_code = "PIPELINE_FAILED"
 
-    created = _create(client, org, seeded["workspace_id"])
+    with caplog.at_level("ERROR", logger=retrieval._log.name):
+        created = _create(client, org, seeded["workspace_id"])
     run_id = created["run_id"]
+
+    failure_records = [r for r in caplog.records if r.name == retrieval._log.name]
+    assert failure_records
+    for record in failure_records:
+        # Sentry's logging integration forwards exc_info (and chained causes)
+        # verbatim, so the failure log must carry redacted text only.
+        assert record.exc_info is None
+        assert not record.exc_text
+        for fragment in _SECRET_FRAGMENTS:
+            assert fragment not in record.getMessage()
 
     row = _run_row(db_url, run_id)
     assert row["status"] == "failed"
@@ -1109,3 +1122,54 @@ def test_query_run_page_preserves_snapshot(client, org, seeded):
     assert after.json()["runs"][0]["run_id"] == rerun.json()["run_id"]
     assert after.json()["question"] == page.json()["question"]
     assert after.json()["plan"] == page.json()["plan"]
+
+
+def test_record_run_failure_logs_redacted_text_without_exc_info(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The failure log omits exc_info: Sentry would ship the raw exception chain (#412)."""
+    import contextlib
+
+    class _Conn:
+        def execute(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+    class _Writer:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def fail(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+    @contextlib.contextmanager
+    def _fake_tenant_connection(_ctx: Any) -> Any:
+        yield _Conn()
+
+    monkeypatch.setattr(retrieval, "tenant_connection", _fake_tenant_connection)
+    monkeypatch.setattr(retrieval, "_RunWriter", _Writer)
+    try:
+        try:
+            raise RuntimeError(f"cause {_FAKE_DSN}")
+        except RuntimeError as cause:
+            raise ValueError(_LEAKY_MESSAGE) from cause
+    except ValueError as exc:
+        with caplog.at_level("ERROR", logger=retrieval._log.name):
+            retrieval._record_run_failure(
+                cast(Any, SimpleNamespace(org_id="org")),
+                run_id="run-1",
+                exc=exc,
+                usage_kind="research_query",
+                cost_usd=Decimal("0"),
+                generation=None,
+            )
+
+    records = [r for r in caplog.records if r.name == retrieval._log.name]
+    assert len(records) == 1
+    record = records[0]
+    assert record.exc_info is None
+    assert not record.exc_text
+    message = record.getMessage()
+    assert "run-1" in message
+    assert "ValueError" in message  # diagnostic detail survives, as a type name
+    for fragment in _SECRET_FRAGMENTS:
+        assert fragment not in message
