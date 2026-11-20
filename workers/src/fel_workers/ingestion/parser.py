@@ -59,6 +59,11 @@ _UNIT_DIVIDE = "divide"
 _UNIT_NUMERATOR = "numerator"
 _UNIT_DENOMINATOR = "denominator"
 
+
+def _empty_unit_measures() -> dict[str, list[str]]:
+    return {_UNIT_TOP: [], _UNIT_NUMERATOR: [], _UNIT_DENOMINATOR: []}
+
+
 PARSER_VERSION = "fel-parser/1.0.0"
 
 ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://financial-evidence-lab.dev/ingestion")
@@ -229,9 +234,10 @@ class _FilingHTMLParser(HTMLParser):
         # Measures of the unit being parsed, by position: top-level (a plain
         # or multiply unit), or the numerator / denominator of an
         # ``xbrli:divide``. ``_unit_side`` is the side currently open.
-        self._unit_measures: dict[str, list[str]] = {}
+        self._unit_measures: dict[str, list[str]] = _empty_unit_measures()
         self._unit_side: str = _UNIT_TOP
         self._unit_divide_seen = False
+        self._in_unit = False
         self._capture_kind: str | None = None
         self._capture_parts: list[str] = []
         self._capture_dimension: str | None = None
@@ -415,9 +421,19 @@ class _FilingHTMLParser(HTMLParser):
             self._capture_dimension = attr_map.get("dimension")
         elif tag == "xbrli:unit":
             self._unit_id = attr_map.get("id")
-            self._unit_measures = {_UNIT_TOP: [], _UNIT_NUMERATOR: [], _UNIT_DENOMINATOR: []}
+            self._in_unit = True
+            self._unit_measures = _empty_unit_measures()
             self._unit_side = _UNIT_TOP
             self._unit_divide_seen = False
+        elif tag in ("xbrli:divide", "xbrli:unitnumerator", "xbrli:unitdenominator") and (
+            not self._in_unit
+        ):
+            # Same class as a misplaced numerator inside a unit: reject with the
+            # typed error so the job is quarantined, not crashed.
+            raise ParseError(
+                ReasonCode.UNKNOWN_UNIT,
+                f"{tag} appears outside an xbrli:unit; the ix:header resources are malformed",
+            )
         elif tag == "xbrli:divide":
             if self._unit_divide_seen:
                 self._malformed_unit("has more than one xbrli:divide")
@@ -476,6 +492,7 @@ class _FilingHTMLParser(HTMLParser):
                 if composed:
                     self.units[self._unit_id] = composed
             self._unit_id = None
+            self._in_unit = False
 
     def _malformed_unit(self, problem: str) -> NoReturn:
         raise ParseError(
