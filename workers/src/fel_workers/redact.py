@@ -64,14 +64,29 @@ _BARE_CREDENTIAL_ASSIGNMENT = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 _AUTH_SCHEME = re.compile(r"\b(?:bearer|basic)\s+\S+", re.IGNORECASE)
-# ``Authorization: <scheme> <credential>`` for any scheme word (Token, ApiKey,
-# Negotiate, ...). The generic key=value rule above consumes only the scheme.
+# ``Authorization: <scheme> <credential...>``: the whole header value is masked,
+# not just its first token. A quoted value (mapping/JSON repr) runs to its
+# paired closing quote, so multi-token credentials such as Digest parameters or
+# ``Token abc SECRET`` are covered; an unquoted value runs to the end of the
+# line. This runs before the generic key rules, which would consume only the
+# scheme word.
 _AUTHORIZATION_HEADER = re.compile(
-    r"""\bauthorization\b['"]?\s*[:=]\s*['"]?[A-Za-z][A-Za-z0-9_-]*\s+[^\s,;}\]'"]+""",
-    re.IGNORECASE,
+    r"""
+      \bauthorization\b['"]?\s*[:=]\s*
+      (?:
+        (?P<authz_quote>['"])
+        (?:\\.|(?!(?P=authz_quote)).)*
+        (?:(?P=authz_quote)|(?=[\r\n])|\Z)
+        |
+        [^\r\n]*
+      )
+    """,
+    re.IGNORECASE | re.VERBOSE,
 )
-# ``scheme://user:pass@host`` for any scheme: mask the whole userinfo.
-_URL_USERINFO = re.compile(r"(?P<scheme>\b[A-Za-z][A-Za-z0-9+.-]*://)[^\s/?#@]*@")
+# ``scheme://user:pass@host`` for any scheme: mask the whole userinfo. The
+# scheme length is bounded so each start position scans a constant window
+# (no quadratic backtracking over long ``a+a+a+`` runs).
+_URL_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]{0,31}://)[^\s/?#@]*@")
 _QUOTED = re.compile(r"""(['"])(?:\\.|(?!\1).)*\1""")
 
 

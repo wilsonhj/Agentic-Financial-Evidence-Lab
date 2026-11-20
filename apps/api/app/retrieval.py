@@ -103,7 +103,7 @@ from fel_retrieval.verification import CitationIntegrityError
 from fel_retrieval.verification import MockCitationVerifier as MockCitationVerifier
 from fel_retrieval.verification import should_abstain as should_abstain
 from fel_retrieval.verification import verify_claims as verify_claims
-from fel_workers.redact import redact_job_error_text
+from fel_workers.redact import redact_error_text, redact_job_error_text
 
 router = APIRouter(prefix="/v1", tags=["retrieval"])
 
@@ -335,12 +335,15 @@ def _record_run_failure(
 ) -> None:
     """Append ``run_failed`` and move the run to ``failed`` in a fresh transaction."""
     error = _failure_envelope(exc)
-    # Full detail stays server-side; only the redacted envelope is persisted.
+    # Never pass exc_info: the root logger is wired to Sentry's logging
+    # integration, which would ship the raw exception and its chained causes.
+    # Log the type name and the strictly redacted message instead.
     _log.error(
-        "retrieval run %s failed (%s)",
+        "retrieval run %s failed (%s): %s: %s",
         run_id,
         error["code"],
-        exc_info=(type(exc), exc, exc.__traceback__),
+        type(exc).__name__,
+        redact_error_text(str(exc)),
     )
     with tenant_connection(ctx) as conn:
         conn.execute("SELECT set_config('statement_timeout', %s, true)", (_STATEMENT_TIMEOUT,))

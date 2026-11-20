@@ -739,6 +739,8 @@ _FAKE_DSN = "postgresql://fel_app:FAKE-DB-PASSWORD-412@db.internal.invalid:5432/
 _FAKE_BEARER = "FAKE-BEARER-TOKEN-412"
 _LEAKY_MESSAGE = f"connect failed {_FAKE_DSN} Authorization: Bearer {_FAKE_BEARER}"
 _SECRET_FRAGMENTS = ("FAKE-DB-PASSWORD-412", _FAKE_BEARER, "db.internal.invalid")
+# The log keeps the (non-secret) host for diagnosis; credentials must still go.
+_LOG_SECRET_FRAGMENTS = _SECRET_FRAGMENTS[:2]
 
 
 @pytest.mark.parametrize("failing_stage", ["lane", "generation"])
@@ -778,7 +780,7 @@ def test_failed_run_error_text_is_redacted_everywhere(
         # verbatim, so the failure log must carry redacted text only.
         assert record.exc_info is None
         assert not record.exc_text
-        for fragment in _SECRET_FRAGMENTS:
+        for fragment in _LOG_SECRET_FRAGMENTS:
             assert fragment not in record.getMessage()
 
     row = _run_row(db_url, run_id)
@@ -1171,5 +1173,5 @@ def test_record_run_failure_logs_redacted_text_without_exc_info(
     message = record.getMessage()
     assert "run-1" in message
     assert "ValueError" in message  # diagnostic detail survives, as a type name
-    for fragment in _SECRET_FRAGMENTS:
+    for fragment in _LOG_SECRET_FRAGMENTS:
         assert fragment not in message

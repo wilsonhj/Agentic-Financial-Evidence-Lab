@@ -134,7 +134,8 @@ def test_url_without_userinfo_keeps_host_and_path() -> None:
 _AUTH_VALUE_REGRESSION_CASES = [
     ('{\'Authorization\': \'Digest username="alice", nonce="FAKENONCE", response="FAKERESP"\'}'),
     (
-        '{"Authorization": "Digest username=\\"alice\\", nonce=\\"FAKENONCE\\", response=\\"FAKERESP\\""}'
+        '{"Authorization": "Digest username=\\"alice\\", nonce=\\"FAKENONCE\\", '
+        'response=\\"FAKERESP\\""}'
     ),
     ("{'Authorization': 'Token abc FAKESECRET'}"),
     ("{'Authorization': 'Negotiate FAKEA FAKESECRET'}"),
