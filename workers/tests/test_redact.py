@@ -379,3 +379,14 @@ def test_escaped_quote_secret_cut_by_the_bound_leaks_no_word(redact) -> None:
     for inside in range(1, len(secret)):
         out = redact("E: " + " " * (MAX_INPUT_CHARS - 3 - inside) + secret)
         assert "FAKE" not in out, (inside, out)
+
+
+@pytest.mark.parametrize("redact", [redact_error_text, redact_job_error_text])
+def test_dsn_password_with_comma_cut_by_the_bound_leaks_no_fragment(redact) -> None:
+    """The cut tail is dropped to whitespace, not to a comma inside a DSN password (#412)."""
+    from fel_workers.redact import MAX_INPUT_CHARS
+
+    secret = "postgresql://user:FAKEA,FAKEB;FAKEC@host:5432/db"
+    for inside in range(1, len(secret)):
+        out = redact("E: " + " " * (MAX_INPUT_CHARS - 3 - inside) + secret)
+        assert "FAKE" not in out, (inside, out)
