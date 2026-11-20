@@ -315,3 +315,39 @@ def test_secret_straddling_the_input_bound_is_not_partly_kept(redact, secret: st
         pad = MAX_INPUT_CHARS - 2 - inside
         out = redact("x" + " " * pad + " " + secret)
         assert "FAKE" not in out, (inside, out)
+
+
+_MULTIWORD_STRADDLE = (
+    "password='FAKEONE FAKETWO FAKETHREE' end",
+    '{"api_key": "FAKEONE FAKETWO FAKETHREE"}',
+    "{'client_secret': 'FAKEONE FAKETWO'} tail",
+)
+
+
+@pytest.mark.parametrize("secret", _MULTIWORD_STRADDLE)
+@pytest.mark.parametrize("redact", [redact_error_text, redact_job_error_text])
+def test_quoted_multiword_secret_cut_by_the_bound_leaks_no_word(redact, secret: str) -> None:
+    """Dropping the cut tail back to a space can leave an unclosed quoted value (#412)."""
+    from fel_workers.redact import MAX_INPUT_CHARS
+
+    for inside in range(1, len(secret)):
+        out = redact("E: " + " " * (MAX_INPUT_CHARS - 3 - inside) + secret)
+        assert "FAKE" not in out, (inside, out)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "failed: {'password': 'FAKEUNCLOSED",
+        'failed: {"token": "FAKEUNCLOSED more words',
+        "failed: password='FAKEUNCLOSED more",
+        "failed: api_key=\"FAKEUNCLOSED",
+    ],
+)
+@pytest.mark.parametrize("redact", [redact_error_text, redact_job_error_text])
+def test_unterminated_quoted_credential_is_masked_to_line_end(redact, message: str) -> None:
+    out = redact(message + "\nnext line kept")
+
+    assert "FAKE" not in out
+    assert "failed:" in out
+    assert "next line kept" in out
