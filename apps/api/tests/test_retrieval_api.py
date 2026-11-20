@@ -1216,3 +1216,13 @@ def test_failure_path_is_bounded_on_adversarial_exception_text() -> None:
         except subprocess.TimeoutExpired:
             pytest.fail("failure path did not finish within 20 s (catastrophic backtracking)")
         assert float(proc.stdout.strip()) < 1.0
+
+
+def test_failure_text_straddling_the_bound_keeps_no_secret_prefix() -> None:
+    """The API path must not pre-cut exception text where a secret can straddle the cut (#412)."""
+    from fel_workers.redact import MAX_INPUT_CHARS
+
+    secret = "{'api_key': 'FAKESTRADDLE0123456789'}"
+    for inside in range(1, len(secret)):
+        text = "x" + " " * (MAX_INPUT_CHARS - 2 - inside) + " " + secret
+        assert "FAKE" not in retrieval._safe_text(ValueError(text))

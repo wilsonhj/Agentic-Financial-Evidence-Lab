@@ -291,3 +291,27 @@ def test_oversized_input_is_capped_before_redaction() -> None:
 
     assert "SECRET1" not in out
     assert len(out) <= MAX_ERROR_CHARS
+
+
+_STRADDLE_SECRETS = (
+    "{'api_key': 'FAKESTRADDLE0123456789'}",
+    '{"token": "FAKESTRADDLE0123456789"}',
+    "postgres://svc:FAKESTRADDLE0123456789@db.internal.invalid/app",
+    "password=FAKESTRADDLE0123456789",
+)
+
+
+@pytest.mark.parametrize("secret", _STRADDLE_SECRETS)
+@pytest.mark.parametrize("redact", [redact_error_text, redact_job_error_text])
+def test_secret_straddling_the_input_bound_is_not_partly_kept(redact, secret: str) -> None:
+    """A secret cut by the input bound must not leave a visible prefix (#412, PR #445).
+
+    Whitespace padding collapses to one space, which pulls text from near the
+    bound into the stored message, so every cut offset inside the secret is tried.
+    """
+    from fel_workers.redact import MAX_INPUT_CHARS
+
+    for inside in range(1, len(secret)):
+        pad = MAX_INPUT_CHARS - 2 - inside
+        out = redact("x" + " " * pad + " " + secret)
+        assert "FAKE" not in out, (inside, out)
