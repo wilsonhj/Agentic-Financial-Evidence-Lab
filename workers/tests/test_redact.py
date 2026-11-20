@@ -351,3 +351,31 @@ def test_unterminated_quoted_credential_is_masked_to_line_end(redact, message: s
     assert "FAKE" not in out
     assert "failed:" in out
     assert "next line kept" in out
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "E: password='FAKEA \\' FAKEB FAKEC",
+        "E: {'api_key': 'FAKEA \\' FAKEB FAKEC",
+        'E: {"token": "FAKEA \\" FAKEB FAKEC',
+        'E: secret="FAKEA \\" FAKEB',
+    ],
+)
+@pytest.mark.parametrize("redact", [redact_error_text, redact_job_error_text])
+def test_unclosed_credential_with_escaped_quote_is_masked_to_line_end(redact, message: str) -> None:
+    """An escaped quote must not stand in for the missing closing quote (#412)."""
+    out = redact(message + "\nnext line kept")
+
+    assert "FAKE" not in out
+    assert "next line kept" in out
+
+
+@pytest.mark.parametrize("redact", [redact_error_text, redact_job_error_text])
+def test_escaped_quote_secret_cut_by_the_bound_leaks_no_word(redact) -> None:
+    from fel_workers.redact import MAX_INPUT_CHARS
+
+    secret = "password='FAKEA \\' FAKEB FAKEC' end"
+    for inside in range(1, len(secret)):
+        out = redact("E: " + " " * (MAX_INPUT_CHARS - 3 - inside) + secret)
+        assert "FAKE" not in out, (inside, out)
