@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from html.parser import HTMLParser
 from types import MappingProxyType
+from typing import NoReturn
 
 from fel_workers.ingestion.errors import ParseError, ReasonCode
 
@@ -52,6 +53,16 @@ __all__ = [
     "sha256_hex",
     "text_hash",
 ]
+
+_UNIT_TOP = "top"
+_UNIT_DIVIDE = "divide"
+_UNIT_NUMERATOR = "numerator"
+_UNIT_DENOMINATOR = "denominator"
+
+
+def _empty_unit_measures() -> dict[str, list[str]]:
+    return {_UNIT_TOP: [], _UNIT_NUMERATOR: [], _UNIT_DENOMINATOR: []}
+
 
 PARSER_VERSION = "fel-parser/1.0.0"
 
@@ -220,6 +231,13 @@ class _FilingHTMLParser(HTMLParser):
         self._context_period: dict[str, date] = {}
         self._context_dims: dict[str, str] = {}
         self._unit_id: str | None = None
+        # Measures of the unit being parsed, by position: top-level (a plain
+        # or multiply unit), or the numerator / denominator of an
+        # ``xbrli:divide``. ``_unit_side`` is the side currently open.
+        self._unit_measures: dict[str, list[str]] = _empty_unit_measures()
+        self._unit_side: str = _UNIT_TOP
+        self._unit_divide_seen = False
+        self._in_unit = False
         self._capture_kind: str | None = None
         self._capture_parts: list[str] = []
         self._capture_dimension: str | None = None
@@ -403,6 +421,29 @@ class _FilingHTMLParser(HTMLParser):
             self._capture_dimension = attr_map.get("dimension")
         elif tag == "xbrli:unit":
             self._unit_id = attr_map.get("id")
+            self._in_unit = True
+            self._unit_measures = _empty_unit_measures()
+            self._unit_side = _UNIT_TOP
+            self._unit_divide_seen = False
+        elif tag in ("xbrli:divide", "xbrli:unitnumerator", "xbrli:unitdenominator") and (
+            not self._in_unit
+        ):
+            # Same class as a misplaced numerator inside a unit: reject with the
+            # typed error so the job is quarantined, not crashed.
+            raise ParseError(
+                ReasonCode.UNKNOWN_UNIT,
+                f"{tag} appears outside an xbrli:unit; the ix:header resources are malformed",
+            )
+        elif tag == "xbrli:divide":
+            if self._unit_divide_seen:
+                self._malformed_unit("has more than one xbrli:divide")
+            self._unit_divide_seen = True
+            self._unit_side = _UNIT_DIVIDE
+        elif tag in ("xbrli:unitnumerator", "xbrli:unitdenominator"):
+            side = _UNIT_NUMERATOR if tag == "xbrli:unitnumerator" else _UNIT_DENOMINATOR
+            if self._unit_side != _UNIT_DIVIDE or self._unit_measures[side]:
+                self._malformed_unit(f"has a misplaced or repeated {tag}")
+            self._unit_side = side
         elif tag == "xbrli:measure":
             self._capture_kind = "measure"
             self._capture_parts = []
@@ -426,9 +467,15 @@ class _FilingHTMLParser(HTMLParser):
             self._capture_kind = None
             self._capture_dimension = None
         elif tag == "xbrli:measure":
+            if self._unit_side == _UNIT_DIVIDE:
+                self._malformed_unit("has an xbrli:measure directly inside xbrli:divide")
             if self._unit_id and captured:
-                self.units[self._unit_id] = captured
+                self._unit_measures[self._unit_side].append(captured)
             self._capture_kind = None
+        elif tag in ("xbrli:unitnumerator", "xbrli:unitdenominator"):
+            self._unit_side = _UNIT_DIVIDE
+        elif tag == "xbrli:divide":
+            self._unit_side = _UNIT_TOP
         elif tag == "xbrli:context":
             if self._context_id:
                 self.contexts[self._context_id] = XbrlContext(
@@ -440,7 +487,38 @@ class _FilingHTMLParser(HTMLParser):
                 )
             self._context_id = None
         elif tag == "xbrli:unit":
+            if self._unit_id:
+                composed = self._compose_unit()
+                if composed:
+                    self.units[self._unit_id] = composed
             self._unit_id = None
+            self._in_unit = False
+
+    def _malformed_unit(self, problem: str) -> NoReturn:
+        raise ParseError(
+            ReasonCode.UNKNOWN_UNIT,
+            f"unit '{self._unit_id}' {problem}; the ix:header resources are malformed",
+        )
+
+    def _compose_unit(self) -> str:
+        """Compose the unit's measures into one deterministic string.
+
+        A plain unit stays its single measure. Several measures on one side
+        multiply: they are sorted (multiplication commutes) and joined with
+        ``*``. An ``xbrli:divide`` renders ``numerator/denominator``. A divide
+        missing a side, or mixed with top-level measures, is rejected rather
+        than silently keeping one measure (issue #411).
+        """
+        top = self._unit_measures[_UNIT_TOP]
+        numerator = self._unit_measures[_UNIT_NUMERATOR]
+        denominator = self._unit_measures[_UNIT_DENOMINATOR]
+        if not self._unit_divide_seen:
+            return "*".join(sorted(top))
+        if top:
+            self._malformed_unit("mixes top-level xbrli:measure with xbrli:divide")
+        if not numerator or not denominator:
+            self._malformed_unit("has an xbrli:divide without both a numerator and a denominator")
+        return "*".join(sorted(numerator)) + "/" + "*".join(sorted(denominator))
 
 
 def _trim_range(text: str, start: int, end: int) -> tuple[int, int]:
