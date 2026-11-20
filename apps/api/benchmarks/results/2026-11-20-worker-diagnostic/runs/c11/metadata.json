@@ -3,11 +3,7 @@
   "clients": 11,
   "waves": 4,
   "warmup_clients": 25,
-  "host_load_start": [
-    5.2275390625,
-    2.72216796875,
-    1.080078125
-  ],
+  "host_load_start": [5.2275390625, 2.72216796875, 1.080078125],
   "cpu_count": 4,
   "api_processes": 1,
   "db_pool_min": 1,
@@ -21,11 +17,7 @@
     "wal_sync_method": "fdatasync"
   },
   "started": 1794808495.5141342,
-  "host_load_end": [
-    5.58837890625,
-    3.24072265625,
-    1.3388671875
-  ],
+  "host_load_end": [5.58837890625, 3.24072265625, 1.3388671875],
   "finished": 1794808535.8202376,
   "failure": null
 }
