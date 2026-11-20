@@ -53,19 +53,19 @@ def _quoted(name: str, *, unclosed_to_line_end: bool = False) -> str:
     literal backslash, such as ``'C:\\dir\\'``) the fallback runs to the last
     matching quote on the line, which is what the former backtracking did.
 
-    With ``unclosed_to_line_end`` (credential values only), a value whose
-    closing quote never appears is masked to the end of the line. That covers
-    a value cut by the input bound and a truncated mapping repr such as
+    With ``unclosed_to_line_end`` (credential values only), a value without a
+    real closing quote is masked to the end of the line instead. That covers a
+    value cut by the input bound and a truncated mapping repr such as
     ``{'password': 'SECRET``; without it the bare-value rule would mask only
-    the first word. Quoted values never span lines, so the rest of the text is
-    kept. Ordinary quoted literals keep the closing-quote requirement, so a lone
-    apostrophe in prose does not mask the rest of its line.
+    the first word. The last-quote fallback is not used here, because an
+    escaped quote inside the value (``'a \\' b``) would end the match early and
+    leave the later words visible. Quoted values never span lines, so the rest
+    of the text is kept. Ordinary quoted literals keep the closing-quote
+    requirement, so a lone apostrophe in prose does not mask the rest of its
+    line.
     """
-    unclosed = r"|[^\n]*+(?=\n|\Z)" if unclosed_to_line_end else ""
-    return (
-        rf"(?P<{name}>['\"])"
-        rf"(?:(?:(?!(?P={name}))[^\\\n]|\\.)*(?P={name})|[^\n]*(?P={name}){unclosed})"
-    )
+    fallback = r"[^\n]*+" if unclosed_to_line_end else rf"[^\n]*(?P={name})"
+    return rf"(?P<{name}>['\"])" rf"(?:(?:(?!(?P={name}))[^\\\n]|\\.)*(?P={name})|{fallback})"
 
 
 # Mapping/JSON reprs put a closing quote between the key and separator. Values
