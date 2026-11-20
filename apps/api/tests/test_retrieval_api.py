@@ -734,6 +734,70 @@ def test_lane_failure_persists_failed_run(
     assert row["candidate_count"] == 0
 
 
+_FAKE_DSN = "postgresql://fel_app:FAKE-DB-PASSWORD-412@db.internal.invalid:5432/fel"
+_FAKE_BEARER = "FAKE-BEARER-TOKEN-412"
+_LEAKY_MESSAGE = f"connect failed {_FAKE_DSN} Authorization: Bearer {_FAKE_BEARER}"
+_SECRET_FRAGMENTS = ("FAKE-DB-PASSWORD-412", _FAKE_BEARER, "db.internal.invalid")
+
+
+@pytest.mark.parametrize("failing_stage", ["lane", "generation"])
+def test_failed_run_error_text_is_redacted_everywhere(
+    client: TestClient,
+    org: tuple[str, str],
+    seeded: dict[str, str],
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    failing_stage: str,
+) -> None:
+    """Exception text (DSN, bearer token) never lands in the row, event or API reads (#412)."""
+    from fel_retrieval.generation import StructuredClaimGenerator
+
+    def _lane_boom(_conn: Any, _query: Any) -> list[Any]:
+        raise RuntimeError(_LEAKY_MESSAGE)
+
+    def _generate_boom(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError(_LEAKY_MESSAGE)
+
+    if failing_stage == "lane":
+        monkeypatch.setitem(retrieval._LANE_FUNCS, "dense", _lane_boom)
+        expected_code = "LANE_EXECUTION_FAILED"
+    else:
+        monkeypatch.setattr(StructuredClaimGenerator, "generate", _generate_boom)
+        expected_code = "PIPELINE_FAILED"
+
+    created = _create(client, org, seeded["workspace_id"])
+    run_id = created["run_id"]
+
+    row = _run_row(db_url, run_id)
+    assert row["status"] == "failed"
+    assert row["error"]["code"] == expected_code
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        stored = conn.execute(
+            "SELECT payload::text FROM retrieval_events"
+            " WHERE run_id = %s AND event_type = 'run_failed'",
+            (run_id,),
+        ).fetchone()
+    assert stored is not None
+    persisted = json.dumps(row["error"]) + stored[0]
+
+    headers = _headers(*org)
+    responses = {
+        "trace": client.get(f"/v1/retrieval-runs/{run_id}", headers=headers),
+        "event-history": client.get(f"/v1/retrieval-runs/{run_id}/event-history", headers=headers),
+        "sse": client.get(f"/v1/retrieval-runs/{run_id}/events", headers=headers),
+    }
+    for name, resp in responses.items():
+        assert resp.status_code == 200, (name, resp.text)
+    trace_error = responses["trace"].json()["events"][-1]["payload"]["error"]
+    assert trace_error["code"] == expected_code
+    assert trace_error["message"]  # stable, non-empty safe message
+
+    for fragment in _SECRET_FRAGMENTS:
+        assert fragment not in persisted, f"{fragment} reached durable storage"
+        for name, resp in responses.items():
+            assert fragment not in resp.text, f"{fragment} leaked through {name}"
+
+
 def test_dangling_citation_persists_failed_run(
     client: TestClient,
     org: tuple[str, str],

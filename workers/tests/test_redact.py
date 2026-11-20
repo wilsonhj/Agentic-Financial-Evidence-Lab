@@ -88,3 +88,40 @@ def test_job_error_is_collapsed_and_capped() -> None:
     assert "\n" not in cleaned
     assert "ticker 'CRM'" in cleaned
     assert len(cleaned) <= MAX_ERROR_CHARS
+
+
+_URL_USERINFO_CASES = [
+    ("connect failed postgres://svc:p4ss-FAKE@db.internal:5432/fel", "p4ss-FAKE"),
+    ("postgresql+psycopg://svc:p4ss-FAKE@db/fel?sslmode=require", "p4ss-FAKE"),
+    ("redis://:p4ss-FAKE@cache:6379/0", "p4ss-FAKE"),
+    ("amqps://guest:p4ss-FAKE@mq.example.invalid/vhost", "p4ss-FAKE"),
+    ("GET https://user:p4ss-FAKE@host.example.invalid/x failed", "p4ss-FAKE"),
+]
+
+_AUTH_HEADER_CASES = [
+    ("Authorization: Token abc123-FAKE", "abc123-FAKE"),
+    ("authorization=ApiKey abc123-FAKE", "abc123-FAKE"),
+    ("Authorization: Negotiate abc123-FAKE", "abc123-FAKE"),
+    ("{'Authorization': 'Token abc123-FAKE'}", "abc123-FAKE"),
+    ("Authorization: Bearer abc123-FAKE", "abc123-FAKE"),
+]
+
+
+@pytest.mark.parametrize(("message", "secret"), _URL_USERINFO_CASES)
+def test_url_userinfo_credentials_are_masked(message: str, secret: str) -> None:
+    assert secret not in redact_error_text(message)
+    assert secret not in redact_job_error_text(message)
+
+
+@pytest.mark.parametrize(("message", "secret"), _AUTH_HEADER_CASES)
+def test_authorization_header_credential_is_masked_for_any_scheme(
+    message: str, secret: str
+) -> None:
+    assert secret not in redact_error_text(message)
+    assert secret not in redact_job_error_text(message)
+
+
+def test_url_without_userinfo_keeps_host_and_path() -> None:
+    message = "fetch https://www.sec.gov/Archives/edgar/data/1/x.htm failed"
+
+    assert redact_job_error_text(message) == message
