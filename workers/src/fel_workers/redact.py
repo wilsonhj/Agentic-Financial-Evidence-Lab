@@ -33,7 +33,10 @@ MAX_ERROR_CHARS = 256
 # no longer matches the credential patterns and whitespace collapse can pull
 # text from near the bound into the stored message.
 MAX_INPUT_CHARS = 65536
-_TOKEN_BOUNDARY = frozenset(" \t\r\n\f\v,;")
+# Whitespace only: a comma or semicolon can sit inside a credential (a DSN
+# password, for one), and cutting there would separate it from the ``@`` that
+# lets the URL pattern recognise it.
+_TOKEN_BOUNDARY = frozenset(" \t\r\n\f\v")
 _TRUNCATED = "...[truncated]"
 
 # Every pattern below is linear in the input. Each character of a quoted value
@@ -140,7 +143,7 @@ def _bound(message: str, limit: int) -> tuple[str, bool]:
     """Cut the input to what can matter, and say whether anything was cut.
 
     A cut can land inside a credential. The cut-off tail, back to the last
-    whitespace, comma or semicolon, is dropped as well, so no fragment of a
+    whitespace, is dropped as well, so no fragment of a
     secret that the patterns can no longer recognise survives the cut.
     """
     text = str(message)
