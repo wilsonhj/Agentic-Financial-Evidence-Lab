@@ -476,3 +476,42 @@ def test_malformed_divide_is_rejected_not_collapsed(body: str) -> None:
     with pytest.raises(ParseError) as excinfo:
         parse_filing(_units_filing(f'<xbrli:unit id="u">{body}</xbrli:unit>'))
     assert excinfo.value.reason_code == ReasonCode.UNKNOWN_UNIT
+
+
+def test_more_than_one_divide_in_a_unit_is_rejected() -> None:
+    divide = (
+        "<xbrli:divide><xbrli:unitNumerator><xbrli:measure>iso4217:USD</xbrli:measure>"
+        "</xbrli:unitNumerator><xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure>"
+        "</xbrli:unitDenominator></xbrli:divide>"
+    )
+    with pytest.raises(ParseError) as excinfo:
+        parse_filing(_units_filing(f'<xbrli:unit id="u">{divide}{divide}</xbrli:unit>'))
+    assert excinfo.value.reason_code == ReasonCode.UNKNOWN_UNIT
+    assert "more than one xbrli:divide" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "stray",
+    [
+        "<xbrli:divide><xbrli:unitNumerator></xbrli:unitNumerator></xbrli:divide>",
+        "<xbrli:unitNumerator><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unitNumerator>",
+        "<xbrli:unitDenominator></xbrli:unitDenominator>",
+    ],
+)
+def test_divide_markup_outside_a_unit_is_a_typed_error(stray: str) -> None:
+    # Must be a typed ParseError (quarantinable), never a bare KeyError. A valid
+    # unit "u" follows so the error cannot come from an undefined unitRef.
+    valid = '<xbrli:unit id="u"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>'
+    with pytest.raises(ParseError) as excinfo:
+        parse_filing(_units_filing(stray + valid))
+    assert excinfo.value.reason_code == ReasonCode.UNKNOWN_UNIT
+    assert "outside" in str(excinfo.value)
+
+
+def test_empty_unit_element_leaves_the_unit_undefined() -> None:
+    # An xbrli:unit with no measures composes to nothing and is not recorded
+    # (existing behaviour), so a fact referencing it fails as an unknown unit.
+    with pytest.raises(ParseError) as excinfo:
+        parse_filing(_units_filing('<xbrli:unit id="u"/>'))
+    assert excinfo.value.reason_code == ReasonCode.UNKNOWN_UNIT
+    assert "undefined unit" in str(excinfo.value)
