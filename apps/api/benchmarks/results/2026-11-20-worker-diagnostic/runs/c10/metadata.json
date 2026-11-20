@@ -1,0 +1,31 @@
+{
+  "diagnostic": true,
+  "clients": 10,
+  "waves": 4,
+  "warmup_clients": 25,
+  "host_load_start": [
+    5.70556640625,
+    2.39306640625,
+    0.90966796875
+  ],
+  "cpu_count": 4,
+  "api_processes": 1,
+  "db_pool_min": 1,
+  "db_pool_max": 10,
+  "postgres": {
+    "server_version": "18.7",
+    "fsync": "on",
+    "synchronous_commit": "on",
+    "shared_buffers": "128MB",
+    "max_connections": "100",
+    "wal_sync_method": "fdatasync"
+  },
+  "started": 1794808458.2323184,
+  "host_load_end": [
+    5.2275390625,
+    2.72216796875,
+    1.080078125
+  ],
+  "finished": 1794808494.802665,
+  "failure": null
+}
