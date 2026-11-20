@@ -46,15 +46,25 @@ _SENSITIVE_WORD = r"(?:secret|api[_-]?key|password|passwd|token|authorization)"
 _KEY_TOKEN = rf"(?={_KEY_CHARS}*?{_SENSITIVE_WORD}){_KEY_CHARS}++"
 
 
-def _quoted(name: str) -> str:
+def _quoted(name: str, *, unclosed_to_line_end: bool = False) -> str:
     """A quoted literal with escapes, as a regex fragment.
 
     The body has one parse. If no closing quote follows (a value ending in a
     literal backslash, such as ``'C:\\dir\\'``) the fallback runs to the last
     matching quote on the line, which is what the former backtracking did.
+
+    With ``unclosed_to_line_end`` (credential values only), a value whose
+    closing quote never appears is masked to the end of the line. That covers
+    a value cut by the input bound and a truncated mapping repr such as
+    ``{'password': 'SECRET``; without it the bare-value rule would mask only
+    the first word. Quoted values never span lines, so the rest of the text is
+    kept. Ordinary quoted literals keep the closing-quote requirement, so a lone
+    apostrophe in prose does not mask the rest of its line.
     """
+    unclosed = r"|[^\n]*+(?=\n|\Z)" if unclosed_to_line_end else ""
     return (
-        rf"(?P<{name}>['\"])" rf"(?:(?:(?!(?P={name}))[^\\\n]|\\.)*(?P={name})|[^\n]*(?P={name}))"
+        rf"(?P<{name}>['\"])"
+        rf"(?:(?:(?!(?P={name}))[^\\\n]|\\.)*(?P={name})|[^\n]*(?P={name}){unclosed})"
     )
 
 
@@ -68,7 +78,7 @@ _QUOTED_CREDENTIAL_ASSIGNMENT = re.compile(
       (?P=key_quote)
       \s*[:=]\s*
       [bBrRuUfF]{{0,2}}
-      {_quoted("value_quote")}
+      {_quoted("value_quote", unclosed_to_line_end=True)}
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -79,7 +89,7 @@ _BARE_CREDENTIAL_ASSIGNMENT = re.compile(
       \s*[:=]\s*
       (?:
         [bBrRuUfF]{{0,2}}
-        {_quoted("bare_value_quote")}
+        {_quoted("bare_value_quote", unclosed_to_line_end=True)}
         |
         (?:(?:bearer|basic)\s+)?[^\s,;}}\]]+
       )

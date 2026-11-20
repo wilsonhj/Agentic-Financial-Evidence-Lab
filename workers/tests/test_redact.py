@@ -341,7 +341,7 @@ def test_quoted_multiword_secret_cut_by_the_bound_leaks_no_word(redact, secret: 
         "failed: {'password': 'FAKEUNCLOSED",
         'failed: {"token": "FAKEUNCLOSED more words',
         "failed: password='FAKEUNCLOSED more",
-        "failed: api_key=\"FAKEUNCLOSED",
+        'failed: api_key="FAKEUNCLOSED',
     ],
 )
 @pytest.mark.parametrize("redact", [redact_error_text, redact_job_error_text])
