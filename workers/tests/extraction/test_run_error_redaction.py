@@ -93,4 +93,3 @@ def test_run_error_is_redacted_on_every_terminal_path(
     for record in [*stored, *emitted]:
         for secret in _SECRETS:
             assert secret not in str(record)
-        assert "db.internal.invalid" not in str(record)

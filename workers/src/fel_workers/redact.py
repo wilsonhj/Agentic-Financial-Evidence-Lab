@@ -14,8 +14,9 @@ job infrastructure and must not import from a single job kind's package.
 Two rules, both needed:
 
 Both sanitizers collapse whitespace and cap stored text. Credential shapes
-(``key=value``, mappings such as ``{'api_key': 'value'}``, and
-``Bearer <token>``) are masked in both. Only :func:`redact_error_text`, the
+(``key=value``, mappings such as ``{'api_key': 'value'}``,
+``Authorization: <scheme> <credential>``, ``Bearer <token>`` and URL
+userinfo ``scheme://user:pass@host``) are masked in both. Only :func:`redact_error_text`, the
 strict extraction-step policy, masks every quoted run positionally.
 """
 
@@ -63,13 +64,23 @@ _BARE_CREDENTIAL_ASSIGNMENT = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 _AUTH_SCHEME = re.compile(r"\b(?:bearer|basic)\s+\S+", re.IGNORECASE)
+# ``Authorization: <scheme> <credential>`` for any scheme word (Token, ApiKey,
+# Negotiate, ...). The generic key=value rule above consumes only the scheme.
+_AUTHORIZATION_HEADER = re.compile(
+    r"""\bauthorization\b['"]?\s*[:=]\s*['"]?[A-Za-z][A-Za-z0-9_-]*\s+[^\s,;}\]'"]+""",
+    re.IGNORECASE,
+)
+# ``scheme://user:pass@host`` for any scheme: mask the whole userinfo.
+_URL_USERINFO = re.compile(r"(?P<scheme>\b[A-Za-z][A-Za-z0-9+.-]*://)[^\s/?#@]*@")
 _QUOTED = re.compile(r"""(['"])(?:\\.|(?!\1).)*\1""")
 
 
 def _mask_credentials(message: str) -> str:
     # Match quoted-key assignments first: the bare-key expression cannot cross
     # the closing quote between ``'api_key'`` and ``:``.
-    text = _QUOTED_CREDENTIAL_ASSIGNMENT.sub("[redacted]", str(message))
+    text = _URL_USERINFO.sub(r"\g<scheme>[redacted]@", str(message))
+    text = _AUTHORIZATION_HEADER.sub("[redacted]", text)
+    text = _QUOTED_CREDENTIAL_ASSIGNMENT.sub("[redacted]", text)
     text = _BARE_CREDENTIAL_ASSIGNMENT.sub("[redacted]", text)
     return _AUTH_SCHEME.sub("[redacted]", text)
 

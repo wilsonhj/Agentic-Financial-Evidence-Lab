@@ -65,6 +65,7 @@ from fel_workers.extraction.workflow_context import PersistStore as PersistStore
 from fel_workers.extraction.workflow_context import WorkflowDeps as WorkflowDeps
 from fel_workers.extraction.workflow_context import _ExecCtx as _ExecCtx
 from fel_workers.extraction.workflow_context import _ModelStepAudit as _ModelStepAudit
+from fel_workers.redact import redact_error_text
 
 
 def run_extraction_workflow(state: WorkflowState, deps: WorkflowDeps) -> WorkflowState:
@@ -118,7 +119,7 @@ def run_extraction_workflow(state: WorkflowState, deps: WorkflowDeps) -> Workflo
         if not deps.lease_check():
             raise LeaseLost("queue lease lost before cancelled status write") from exc
         state.status = "cancelled"
-        state.error = {"code": exc.code, "message": str(exc)}
+        state.error = {"code": exc.code, "message": redact_error_text(str(exc))}
         # Append BEFORE the status write: 0004's fel_assert_extraction_run_open
         # rejects any child insert once the run row is terminal, so writing the
         # status first loses the event and masks `exc` with the guard error.
@@ -138,7 +139,10 @@ def run_extraction_workflow(state: WorkflowState, deps: WorkflowDeps) -> Workflo
         if not deps.lease_check():
             raise LeaseLost("queue lease lost before failed status write") from exc
         state.status = "failed"
-        state.error = {"code": getattr(exc, "code", "extraction_error"), "message": str(exc)}
+        state.error = {
+            "code": getattr(exc, "code", "extraction_error"),
+            "message": redact_error_text(str(exc)),
+        }
         # Append before the terminal status write — see the run_cancelled note.
         deps.events.append(
             org_id=state.request.org_id,
@@ -160,7 +164,10 @@ def run_extraction_workflow(state: WorkflowState, deps: WorkflowDeps) -> Workflo
         if not deps.lease_check():
             raise LeaseLost("queue lease lost before failed status write") from exc
         state.status = "failed"
-        state.error = {"code": "internal_error", "message": f"{type(exc).__name__}: {exc}"}
+        state.error = {
+            "code": "internal_error",
+            "message": redact_error_text(f"{type(exc).__name__}: {exc}"),
+        }
         # Append before the terminal status write — see the run_cancelled note.
         # Getting this backwards masked `exc` with the guard's own error, which
         # defeats the re-raise below.
