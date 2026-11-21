@@ -237,6 +237,7 @@ class _FilingHTMLParser(HTMLParser):
         self._unit_measures: dict[str, list[str]] = _empty_unit_measures()
         self._unit_side: str = _UNIT_TOP
         self._unit_divide_seen = False
+        self._unit_sides_seen: set[str] = set()
         self._in_unit = False
         self._capture_kind: str | None = None
         self._capture_parts: list[str] = []
@@ -425,6 +426,7 @@ class _FilingHTMLParser(HTMLParser):
             self._unit_measures = _empty_unit_measures()
             self._unit_side = _UNIT_TOP
             self._unit_divide_seen = False
+            self._unit_sides_seen.clear()
         elif tag in ("xbrli:divide", "xbrli:unitnumerator", "xbrli:unitdenominator") and (
             not self._in_unit
         ):
@@ -441,8 +443,9 @@ class _FilingHTMLParser(HTMLParser):
             self._unit_side = _UNIT_DIVIDE
         elif tag in ("xbrli:unitnumerator", "xbrli:unitdenominator"):
             side = _UNIT_NUMERATOR if tag == "xbrli:unitnumerator" else _UNIT_DENOMINATOR
-            if self._unit_side != _UNIT_DIVIDE or self._unit_measures[side]:
+            if self._unit_side != _UNIT_DIVIDE or side in self._unit_sides_seen:
                 self._malformed_unit(f"has a misplaced or repeated {tag}")
+            self._unit_sides_seen.add(side)
             self._unit_side = side
         elif tag == "xbrli:measure":
             self._capture_kind = "measure"
