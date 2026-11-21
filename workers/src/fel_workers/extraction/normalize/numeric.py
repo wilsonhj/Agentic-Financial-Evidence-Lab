@@ -60,12 +60,14 @@ _NUM_RE = re.compile(
 # 'US$' is consumed whole. Letters around a code are checked with letter-only
 # lookarounds, not '\b': '\b' does not fire between a letter and a digit, so
 # '-GBP100' / '(EUR100)' would otherwise keep their code, while a longer word
-# ('Euro', 'cadence') still never loses a fragment.
+# ('Euro', 'cadence') still never loses a fragment. A hyphen or punctuation
+# dash directly followed by a letter also continues the label. Keeping 'USD'
+# in 'USD-denominated' prevents its hyphen from appearing to be a sign.
 _NOT_AFTER_LETTER = r"(?<![^\W\d_])"
-_NOT_BEFORE_LETTER = r"(?![^\W\d_])"
+_NOT_BEFORE_LABEL = r"(?![-\u2012-\u2014]?[^\W\d_])"
 _CURRENCY_MARKER_RE = re.compile(
     rf"{_NOT_AFTER_LETTER}(?:US|CA|C|AU|A|HK|NZ|S)\$|[$\u20ac\u00a3\u00a5\u20b9\u20a9]"
-    rf"|{_NOT_AFTER_LETTER}(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|RMB|INR){_NOT_BEFORE_LETTER}",
+    rf"|{_NOT_AFTER_LETTER}(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|RMB|INR){_NOT_BEFORE_LABEL}",
     re.IGNORECASE,
 )
 
