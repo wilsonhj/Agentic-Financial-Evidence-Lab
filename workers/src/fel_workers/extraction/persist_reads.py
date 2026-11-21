@@ -62,6 +62,17 @@ def load_span_pins(conn: psycopg.Connection[Any], span_ids: list[str]) -> dict[s
     evidence path is carried by ``extraction_proposal_evidence``'s composite
     FK and by the run's own workspace bind, not here.
 
+    Each pin also carries the span's filing identity (``documents.entity_id``),
+    its visibility instant and every corpus version that contains its document
+    version, so binding can hold the span to the citing run's scope (#451).
+
+    The visibility instant is ``documents.published_at``, the expression the
+    retrieval lanes use on ``main`` (``d.published_at <= as_of``). When #417
+    lands and the lanes move to migration 0012's rule, this projection must
+    move with them, to
+    ``GREATEST(COALESCE(d.public_at, d.published_at), d.published_at)``, which
+    is never earlier than ``published_at`` and so can only tighten the cutoff.
+
     Ids that are not well-formed UUIDs are simply absent from the result
     rather than raising: the caller fails them closed as unresolvable spans,
     which is the same outcome with a message that names the span.
@@ -76,9 +87,17 @@ def load_span_pins(conn: psycopg.Connection[Any], span_ids: list[str]) -> dict[s
         return {}
     rows = conn.execute(
         """
-            SELECT id, document_version_id, text_hash
-              FROM source_spans
-             WHERE id = ANY(%s::uuid[])
+            SELECT s.id, s.document_version_id, s.text_hash,
+                   d.entity_id, d.published_at,
+                   ARRAY(
+                       SELECT cvd.corpus_version_id
+                         FROM corpus_version_documents cvd
+                        WHERE cvd.document_version_id = s.document_version_id
+                   )
+              FROM source_spans s
+              JOIN document_versions v ON v.id = s.document_version_id
+              JOIN documents d ON d.id = v.document_id
+             WHERE s.id = ANY(%s::uuid[])
             """,
         (wanted,),
     ).fetchall()
@@ -87,6 +106,9 @@ def load_span_pins(conn: psycopg.Connection[Any], span_ids: list[str]) -> dict[s
             source_span_id=str(row[0]),
             document_version_id=str(row[1]),
             text_hash=str(row[2]),
+            entity_id=str(row[3]),
+            published_at=row[4],
+            corpus_version_ids=frozenset(str(corpus) for corpus in row[5]),
         )
         for row in rows
     }
