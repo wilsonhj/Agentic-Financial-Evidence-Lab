@@ -28,6 +28,9 @@ NNBSP = " "
         ("ex-US $5", Decimal("5"), 0),
         ("pre-IPO $5 million", Decimal("5"), 6),
         ("co-op $100", Decimal("100"), 0),
+        ("USD-denominated $100 million", Decimal("100"), 6),
+        ("EUR-denominated €100 million", Decimal("100"), 6),
+        ("non-USD $100", Decimal("100"), 0),
         # A dash used as punctuation after a label is not a minus (negative on #443 head).
         ("Revenue—$100 million", Decimal("100"), 6),
         ("Total–$100", Decimal("100"), 0),
@@ -118,5 +121,11 @@ def test_unambiguous_negative_forms(raw: str, expected_scale: int) -> None:
     ],
 )
 def test_ambiguous_or_unreadable_sign_raises(raw: str) -> None:
+    with pytest.raises(ValueError):
+        parse_numeric(raw)
+
+
+@pytest.mark.parametrize("raw", ["100€200", "100USD200", "10€£20", "1,€234", "10£.25"])
+def test_currency_markers_cannot_join_numeric_fragments(raw: str) -> None:
     with pytest.raises(ValueError):
         parse_numeric(raw)
