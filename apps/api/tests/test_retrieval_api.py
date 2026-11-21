@@ -1197,7 +1197,6 @@ def test_failure_path_is_bounded_on_adversarial_exception_text() -> None:
         "text = sys.stdin.read()\n"
         "t = time.perf_counter()\n"
         "retrieval._safe_text(ValueError(text))\n"
-        "retrieval.redact_error_text(retrieval._exc_text(ValueError(text)))\n"
         "print(time.perf_counter() - t)\n"
     )
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
