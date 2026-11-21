@@ -60,12 +60,15 @@ _NUM_RE = re.compile(
 # 'US$' is consumed whole. Letters around a code are checked with letter-only
 # lookarounds, not '\b': '\b' does not fire between a letter and a digit, so
 # '-GBP100' / '(EUR100)' would otherwise keep their code, while a longer word
-# ('Euro', 'cadence') still never loses a fragment.
+# ('Euro', 'cadence') still never loses a fragment. Codes in compound labels
+# ('USD-denominated', 'non-USD') keep the letters that make the hyphen part of
+# a word. A code glued to the digits still counts as part of the amount.
 _NOT_AFTER_LETTER = r"(?<![^\W\d_])"
-_NOT_BEFORE_LETTER = r"(?![^\W\d_])"
+_ISO_CURRENCY_CODE = r"(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|RMB|INR)"
 _CURRENCY_MARKER_RE = re.compile(
-    rf"{_NOT_AFTER_LETTER}(?:US|CA|C|AU|A|HK|NZ|S)\$|[$\u20ac\u00a3\u00a5\u20b9\u20a9]"
-    rf"|{_NOT_AFTER_LETTER}(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|RMB|INR){_NOT_BEFORE_LETTER}",
+    rf"(?:{_NOT_AFTER_LETTER}(?:US|CA|C|AU|A|HK|NZ|S)\$|[$\u20ac\u00a3\u00a5\u20b9\u20a9]"
+    rf"|{_NOT_AFTER_LETTER}(?:(?<![^\W\d_]-){_ISO_CURRENCY_CODE}(?!-?[^\W\d_])"
+    rf"|{_ISO_CURRENCY_CODE}(?=\.?\d)))+",
     re.IGNORECASE,
 )
 
@@ -91,6 +94,18 @@ _WORD_CHAR_RE = re.compile(r"\w")
 # A grouping/decimal separator touching the matched body means the match only
 # covered part of a malformed number ('1,23' -> '1').
 _ADJACENT_GROUPING = frozenset({",", "."})
+
+
+def _remove_currency_markers(match: re.Match[str]) -> str:
+    # Keep numeric fragments apart. Full consumption will reject a second
+    # number in "100€200" instead of accepting the concatenated value.
+    before = match.string[max(0, match.start() - 1) : match.start()]
+    after = match.string[match.end() : match.end() + 1]
+    if (before.isdecimal() or before in _ADJACENT_GROUPING) and (
+        after.isdecimal() or after in _ADJACENT_GROUPING
+    ):
+        return " "
+    return ""
 
 
 def _is_word_char(char: str) -> bool:
@@ -207,7 +222,7 @@ def parse_numeric(raw_value: str) -> tuple[Decimal, int, str]:
     """
     if not raw_value or not isinstance(raw_value, str):
         raise ValueError("raw_value required")
-    cleaned = _CURRENCY_MARKER_RE.sub("", raw_value).replace("%", "").strip()
+    cleaned = _CURRENCY_MARKER_RE.sub(_remove_currency_markers, raw_value.replace("%", "")).strip()
     cleaned = _normalize_dashes(raw_value, cleaned)
     match = _NUM_RE.search(cleaned)
     if match is None:
