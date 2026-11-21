@@ -737,10 +737,12 @@ def test_lane_failure_persists_failed_run(
 
 _FAKE_DSN = "postgresql://fel_app:FAKE-DB-PASSWORD-412@db.internal.invalid:5432/fel"
 _FAKE_BEARER = "FAKE-BEARER-TOKEN-412"
-_LEAKY_MESSAGE = f"connect failed {_FAKE_DSN} Authorization: Bearer {_FAKE_BEARER}"
-_SECRET_FRAGMENTS = ("FAKE-DB-PASSWORD-412", _FAKE_BEARER, "db.internal.invalid")
-# The log keeps the (non-secret) host for diagnosis; credentials must still go.
-_LOG_SECRET_FRAGMENTS = _SECRET_FRAGMENTS[:2]
+_OPAQUE_VALUE = "FIXTURE-OPAQUE-VALUE"
+_LEAKY_MESSAGE = (
+    f"connect failed {_FAKE_DSN} provider returned {_OPAQUE_VALUE}\n"
+    f"Authorization: Bearer {_FAKE_BEARER}"
+)
+_SECRET_FRAGMENTS = ("FAKE-DB-PASSWORD-412", _FAKE_BEARER, "db.internal.invalid", _OPAQUE_VALUE)
 
 
 @pytest.mark.parametrize("failing_stage", ["lane", "generation"])
@@ -776,11 +778,10 @@ def test_failed_run_error_text_is_redacted_everywhere(
     failure_records = [r for r in caplog.records if r.name == retrieval._log.name]
     assert failure_records
     for record in failure_records:
-        # Sentry's logging integration forwards exc_info (and chained causes)
-        # verbatim, so the failure log must carry redacted text only.
+        # Error reporting receives the log record as well as its message.
         assert record.exc_info is None
         assert not record.exc_text
-        for fragment in _LOG_SECRET_FRAGMENTS:
+        for fragment in _SECRET_FRAGMENTS:
             assert fragment not in record.getMessage()
 
     row = _run_row(db_url, run_id)
@@ -1126,10 +1127,10 @@ def test_query_run_page_preserves_snapshot(client, org, seeded):
     assert after.json()["plan"] == page.json()["plan"]
 
 
-def test_record_run_failure_logs_redacted_text_without_exc_info(
+def test_record_run_failure_logs_only_failure_metadata(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The failure log omits exc_info: Sentry would ship the raw exception chain (#412)."""
+    """Keep the message and chained exception out of error reporting."""
     import contextlib
 
     class _Conn:
@@ -1170,11 +1171,7 @@ def test_record_run_failure_logs_redacted_text_without_exc_info(
     record = records[0]
     assert record.exc_info is None
     assert not record.exc_text
-    message = record.getMessage()
-    assert "run-1" in message
-    assert "ValueError" in message  # diagnostic detail survives, as a type name
-    for fragment in _LOG_SECRET_FRAGMENTS:
-        assert fragment not in message
+    assert record.getMessage() == "retrieval run run-1 failed (PIPELINE_FAILED): ValueError"
 
 
 def test_failure_text_is_bounded_by_the_redactor() -> None:
@@ -1200,7 +1197,6 @@ def test_failure_path_is_bounded_on_adversarial_exception_text() -> None:
         "text = sys.stdin.read()\n"
         "t = time.perf_counter()\n"
         "retrieval._safe_text(ValueError(text))\n"
-        "retrieval.redact_error_text(retrieval._exc_text(ValueError(text)))\n"
         "print(time.perf_counter() - t)\n"
     )
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
