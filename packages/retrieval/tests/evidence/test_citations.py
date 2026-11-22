@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -29,7 +29,7 @@ COMPANY = i.Company("4b1c3a2e-6f5d-4e8a-9b7c-1d2e3f405162", "0001108524", "CRM",
 KEY = "text/sha256/abc"
 
 
-def _row(start: int, end: int, text_hash: str, form: str = "10-K") -> tuple[Any, ...]:
+def _row(start: int, end: int, text_hash: str, form: str | None = "10-K") -> tuple[Any, ...]:
     return (
         SPAN,
         start,
@@ -62,7 +62,7 @@ def read(fake_conn: Any, evidence_helpers: Any) -> Any:
         companies = {COMPANY.entity_id: COMPANY}
         context = evidence_helpers.make_context(AS_OF, CORPUS)
         conn: Any = None
-        form = "10-K"
+        form: str | None = "10-K"
 
         def __call__(
             self,
@@ -166,6 +166,29 @@ def test_the_coverage_note_stays_within_the_schema_budget(
     assert note.text == expected
     assert note.issuers == ("0001108524",)  # the CIK and form stay structured
     assert note.forms == (form,)
+
+
+def test_a_non_utc_context_cutoff_formats_in_utc_with_z(read: Any, evidence_helpers: Any) -> None:
+    eastern = timezone(timedelta(hours=-5))
+    read.context = evidence_helpers.make_context(
+        datetime(2024, 3, 7, 9, 30, tzinfo=eastern), CORPUS
+    )
+    note = read().coverage_note
+    assert note.text == (
+        "Searched 10-K filings of Salesforce, Inc. (CIK 0001108524) public from "
+        "2024-03-06T21:14:09Z to 2024-03-06T21:14:09Z, visible at 2024-03-07T14:30:00Z."
+    )
+
+
+@pytest.mark.parametrize("form", [None, ""])
+def test_missing_or_empty_form_is_omitted_from_coverage_note_forms(
+    read: Any, form: str | None
+) -> None:
+    read.form = form
+    result = read()
+    assert result.citation.form == form
+    assert result.coverage_note.forms == ()
+    assert result.coverage_note.text.startswith("Searched unlabeled filings of ")
 
 
 def test_a_pathological_cohort_cik_cannot_overflow_the_note(

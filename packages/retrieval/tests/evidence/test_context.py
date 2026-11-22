@@ -52,6 +52,8 @@ def test_effective_as_of(as_of: datetime | date | None, expected: datetime) -> N
         date(2026, 11, 15),
         datetime(1994, 1, 1, tzinfo=UTC) - MICRO,
         date(1993, 12, 31),
+        datetime(9999, 12, 31, 23, 0, tzinfo=timezone(timedelta(hours=-5))),
+        datetime(1, 1, 1, 1, 0, tzinfo=timezone(timedelta(hours=5))),
     ],
 )
 def test_as_of_outside_the_contract_range_is_rejected(as_of: datetime | date) -> None:
@@ -76,10 +78,33 @@ def test_a_naive_as_of_never_reaches_resolution() -> None:
         i.ContextRequest(request_time=NOW, as_of=datetime(2024, 3, 6))
 
 
+def test_effective_as_of_rejects_naive_datetimes_directly() -> None:
+    with _error("invalid_input", "as_of"):
+        effective_as_of(datetime(2024, 3, 6), NOW)
+    with _error("invalid_input", "request_time"):
+        effective_as_of(None, datetime(2024, 3, 6))
+    with _error("invalid_input", "request_time"):
+        effective_as_of(NOW, datetime(2024, 3, 6))
+
+
+def test_effective_as_of_rejects_request_time_utc_overflow() -> None:
+    overflow = datetime(9999, 12, 31, 23, 0, tzinfo=timezone(timedelta(hours=-5)))
+    with _error("invalid_input", "request_time"):
+        effective_as_of(None, overflow)
+
+
 def test_rejections_that_need_no_database_do_no_database_work(fake_conn: Any) -> None:
     conn = fake_conn()
     cases = [
         (i.ContextRequest(request_time=NOW, as_of=NOW + MICRO), "invalid_input", "as_of"),
+        (
+            i.ContextRequest(
+                request_time=NOW,
+                as_of=datetime(9999, 12, 31, 23, 0, tzinfo=timezone(timedelta(hours=-5))),
+            ),
+            "invalid_input",
+            "as_of",
+        ),
         (
             i.ContextRequest(request_time=NOW, timestamp_mode="approximate"),
             "invalid_input",

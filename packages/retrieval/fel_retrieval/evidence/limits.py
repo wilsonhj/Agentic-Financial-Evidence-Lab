@@ -68,6 +68,8 @@ def _items(
 ) -> None:
     if values is None:
         return
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise invalid_input(field, f"must hold 1 to {maximum} distinct items")
     if not 1 <= len(values) <= maximum:
         raise invalid_input(field, f"must hold 1 to {maximum} distinct items")
     for value in values:
