@@ -53,21 +53,24 @@ _NUM_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Currency markers that may sit between a sign (or opening paren) and the digits.
-# They carry no magnitude or sign of their own, so they are removed before the
-# match; leaving them in made '-EUR100' / '(US$100)' match only '100' and drop
-# the sign into the discarded prefix (issue #410). Prefixed dollars come first so
-# 'US$' is consumed whole. Letters around a code are checked with letter-only
+# Currency and percent markers that may sit around the digits. They carry no
+# magnitude or sign of their own, so they are removed before the match; leaving
+# them in made '-EUR100' / '(US$100)' match only '100' and drop the sign into
+# the discarded prefix (issue #410). Prefixed dollars come first so 'US$' is
+# consumed whole. Letters around a code are checked with letter-only
 # lookarounds, not '\b': '\b' does not fire between a letter and a digit, so
 # '-GBP100' / '(EUR100)' would otherwise keep their code, while a longer word
 # ('Euro', 'cadence') still never loses a fragment. Codes in compound labels
-# ('USD-denominated', 'non-USD') keep the letters that make the hyphen part of
-# a word. A code glued to the digits still counts as part of the amount.
+# ('USD-denominated', 'gbp–denominated', 'non-USD', 'non–USD') keep the letters
+# that make the hyphen or dash part of a word. A code glued to the digits still
+# counts as part of the amount.
 _NOT_AFTER_LETTER = r"(?<![^\W\d_])"
 _ISO_CURRENCY_CODE = r"(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|RMB|INR)"
+_HYPHEN_OR_DASH = r"[-\u2012-\u2014]"
 _CURRENCY_MARKER_RE = re.compile(
-    rf"(?:{_NOT_AFTER_LETTER}(?:US|CA|C|AU|A|HK|NZ|S)\$|[$\u20ac\u00a3\u00a5\u20b9\u20a9]"
-    rf"|{_NOT_AFTER_LETTER}(?:(?<![^\W\d_]-){_ISO_CURRENCY_CODE}(?!-?[^\W\d_])"
+    rf"(?:{_NOT_AFTER_LETTER}(?:US|CA|C|AU|A|HK|NZ|S)\$|[$\u20ac\u00a3\u00a5\u20b9\u20a9%]"
+    rf"|{_NOT_AFTER_LETTER}(?:(?<![^\W\d_]{_HYPHEN_OR_DASH}){_ISO_CURRENCY_CODE}"
+    rf"(?!{_HYPHEN_OR_DASH}?[^\W\d_])"
     rf"|{_ISO_CURRENCY_CODE}(?=\.?\d)))+",
     re.IGNORECASE,
 )
@@ -98,7 +101,7 @@ _ADJACENT_GROUPING = frozenset({",", "."})
 
 def _remove_currency_markers(match: re.Match[str]) -> str:
     # Keep numeric fragments apart. Full consumption will reject a second
-    # number in "100€200" instead of accepting the concatenated value.
+    # number in "100€200" or "100%200" instead of accepting the concatenated value.
     before = match.string[max(0, match.start() - 1) : match.start()]
     after = match.string[match.end() : match.end() + 1]
     if (before.isdecimal() or before in _ADJACENT_GROUPING) and (
@@ -222,7 +225,7 @@ def parse_numeric(raw_value: str) -> tuple[Decimal, int, str]:
     """
     if not raw_value or not isinstance(raw_value, str):
         raise ValueError("raw_value required")
-    cleaned = _CURRENCY_MARKER_RE.sub(_remove_currency_markers, raw_value.replace("%", "")).strip()
+    cleaned = _CURRENCY_MARKER_RE.sub(_remove_currency_markers, raw_value).strip()
     cleaned = _normalize_dashes(raw_value, cleaned)
     match = _NUM_RE.search(cleaned)
     if match is None:
