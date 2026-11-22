@@ -284,31 +284,50 @@ def _bind_evidence_to_spans(
 
     A span that verifies can still lie outside the run that cites it (#451).
     ``request`` must already be bound to the run row (:func:`_bind_request_to_run`),
-    so its ``as_of``, ``entity_id`` and ``corpus_version_id`` are the record's.
-    A span is refused when its filing was published after ``as_of``, belongs to
-    another entity, or its document version is not in the run's corpus version.
-    Without this, a payload could cite a real, hash-correct span from a later
-    filing (look-ahead), another issuer, or another corpus: the only cutoff check
-    downstream, in ``assemble_evidence``, read the payload's own ``published_at``.
-    The bound block now carries the document row's ``published_at`` instead, so
-    that check reads the record too.
+    so its ``as_of``, ``entity_id``, ``corpus_version_id`` and
+    ``input_manifest`` are the record's. A span is refused when its document
+    version is not ``parsed``, when its filing's effective publication instant
+    (migration 0012's ``public_at`` rule) is after ``as_of``, when it belongs
+    to another entity, when its document version is not in the run's corpus
+    version, or when ``input_manifest`` pins ``source_span_ids`` and the span
+    is not in that set. Without this, a payload could cite a real,
+    hash-correct span from a later filing (look-ahead), a quarantined version,
+    another issuer, another corpus, or an unpinned span: the only cutoff check
+    downstream, in ``assemble_evidence``, read the payload's own
+    ``published_at``. The bound block now carries the canonical visibility
+    instant instead, so that check reads the record too.
     """
+    pinned_span_ids = _pinned_manifest_span_ids(request.input_manifest)
     if not evidence:
         return evidence
     pins = persist.load_span_pins([block.source_span_id for block in evidence])
     bound: list[EvidenceBlock] = []
     for block in evidence:
-        pin = pins.get(block.source_span_id)
+        try:
+            normalized_span_id = _normalize_uuid(block.source_span_id)
+        except ValueError:
+            normalized_span_id = block.source_span_id
+        pin = pins.get(normalized_span_id)
         if pin is None:
             raise IntegrityError(
                 f"evidence span {block.source_span_id} has no source_spans row: "
                 "refusing to cite a span this corpus cannot resolve"
             )
-        if block.document_version_id != pin.document_version_id:
+        try:
+            normalized_doc_version = _normalize_uuid(block.document_version_id)
+        except ValueError:
+            normalized_doc_version = ""
+        if normalized_doc_version != pin.document_version_id:
             raise IntegrityError(
                 f"evidence span {block.source_span_id} declares document_version_id "
                 f"{block.document_version_id} but the span belongs to "
                 f"{pin.document_version_id}"
+            )
+        if pin.document_version_status != "parsed":
+            raise IntegrityError(
+                f"evidence span {block.source_span_id} belongs to document version "
+                f"{pin.document_version_id} with status {pin.document_version_status!r} "
+                "(expected 'parsed'): refusing to cite a non-parsed document version"
             )
         actual = sha256_hex(block.text)
         if actual != pin.text_hash:
@@ -317,20 +336,59 @@ def _bind_evidence_to_spans(
                 f"canonical source_spans text_hash ({actual} != {pin.text_hash}): "
                 "refusing to extract from text this span does not address"
             )
+        if pinned_span_ids is not None and normalized_span_id not in pinned_span_ids:
+            raise IntegrityError(
+                f"evidence span {block.source_span_id} is not in the run's pinned "
+                "input_manifest source_span_ids: refusing to cite an unpinned span"
+            )
         _refuse_out_of_scope_span(block.source_span_id, pin, request)
-        bound.append(replace(block, text_hash=pin.text_hash, published_at=pin.published_at))
+        bound.append(
+            replace(
+                block,
+                source_span_id=pin.source_span_id,
+                document_version_id=pin.document_version_id,
+                text_hash=pin.text_hash,
+                published_at=pin.published_at,
+            )
+        )
     return bound
+
+
+def _pinned_manifest_span_ids(input_manifest: dict[str, Any]) -> frozenset[str] | None:
+    """Return normalized pinned span ids from ``input_manifest``, or ``None`` if absent."""
+    if "source_span_ids" not in input_manifest:
+        return None
+    raw = input_manifest["source_span_ids"]
+    if not isinstance(raw, (list, tuple)):
+        raise IntegrityError(
+            "extraction_run input_manifest['source_span_ids'] must be a list or tuple "
+            f"of span id strings, got {type(raw).__name__}"
+        )
+    pinned: set[str] = set()
+    for item in raw:
+        if not isinstance(item, str):
+            raise IntegrityError(
+                "extraction_run input_manifest['source_span_ids'] must contain only "
+                f"strings, got {type(item).__name__}"
+            )
+        try:
+            pinned.add(_normalize_uuid(item))
+        except ValueError as exc:
+            raise IntegrityError(
+                "extraction_run input_manifest['source_span_ids'] contains invalid "
+                f"span UUID {item!r}"
+            ) from exc
+    return frozenset(pinned)
 
 
 def _refuse_out_of_scope_span(span_id: str, pin: SpanPin, request: ExtractionRunRequest) -> None:
     """Fail closed unless the span is inside the run's cutoff, entity and corpus.
 
-    The cutoff is inclusive and uses ``documents.published_at``, as the
-    retrieval lanes do while #417 is unmerged; see
-    :func:`~fel_workers.extraction.persist_reads.load_span_pins` for the move to
-    migration 0012's ``public_at`` rule.
+    The cutoff is inclusive and compares migration 0012's effective visibility
+    instant ``GREATEST(COALESCE(d.public_at, d.published_at), d.published_at)``
+    against ``request.as_of``.
     """
-    if pin.published_at > request.as_of:
+    if _normalize_datetime(pin.published_at) > _normalize_datetime(request.as_of):
         raise IntegrityError(
             f"evidence span {span_id} is from a document published at "
             f"{pin.published_at.isoformat()}, after the run's as_of cutoff "

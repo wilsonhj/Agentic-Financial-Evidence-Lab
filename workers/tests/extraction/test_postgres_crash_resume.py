@@ -183,6 +183,14 @@ _SCHEMA_PROBES: tuple[str, ...] = (
               = ARRAY['org_id', 'workspace_id', 'conflict_key', 'occurrence_run_id']
     )
     """,
+    # 0012: public_at visibility instant read by load_span_pins.
+    """
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'documents'
+           AND column_name = 'public_at'
+    )
+    """,
 )
 
 
@@ -241,7 +249,8 @@ def _seed_parents(conn: psycopg.Connection) -> None:
         (
             "INSERT INTO documents (id, entity_id, accession, source_url,"
             " content_hash, storage_key, published_at) VALUES"
-            " (%s, %s, 'cr-1', 'https://example.test/cr-1', %s, 'cr-1', %s)",
+            " (%s, %s, 'cr-1', 'https://example.test/cr-1', %s, 'cr-1', %s)"
+            " ON CONFLICT (id) DO UPDATE SET published_at = EXCLUDED.published_at",
             (_DOCUMENT, _ENTITY, sha256_hex("crash-resume-doc"), _DOCUMENT_PUBLISHED_AT),
         ),
         (
@@ -265,7 +274,10 @@ def _seed_parents(conn: psycopg.Connection) -> None:
             (_CORPUS, _DOC_VERSION),
         ),
     ):
-        conn.execute(f"{sql} ON CONFLICT DO NOTHING", args)
+        if "ON CONFLICT" in sql:
+            conn.execute(sql, args)
+        else:
+            conn.execute(f"{sql} ON CONFLICT DO NOTHING", args)
 
 
 def _request(run_id: str) -> ExtractionRunRequest:
