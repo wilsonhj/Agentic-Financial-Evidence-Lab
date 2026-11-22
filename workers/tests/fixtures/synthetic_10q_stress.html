@@ -44,6 +44,7 @@
 <xbrli:unit id="eur"><xbrli:measure>iso4217:EUR</xbrli:measure></xbrli:unit>
 <xbrli:unit id="shares"><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unit>
 <xbrli:unit id="pure"><xbrli:measure>xbrli:pure</xbrli:measure></xbrli:unit>
+<xbrli:unit id="usdPerShare"><xbrli:divide><xbrli:unitNumerator><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unitNumerator><xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unitDenominator></xbrli:divide></xbrli:unit>
 </ix:resources>
 </ix:header>
 </div>
@@ -59,6 +60,7 @@
 <p>European cloud-subscription revenue was $<ix:nonFraction name="us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax" contextRef="d2027q1EuropeCloud" unitRef="usd" scale="3" decimals="-3" format="ixt:num-dot-decimal">45,600</ix:nonFraction> thousand.</p>
 <p>Impairment of intangibles was $<ix:nonFraction name="us-gaap:ImpairmentOfIntangibleAssetsExcludingGoodwill" contextRef="d2027q1" unitRef="usd" scale="6" decimals="-6" format="ixt:num-dot-decimal">&#8211;</ix:nonFraction> million (a dash: no impairment this quarter).</p>
 <p>Legal settlement accruals were $<ix:nonFraction name="us-gaap:LossContingencyAccrualAtCarryingValue" contextRef="i20270331" unitRef="usd" scale="6" decimals="-6" format="ixt:fixed-zero">&#8212;</ix:nonFraction> million under the fixed-zero presentation rule.</p>
+<p>Diluted earnings per share were $<ix:nonFraction name="us-gaap:EarningsPerShareDiluted" contextRef="d2027q1" unitRef="usdPerShare" scale="0" decimals="2" format="ixt:num-dot-decimal">1.25</ix:nonFraction> per share (a divide unit: USD over shares).</p>
 <p>Goodwill impairment: <ix:nonFraction name="us-gaap:GoodwillImpairmentLoss" contextRef="d2027q1" unitRef="usd" scale="6" xsi:nil="true"/> (nil fact) and deferred charges <ix:nonFraction name="us-gaap:DeferredCostsCurrent" contextRef="i20270331" unitRef="usd" scale="6"></ix:nonFraction> (content-empty fact) are excluded from results.</p>
 <table>
 <caption>Condensed consolidated results (synthetic)</caption>
