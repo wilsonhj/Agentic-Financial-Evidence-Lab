@@ -124,8 +124,17 @@ def decimal_str(value: Decimal) -> str:
 
 
 def map_unit(measure: str) -> str:
-    """Map an XBRL measure to the contract unit label."""
-    return _UNIT_MEASURES.get(measure.lower(), measure)
+    """Map an XBRL unit to the contract unit label.
+
+    ``measure`` is a single measure or the parser's composed form: measures
+    joined with ``*`` (multiply) and one ``/`` between numerator and
+    denominator (``iso4217:USD/xbrli:shares`` becomes ``USD/shares``). Each
+    measure is mapped independently, so single-measure units are unchanged.
+    """
+    return "/".join(
+        "*".join(_UNIT_MEASURES.get(m.lower(), m) for m in side.split("*"))
+        for side in measure.split("/")
+    )
 
 
 class _ValueRejected(Exception):

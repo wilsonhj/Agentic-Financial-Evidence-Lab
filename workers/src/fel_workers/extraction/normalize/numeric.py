@@ -43,8 +43,9 @@ _SUFFIX_ALTERNATION = "trillion|billion|million|thousand|mm|mn|bn|tn|[kmb]"
 # ('$5bn/yr') keeps its exponent. A parenthesized amount is accounting notation
 # for a negative; the closing paren may sit before or after the suffix.
 _NUM_RE = re.compile(
+    r"(?P<lead>[-+\u2212])?\s*"
     r"(?P<open>\()?\s*"
-    r"(?P<sign>[-+])?\s*"
+    r"(?P<sign>[-+\u2212])?\s*"
     r"(?P<body>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)"
     r"(?P<close_bare>\s*\))?"
     rf"(?:\s*(?P<suffix>{_SUFFIX_ALTERNATION})s?\b(?!/(?P=suffix)))?"
@@ -52,9 +53,117 @@ _NUM_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Currency markers that may sit between a sign (or opening paren) and the digits.
+# They carry no magnitude or sign of their own, so they are removed before the
+# match; leaving them in made '-EUR100' / '(US$100)' match only '100' and drop
+# the sign into the discarded prefix (issue #410). Prefixed dollars come first so
+# 'US$' is consumed whole. Letters around a code are checked with letter-only
+# lookarounds, not '\b': '\b' does not fire between a letter and a digit, so
+# '-GBP100' / '(EUR100)' would otherwise keep their code, while a longer word
+# ('Euro', 'cadence') still never loses a fragment.
+_NOT_AFTER_LETTER = r"(?<![^\W\d_])"
+_NOT_BEFORE_LETTER = r"(?![^\W\d_])"
+_CURRENCY_MARKER_RE = re.compile(
+    rf"{_NOT_AFTER_LETTER}(?:US|CA|C|AU|A|HK|NZ|S)\$|[$\u20ac\u00a3\u00a5\u20b9\u20a9]"
+    rf"|{_NOT_AFTER_LETTER}(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|CNY|RMB|INR){_NOT_BEFORE_LETTER}",
+    re.IGNORECASE,
+)
+
+# U+2212 MINUS SIGN is always a minus, even glued to a label: it is not used to
+# hyphenate words. ASCII '-' and '+' are signs only when they are not part of a
+# word (not preceded by a word character): 'pre-tax' has no sign.
+_MINUS_SIGN = "\u2212"
+_MINUS_CHARS = frozenset("-" + _MINUS_SIGN)
+_SIGN_CHARS = frozenset("-+" + _MINUS_SIGN)
+
+# Figure/en/em dashes are written as a minus in filings but also double as
+# sentence punctuation ('Revenue\u2014$100 million'). One is a minus only where
+# nothing could be a label in front of it: at the start of the text (after
+# optional whitespace and currency marker) or directly after '(', and glued to
+# what follows. A dash that follows other text stays punctuation (the value stays
+# positive, as before #410), except the one shape that reads both ways, see
+# _normalize_dashes.
+_PUNCT_DASHES = "\u2012\u2013\u2014"
+_DASH_FOLLOWED_BY_NUMBER_RE = re.compile(r"\d|\.\d")
+
+_WORD_CHAR_RE = re.compile(r"\w")
+
 # A grouping/decimal separator touching the matched body means the match only
 # covered part of a malformed number ('1,23' -> '1').
 _ADJACENT_GROUPING = frozenset({",", "."})
+
+
+def _is_word_char(char: str) -> bool:
+    return _WORD_CHAR_RE.match(char) is not None
+
+
+def _normalize_dashes(raw_value: str, text: str) -> str:
+    """Turn the dashes that are unambiguously a minus into '-'; raise on the ambiguous one.
+
+    A dash that is set off by whitespace before it and glued to a figure after it
+    ('Assets \u2013$1,000', 'Revenue \u2013100') has the typographic shape of a minus
+    but also of a careless punctuation dash. The sign cannot be read either way
+    without guessing, and guessing wrong silently flips a loss, so it raises.
+    """
+    out: list[str] = []
+    for index, char in enumerate(text):
+        if char not in _PUNCT_DASHES:
+            out.append(char)
+            continue
+        before = text[:index]
+        glued = index + 1 < len(text) and not text[index + 1].isspace()
+        if glued and (not before.strip() or before.endswith("(")):
+            out.append("-")
+            continue
+        if glued and before[-1:].isspace() and _DASH_FOLLOWED_BY_NUMBER_RE.match(text, index + 1):
+            raise ValueError(
+                f"raw_value has a dash that could be a minus sign or punctuation: " f"{raw_value!r}"
+            )
+        out.append(char)
+    return "".join(out)
+
+
+def _dangling_sign_index(prefix: str) -> int | None:
+    """Index of the last standalone sign or still-open '(' in ``prefix``, if any."""
+    for index in range(len(prefix) - 1, -1, -1):
+        char = prefix[index]
+        if char != "(" and char not in _SIGN_CHARS:
+            continue
+        if char != _MINUS_SIGN and index > 0 and _is_word_char(prefix[index - 1]):
+            continue  # part of a word: 'pre-tax', 'f(x)'
+        if char == "(" and ")" in prefix[index + 1 :]:
+            continue  # a closed parenthetical, '(a) 100', is not an open sign
+        return index
+    return None
+
+
+def _require_sign_attached(raw_value: str, cleaned: str, match: re.Match[str]) -> None:
+    """Fail closed when a sign or '(' cannot be tied to the number it precedes.
+
+    A standalone sign/'(' in front of the number may only be separated from it by
+    whitespace (currency markers are already removed). Anything else between them
+    ('-Euro 100', '-kr 100', '(Fr. 100)') is a token we do not recognise that may
+    carry the sign, so we raise instead of dropping the sign. There is no length
+    limit on that token. A sign or '(' glued to a word and directly to the digits
+    ('pre-100', 'Revenue(100)') could be a hyphen, a range or a minus; it raises.
+    """
+    group_starts = [
+        match.start(name) for name in ("lead", "open", "sign") if match.group(name) is not None
+    ]
+    if group_starts:
+        first = min(group_starts)
+        if first > 0 and cleaned[first] != _MINUS_SIGN and _is_word_char(cleaned[first - 1]):
+            raise ValueError(
+                f"raw_value has a sign or parenthesis glued to a word and its number: "
+                f"{raw_value!r}"
+            )
+    prefix = cleaned[: match.start()]
+    dangling = _dangling_sign_index(prefix)
+    if dangling is not None and prefix[dangling + 1 :].strip():
+        raise ValueError(
+            f"raw_value has a sign or parenthesis that could not be attached "
+            f"to its number: {raw_value!r} (read only {cleaned[match.start() : match.end()]!r})"
+        )
 
 
 def _require_full_consumption(raw_value: str, cleaned: str, match: re.Match[str]) -> None:
@@ -68,6 +177,7 @@ def _require_full_consumption(raw_value: str, cleaned: str, match: re.Match[str]
     rather than persisted with a wrong magnitude.
     """
     leftover = cleaned[: match.start()] + cleaned[match.end() :]
+    _require_sign_attached(raw_value, cleaned, match)
     if any(char.isdigit() for char in leftover):
         raise ValueError(
             f"raw_value has an unconsumed numeric remainder: {raw_value!r} "
@@ -97,7 +207,8 @@ def parse_numeric(raw_value: str) -> tuple[Decimal, int, str]:
     """
     if not raw_value or not isinstance(raw_value, str):
         raise ValueError("raw_value required")
-    cleaned = raw_value.replace("$", "").replace("%", "").strip()
+    cleaned = _CURRENCY_MARKER_RE.sub("", raw_value).replace("%", "").strip()
+    cleaned = _normalize_dashes(raw_value, cleaned)
     match = _NUM_RE.search(cleaned)
     if match is None:
         raise ValueError(f"no numeric token in raw_value: {raw_value!r}")
@@ -111,14 +222,14 @@ def parse_numeric(raw_value: str) -> tuple[Decimal, int, str]:
     suffix = match.group("suffix")
     if suffix:
         scale = _SCALE_SUFFIX[suffix.lower()]
-    explicit_sign = match.group("sign")
+    negated = any(
+        match.group(name) in _MINUS_CHARS for name in ("lead", "sign") if match.group(name)
+    )
     parenthesized = match.group("open") is not None and (
         match.group("close_bare") is not None or match.group("close_suffixed") is not None
     )
-    if explicit_sign == "-" or parenthesized:
+    if negated or parenthesized:
         value = -abs(value)
-    elif explicit_sign == "+":
-        value = abs(value)
     if value > 0:
         sign = "positive"
     elif value < 0:
