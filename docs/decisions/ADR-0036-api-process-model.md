@@ -2,8 +2,10 @@
 
 Status: Proposed
 Date: 2026-11-20
-Related: #61 (`M3-REVIEW-LOAD-ACCEPTANCE`), [ADR-0035](ADR-0035-vercel-hosting.md)
-(Vercel hosting), `apps/api/EXTRACTION_LOAD.md`.
+Related: #61 (`M3-REVIEW-LOAD-ACCEPTANCE`),
+[ADR-0034](ADR-0034-public-read-only-evidence-surface.md) (public MCP surface),
+[ADR-0035](ADR-0035-vercel-hosting.md) (Vercel hosting),
+`apps/api/EXTRACTION_LOAD.md`.
 
 ## Context
 
@@ -29,12 +31,16 @@ A diagnostic sweep on 2026-11-16 measured this directly on a 4-CPU host with
 PostgreSQL 18.7:
 
 - Latency grew linearly, by about 70 to 80 ms for each added client: p50 was
-  102 ms at 1 client, 375 ms at 5, 704 to 836 ms at 10 and 1,476 to 1,666 ms
-  at 25.
-- The API process used 0.89 to 0.97 of one core. The database connections were
-  mostly idle in transaction, and commit p95 was 4 to 61 ms.
-- A pool of 25 connections instead of 10 removed the pool wait but raised p50
-  to 2,061 ms.
+  102 to 111 ms at 1 client (`c01`, `p2_c01`), 364 to 375 ms at 5 (`c05`,
+  `p2_c05`), 704 to 836 ms at 10 (`c10`, `p2_c10`), and 1,476 to 1,666 ms at 25
+  (`c25a`, `c25b`, `p2_c25a`, `p2_c25b`).
+- In the 2026-11-16 activity logs (which were not retained in the repository,
+  unlike `summary.json` and the 2026-11-20 `samples.jsonl`; see the diagnostic
+  README), the API process used 0.89 to 0.97 of one core and database
+  connections were mostly `idle in transaction`. Commit p95 in the instrumented
+  2026-11-16 runs (recorded in `summary.json`) was 4 to 61 ms.
+- A pool of 25 connections instead of 10 (`cfgdiag_pool25_c25`) removed the
+  pool wait but raised p50 to 2,061 ms.
 
 With one process, 25 requests of about 75 ms of serialized work cannot all
 finish within 1,000 ms on a core of similar speed. The 8 vCPUs of the reference
@@ -66,34 +72,85 @@ a deployment decision that this ADR records before any acceptance run uses it.
    command in `infra/docker/api.Dockerfile` and `infra/railway/api.json` adds
    `--workers "${WEB_CONCURRENCY:-1}"`. The default stays 1, so a host that
    sets nothing behaves as today.
-2. **The reference profile and each production deployment set
-   `WEB_CONCURRENCY` to the vCPU count of the API host.** The reference
-   profile uses 8.
-3. **The pool budget is per process.** Each process owns its pool
-   (`apps/api/app/db.py`). A deployment sets `FEL_DB_POOL_MAX` so that
-   `WEB_CONCURRENCY × FEL_DB_POOL_MAX` stays below the database connection
-   limit with headroom for workers and migrations. For the reference profile:
-   8 × 6 = 48 connections against a limit of 100.
+2. **Each deployment sizes `WEB_CONCURRENCY` to the vCPUs available to the API,
+   up to one process per dedicated API vCPU, leaving headroom for co-located
+   workloads and OS overhead.** Specification §16.1 co-locates the API and
+   background worker processes on the same 8 vCPU / 32 GB reference server.
+   An isolated API load run where background workers are idle outside measured
+   waves (as in `extraction_load.py`) or a dedicated 8 vCPU API host may run up
+   to `WEB_CONCURRENCY=8`, whereas a production reference deployment with
+   co-located workers must leave CPU headroom for workers and OS overhead
+   (setting `WEB_CONCURRENCY` below 8, rather than blindly setting 8). On
+   Vercel containers (ADR-0035), `WEB_CONCURRENCY` is further bounded by the
+   container's allocated vCPU and 2 GB memory ceiling.
+3. **The pool budget is per process and scales across replicas.** Each process
+   owns its own `psycopg_pool.ConnectionPool` (`apps/api/app/db.py`). Under
+   multi-replica horizontal scaling — including the accepted Vercel container
+   runtime ([ADR-0035](ADR-0035-vercel-hosting.md)) — total peak API
+   connections are `replicas × WEB_CONCURRENCY × FEL_DB_POOL_MAX`. A deployment
+   sets `FEL_DB_POOL_MAX` so that
+   `replicas × WEB_CONCURRENCY × FEL_DB_POOL_MAX` stays below the database
+   connection limit with headroom for workers, migrations, admin sessions, and
+   any separate pools (such as the `fel_public_read` pool in
+   [ADR-0034](ADR-0034-public-read-only-evidence-surface.md)):
+   - **Default `FEL_DB_POOL_MAX=10` footgun:** `apps/api/app/config.py`
+     defaults `FEL_DB_POOL_MAX` to `10`. Raising `WEB_CONCURRENCY` without
+     lowering `FEL_DB_POOL_MAX` multiplies connections silently (for example,
+     8 workers × 10 = 80 connections per replica). When this ADR is
+     implemented, any deployment setting `WEB_CONCURRENCY > 1` must explicitly
+     set `FEL_DB_POOL_MAX`, and the implementation should add a startup guard
+     (error or explicit validation) when `WEB_CONCURRENCY > 1` is paired with
+     an unset `FEL_DB_POOL_MAX`.
+   - **Managed starter tiers and transaction-mode poolers:** Managed starter
+     tiers impose tight direct connection limits (for example, Supabase Micro
+     and Neon Free). Those deployments must size `WEB_CONCURRENCY` and
+     `FEL_DB_POOL_MAX` conservatively or route through a transaction-mode
+     pooler (such as PgBouncer, Supavisor, or Neon's pooled endpoint). Because
+     `psycopg` 3 enables server-side prepared statements by default, using a
+     transaction-mode pooler requires passing `prepare_threshold=None` in the
+     pool's connection `kwargs` (`apps/api/app/db.py`) to avoid prepared
+     statement collisions across pooled backends; the existing
+     transaction-local `SET LOCAL ROLE fel_app` and `set_config(..., true)` RLS
+     pattern remains compatible with transaction pooling.
+   - **Reference profile example:** On a single-replica reference host against
+     a 100-connection limit, `1 × 8 × 6 = 48` (or `1 × 6 × 6 = 36` with
+     co-located worker headroom) leaves headroom for workers and migrations.
 4. **The rate limiter is per process** (`apps/api/app/ratelimit.py`), so the
-   effective limit is the configured limit multiplied by the process count, as
-   that module already states for replicas. A deployment divides
-   `FEL_RATE_LIMIT_QPS` and `FEL_RATE_LIMIT_BURST` by `WEB_CONCURRENCY`. A
-   shared limiter is a separate follow-up. It affects retrieval routes only.
-5. **The load harness starts the declared production command.**
-   `apps/api/benchmarks/extraction_load.py` gains a `--workers` option, which
-   defaults to `WEB_CONCURRENCY`, and records the process count and the pool
+   effective limit scales by `replicas × WEB_CONCURRENCY`, as that module
+   already states for replicas. A deployment divides `FEL_RATE_LIMIT_QPS` and
+   `FEL_RATE_LIMIT_BURST` by `WEB_CONCURRENCY` (and replica count where fixed).
+   Note that `RateLimiter` clamps per-process burst to `max(burst, 1.0)` when
+   `qps > 0`, so effective burst cannot be pushed below `1.0` per worker
+   process. A shared limiter is a separate follow-up. Today this applies to
+   retrieval routes; future public MCP routes mounted in `apps/api`
+   ([ADR-0034](ADR-0034-public-read-only-evidence-surface.md)) will share the
+   same per-worker scaling behavior for any in-process rate limiting.
+5. **The load harness aligns its worker count with the deployment
+   configuration.** `apps/api/benchmarks/extraction_load.py` gains a
+   `--workers` option whose default reads `WEB_CONCURRENCY` and falls back to
+   `1` when `WEB_CONCURRENCY` is unset, and records the process count and pool
    settings in its output. `EXTRACTION_LOAD.md` states that an acceptance run
-   uses the process count of the deployment it certifies. Changing the count
-   in one run to pass is still forbidden.
+   uses the process count of the deployment it certifies. Changing the count in
+   one run to pass is still forbidden. Production-command parity caveat: the
+   harness starts Uvicorn with a pre-bound socket (`--fd`) and
+   `--no-access-log` rather than the production container `CMD` flags, and
+   running multiple workers adds a Uvicorn supervisor plus child processes, so
+   the harness teardown path (`terminate()` with a 10 s timeout before
+   `kill()`) must ensure all worker children exit cleanly without leaking
+   orphaned processes.
 
 ## Consequences
 
 - State that is safe with several processes: idempotency keys and run events
   are in the database (`receipts.py`, `routes_events.py`); the token-verifier
   cache (`dependencies.py`) is per process and is rebuilt per process.
-- Memory grows with each process. The 2 GB container limit of ADR-0035 bounds
-  the process count on Vercel; the image size and one process's resident
-  memory must be measured before a value above 2 is set there.
+- Memory grows with each process. On Vercel containers (ADR-0035), per-process
+  resident set size (RSS, in RAM) — distinct from container image size on disk
+  (339 MB, measured in ADR-0035) — is what consumes the 2 GB container memory
+  limit. Both one process's RSS under load and the container's Vercel vCPU
+  limit must be verified before setting `WEB_CONCURRENCY` above 2 there; adding
+  workers past the container's vCPU allocation adds memory overhead and context
+  switching without adding CPU capacity.
 - The Python work per review is still worth reducing (`review.py`,
   `approved.py`). That is code work in the #61 lane, not part of this decision.
 - The gate closes only with an unchanged-harness run on the reference profile.

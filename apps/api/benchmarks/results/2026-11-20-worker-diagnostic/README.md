@@ -44,17 +44,15 @@ wave.
 
 ## Files
 
-- `runs/<label>/metadata.json`: settings of each run. Process count, pool
-  settings, PostgreSQL settings and host load.
-- `runs/<label>/samples.jsonl`: each request of the 2026-11-20 runs. The rows
-  contain only synthetic identifiers and monotonic timestamps. The samples and
-  the pool and activity logs of the 2026-11-16 runs are not kept.
-- `summary.json`: the output of `scripts/analyze.py` for all runs, which
-  includes the pool wait, SQL and commit times from the instrumented 2026-11-16
-  runs.
-- `scripts/`: the drivers and the analysis. `sweep_workers.py` starts
-  `uvicorn --workers N`. `sweep_driver.py` starts one process through
-  `instrumented_uvicorn.py`, which records pool checkout timings.
-  `sampler.py` samples `pg_stat_activity` and CPU use. `run_workers.sh` runs
-  the 2026-11-20 sequence. It needs a disposable database: the driver refuses a
-  database name that does not start with `fel_load`.
+This directory retains diagnostic data only, matching the `2026-09-14-*`
+result directories. Ad-hoc driver and analysis scripts are not committed.
+
+- `runs/<label>/metadata.json`: settings and host metadata for each run
+  (process count, pool settings, PostgreSQL settings, and start/end host load).
+- `runs/<label>/samples.jsonl`: per-request timings for the 2026-11-20
+  multi-worker runs. The rows contain only synthetic identifiers and monotonic
+  timestamps. Raw samples, pool logs, and `pg_stat_activity`/CPU logs from the
+  2026-11-16 runs are not kept.
+- `summary.json`: aggregated per-run review latency summaries across all
+  2026-11-16 and 2026-11-20 runs, including pool wait, SQL, and commit timing
+  percentiles from the instrumented 2026-11-16 runs.

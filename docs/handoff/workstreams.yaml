@@ -1802,7 +1802,7 @@ packages:
     depends_on: [MCP-INGEST-ACCEPTED-AT]
     team: data
     branch: agent/fix-corpus-lock-requeue
-    status: blocked # Registered 2026-11-20; not dispatched. Waits for #417, which owns consumer.py and workers/tests/** until it merges. Must not run concurrently with MCP-ACCEPTANCE-HEADER (#441, consumer.py and test_publication_ingest.py), READER-PROD-SMOKE (#108), M3-CONFIDENCE-GATE (#62), M5-FORECASTING (#66), M5-BACKTEST (#67) or RELEASE-LIVE-CUTOVER (#177), which claim workers/** or workers/tests/**.
+    status: blocked # Registered 2026-11-20; not dispatched. Waits for #417, which owns consumer.py and workers/tests/** until it merges. Must not run concurrently with MCP-ACCEPTANCE-HEADER (#441, consumer.py, workers/tests/test_consumer.py and test_publication_ingest.py), READER-PROD-SMOKE (#108), M3-CONFIDENCE-GATE (#62), M5-FORECASTING (#66), M5-BACKTEST (#67) or RELEASE-LIVE-CUTOVER (#177), which claim workers/** or workers/tests/**.
     allowed_paths:
       - workers/src/fel_workers/queue.py
       - workers/src/fel_workers/consumer.py
