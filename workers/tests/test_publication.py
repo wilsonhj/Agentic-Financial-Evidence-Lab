@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from fel_workers.ingestion import pipeline, restatement
 from fel_workers.ingestion.backfill import _backfill_publication
 from fel_workers.ingestion.discovery import FilingRef
 from fel_workers.ingestion.publication import (
@@ -20,6 +21,7 @@ from fel_workers.ingestion.publication import (
     Publication,
     derive_publication,
 )
+from fel_workers.ingestion.restatement import RepairReport, repair_restatement_links
 
 # case | acceptanceDateTime | filing date | expected. ``acceptance`` means public
 # at accepted_at; an instant means basis next_session_open at that UTC instant.
@@ -252,3 +254,150 @@ def test_representable_boundary_years_remain_valid(accepted: str) -> None:
     assert derive_publication(accepted, instant.date()) == Publication(
         instant, instant, "acceptance", "second"
     )
+
+
+class _NoopTxn:
+    def __enter__(self) -> _NoopTxn:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+
+class _Result:
+    def __init__(self, rows: list[tuple[Any, ...]], *, rowcount: int = 1) -> None:
+        self._rows = rows
+        self.rowcount = rowcount
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return self._rows
+
+    def fetchone(self) -> tuple[Any, ...] | None:
+        return self._rows[0] if self._rows else None
+
+
+class _FakeRepairConn:
+    def __init__(self, rows: list[tuple[Any, ...]]) -> None:
+        self._rows = rows
+        self.executed: list[tuple[str, object]] = []
+
+    def transaction(self) -> _NoopTxn:
+        return _NoopTxn()
+
+    def execute(self, sql: str, params: object = None) -> _Result:
+        self.executed.append((sql, params))
+        return _Result(self._rows)
+
+
+def test_repair_restatement_links_skips_retained_pins_and_keeps_pin_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pure-Python check of RepairReport accounting, SQL pin exclusion, and defense-in-depth."""
+    assert "corpus_version_documents" in restatement._REPAIR_SQL
+    assert "cv.status IN ('active', 'superseded')" in restatement._REPAIR_SQL
+    assert "AND NOT d.is_pinned" in restatement._REPAIR_SQL
+
+    locked: list[bool] = []
+    guarded_versions: list[tuple[str, ...]] = []
+    monkeypatch.setattr(restatement, "lock_corpus_mutations", lambda _conn: locked.append(True))
+    monkeypatch.setattr(
+        restatement,
+        "reject_retained_pin_changes",
+        lambda _conn, *, document_version_ids=(): guarded_versions.append(
+            tuple(document_version_ids)
+        ),
+    )
+    conn = _FakeRepairConn(
+        [
+            ("ver-b", True, False, False),
+            ("ver-c2", False, False, False),
+            ("ver-d", False, True, False),
+            ("ver-c1-pinned", None, None, True),
+        ]
+    )
+
+    report = repair_restatement_links(conn, entity_id="entity-1")  # type: ignore[arg-type]
+
+    assert locked == [True]
+    assert guarded_versions == [("ver-b", "ver-c2", "ver-d")]
+    assert report == RepairReport(
+        linked=1,
+        relinked=1,
+        cleared=1,
+        document_version_ids=("ver-b", "ver-c2", "ver-d"),
+        skipped_pinned_version_ids=("ver-c1-pinned",),
+    )
+    assert RepairReport().skipped_pinned_version_ids == ()
+
+
+class _FakePublishConn:
+    def __init__(self, issuers: list[tuple[str]], *, fail_activate: bool = False) -> None:
+        self._issuers = issuers
+        self._fail_activate = fail_activate
+
+    def transaction(self) -> _NoopTxn:
+        return _NoopTxn()
+
+    def execute(self, sql: str, params: object = None) -> _Result:
+        if "SELECT status FROM corpus_versions" in sql:
+            return _Result([("draft",)])
+        if "SELECT DISTINCT d.entity_id" in sql:
+            return _Result(self._issuers)
+        if "SET is_active = true" in sql and self._fail_activate:
+            return _Result([], rowcount=0)
+        return _Result([], rowcount=1)
+
+
+def test_publish_corpus_version_aggregates_and_logs_repairs(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(pipeline, "lock_corpus_mutations", lambda _conn: None)
+    reports = {
+        "ent-1": RepairReport(
+            linked=2,
+            relinked=0,
+            cleared=1,
+            document_version_ids=("v-2",),
+            skipped_pinned_version_ids=("v-pin-1",),
+        ),
+        "ent-2": RepairReport(
+            linked=0,
+            relinked=3,
+            cleared=0,
+            document_version_ids=("v-1",),
+        ),
+    }
+    monkeypatch.setattr(
+        pipeline, "repair_restatement_links", lambda _conn, *, entity_id: reports[entity_id]
+    )
+    conn = _FakePublishConn([("ent-1",), ("ent-2",)])
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        pipeline.publish_corpus_version(conn, "corpus-1")  # type: ignore[arg-type]
+
+    assert (
+        "corpus publication corpus-1 repaired restates: 2 linked, 3 relinked, 1 cleared"
+        " in versions ['v-1', 'v-2']; skipped_pinned=['v-pin-1']"
+    ) in caplog.text
+
+    # No-op repair produces no log entry.
+    monkeypatch.setattr(
+        pipeline, "repair_restatement_links", lambda _conn, *, entity_id: RepairReport()
+    )
+    caplog.clear()
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        pipeline.publish_corpus_version(conn, "corpus-2")  # type: ignore[arg-type]
+    assert caplog.text == ""
+
+    # Failed transaction never logs a committed repair.
+    monkeypatch.setattr(
+        pipeline,
+        "repair_restatement_links",
+        lambda _conn, *, entity_id: RepairReport(linked=1, document_version_ids=("v-x",)),
+    )
+    failing_conn = _FakePublishConn([("ent-1",)], fail_activate=True)
+    caplog.clear()
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        with pytest.raises(ValueError, match="does not exist or is not a draft"):
+            pipeline.publish_corpus_version(failing_conn, "corpus-3")  # type: ignore[arg-type]
+    assert caplog.text == ""

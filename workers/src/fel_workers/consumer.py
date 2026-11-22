@@ -560,7 +560,8 @@ def run_worker(
                 else:
                     log.info(
                         "publication backfill cik=%s: %d set, %d unresolved, conflicts=%s;"
-                        " restates %d linked, %d relinked, %d cleared in versions %s",
+                        " restates %d linked, %d relinked, %d cleared in versions %s;"
+                        " skipped_pinned=%s",
                         job.payload.get("cik"),
                         backfill.updated,
                         backfill.unresolved,
@@ -569,6 +570,7 @@ def run_worker(
                         backfill.repair.relinked,
                         backfill.repair.cleared,
                         list(backfill.repair.document_version_ids),
+                        list(backfill.repair.skipped_pinned_version_ids),
                     )
             elif job.kind == JOB_KIND_EXTRACTION_RUN:
                 if extraction_provider is None:  # pragma: no cover — narrowed above

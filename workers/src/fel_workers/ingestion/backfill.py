@@ -14,19 +14,23 @@ transaction, using only the columns migration 0013 grants ``fel_worker``:
    missing acceptance time stays unresolved and is not a conflict.
    Company-facts snapshots are excluded by form in both the read and the write.
 
-2. **Repair.** Recompute every filing fact's ``restates`` from the stored
+2. **Repair.** Recompute unpinned filing facts' ``restates`` from the stored
    rows, with the ordering ingest uses (``pipeline._prior_canonical_facts``),
-   and write only the facts whose link is wrong. The result depends on the
-   set of filings, not on the order they were ingested in.
+   and write only the unpinned facts whose link is wrong. Facts belonging to
+   document versions already referenced by retained (``active`` or
+   ``superseded``) corpus pins are skipped and reported in
+   ``RepairReport.skipped_pinned_version_ids`` so published edges stay
+   immutable without deadlocking later backfills or publications.
 
 Both steps are idempotent and a rerun does only the work still outstanding.
-Actual metadata or edge changes to active or retained superseded pins are
-rejected atomically (ADR-0034 Amendment 2). Backfill and direct repair share
-publication's transaction lock, held through the caller's outer transaction.
-The submissions index is fetched before that lock is requested, so a slow
-SEC response never blocks publication; only database work runs under it.
-Repair must therefore finish before publishing an affected pin. No retirement
-state is introduced. Corpus publication runs the same repair before activation.
+Metadata changes to active or retained superseded pins are rejected atomically
+(ADR-0034 Amendment 2), and restatement repair keeps ``reject_retained_pin_changes``
+as defense-in-depth. Backfill and direct repair share publication's transaction
+lock, held through the caller's outer transaction. The submissions index is
+fetched before that lock is requested, so a slow SEC response never blocks
+publication; only database work runs under it. Backfill must therefore finish
+before publishing an affected pin. No retirement state is introduced. Corpus
+publication runs the same repair before activation.
 
 Discovery currently reads ``filings.recent`` only, not the older
 ``filings.files`` pages. Stored filings absent from that bounded index stay

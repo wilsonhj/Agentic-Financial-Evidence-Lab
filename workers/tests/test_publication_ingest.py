@@ -43,6 +43,7 @@ from fel_workers.ingestion.pin_guard import (
     CorpusLockTimeoutError,
     PublishedPinMutationError,
     lock_corpus_mutations,
+    reject_retained_pin_changes,
 )
 from fel_workers.ingestion.pipeline import create_corpus_version, publish_corpus_version
 from fel_workers.ingestion.publication import derive_publication
@@ -154,6 +155,16 @@ def _row_versions(conn: psycopg.Connection) -> dict[str, str]:
         conn.execute(
             "SELECT 'document ' || id::text, xmin::text FROM documents"
             " UNION ALL SELECT 'fact ' || id::text, xmin::text FROM financial_facts"
+        ).fetchall()
+    )
+
+
+def _fact_versions(conn: psycopg.Connection, version_id: str) -> dict[str, str]:
+    """xmin of every fact row belonging to one document version."""
+    return dict(
+        conn.execute(
+            "SELECT id::text, xmin::text FROM financial_facts WHERE document_version_id = %s",
+            (version_id,),
         ).fetchall()
     )
 
@@ -321,33 +332,73 @@ def test_publication_repairs_before_freezing_links_and_allows_later_backfill(
     assert repair_restatement_links(corpus_conn, entity_id=ENTITY) == RepairReport()
 
 
-@pytest.mark.parametrize("superseded", [False, True])
-def test_publication_rolls_back_when_repair_would_change_a_retained_pin(
-    corpus_conn: psycopg.Connection, sec: FixtureSecClient, superseded: bool
+@pytest.mark.parametrize("superseded", [False, True], ids=["active", "superseded"])
+def test_publication_preserves_retained_pin_edges_when_late_earlier_filing_arrives(
+    corpus_conn: psycopg.Connection,
+    sec: FixtureSecClient,
+    superseded: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     _ingest(corpus_conn, sec, [A, C])
+    c_v1 = _version(corpus_conn, C)
     _publish(corpus_conn, A, C)
     if superseded:
         _pin(corpus_conn, version_ids=[])
     _ingest(corpus_conn, sec, [B])
+    c_v1_facts_before = _fact_versions(corpus_conn, c_v1)
     draft = create_corpus_version(
-        corpus_conn, label="must remain draft", document_version_ids=[_version(corpus_conn, B)]
+        corpus_conn, label="late earlier filing", document_version_ids=[_version(corpus_conn, B)]
     )
-    before = _row_versions(corpus_conn)
-    statuses = corpus_conn.execute(
-        "SELECT id, status, is_active FROM corpus_versions ORDER BY id"
-    ).fetchall()
-    with corpus_conn.transaction():
-        with pytest.raises(PublishedPinMutationError):
-            publish_corpus_version(corpus_conn, draft)
-        assert _row_versions(corpus_conn) == before
-    assert (
-        corpus_conn.execute(
-            "SELECT id, status, is_active FROM corpus_versions ORDER BY id"
-        ).fetchall()
-        == statuses
-    )
+    caplog.clear()
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        publish_corpus_version(corpus_conn, draft)
+    assert pipeline.active_corpus_version(corpus_conn) == draft
+    assert _fact_versions(corpus_conn, c_v1) == c_v1_facts_before
     assert _links(corpus_conn) == [(B, A, 2), (C, A, 2)]
+    assert c_v1 in caplog.text
+
+    # Reparsing C creates an unpinned version C.v2 whose links point to B while
+    # retained pinned C.v1 keeps its published edge to A.
+    monkeypatch.setattr(pipeline, "PARSER_VERSION", "reparse-after-late-b")
+    _ingest(corpus_conn, sec, [C])
+    c_v2_row = corpus_conn.execute(
+        "SELECT v.id FROM document_versions v JOIN documents d ON d.id = v.document_id"
+        " WHERE d.accession = %s AND v.parser_version = 'reparse-after-late-b'",
+        (C,),
+    ).fetchone()
+    assert c_v2_row is not None
+    c_v2 = str(c_v2_row[0])
+    assert c_v2 != c_v1
+    next_pin = create_corpus_version(
+        corpus_conn,
+        label="pin with reparsed C",
+        document_version_ids=[_version(corpus_conn, A), _version(corpus_conn, B), c_v2],
+    )
+    publish_corpus_version(corpus_conn, next_pin)
+    assert pipeline.active_corpus_version(corpus_conn) == next_pin
+    assert _links(corpus_conn) == [(B, A, 2), (C, A, 2), (C, B, 2)]
+    assert _fact_versions(corpus_conn, c_v1) == c_v1_facts_before
+
+
+def test_publication_logs_restatement_repairs_only_when_nonzero(
+    corpus_conn: psycopg.Connection,
+    sec: FixtureSecClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _ingest(corpus_conn, sec, [B, A])
+    b_v1 = _version(corpus_conn, B)
+    caplog.clear()
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        pin = _publish(corpus_conn, A, B)
+    expected = f"corpus publication {pin} repaired restates: 2 linked, 0 relinked, 0 cleared"
+    assert expected in caplog.text
+    assert b_v1 in caplog.text
+
+    caplog.clear()
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        _publish(corpus_conn, A, B)
+    assert "repaired restates" not in caplog.text
 
 
 @pytest.mark.parametrize("order", [(A, B), (B, A)])
@@ -711,13 +762,16 @@ def test_repair_preserves_restates_edges_inside_a_published_pin(
 ) -> None:
     """C -> A is published; B arriving later between them must not move it."""
     _ingest(corpus_conn, sec, [A, C])
+    c_v1 = _version(corpus_conn, C)
     assert _links(corpus_conn) == [(C, A, 2)]
     _publish(corpus_conn, A, C)
     _ingest(corpus_conn, sec, [B])  # unpinned; restates A at ingest
+    before = _row_versions(corpus_conn)
 
-    with pytest.raises(PublishedPinMutationError):
-        repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    report = repair_restatement_links(corpus_conn, entity_id=ENTITY)
 
+    assert report == RepairReport(skipped_pinned_version_ids=(c_v1,))
+    assert _row_versions(corpus_conn) == before
     assert _links(corpus_conn) == [(B, A, 2), (C, A, 2)]
 
 
@@ -996,19 +1050,51 @@ def test_backfill_rejects_retained_pin_metadata_changes(
 
 
 @pytest.mark.parametrize("superseded", [False, True], ids=["active", "superseded"])
-def test_repair_rejects_retained_pin_edge_changes(
+def test_repair_skips_retained_pin_edge_changes(
     corpus_conn: psycopg.Connection, sec: FixtureSecClient, superseded: bool
 ) -> None:
     _ingest(corpus_conn, sec, [A, C])
+    c_v1 = _version(corpus_conn, C)
     _pin(corpus_conn)
     if superseded:
         _pin(corpus_conn, version_ids=[])
     _ingest(corpus_conn, sec, [B])
     before = _row_versions(corpus_conn)
-    with pytest.raises(PublishedPinMutationError):
-        repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    report = repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert report == RepairReport(skipped_pinned_version_ids=(c_v1,))
     assert _row_versions(corpus_conn) == before
     assert _links(corpus_conn) == [(B, A, 2), (C, A, 2)]
+
+
+@pytest.mark.parametrize("superseded", [False, True], ids=["active", "superseded"])
+def test_reject_retained_pin_changes_blocks_direct_pinned_mutation(
+    corpus_conn: psycopg.Connection, sec: FixtureSecClient, superseded: bool
+) -> None:
+    """Defense-in-depth guard still raises when called on a retained pinned version."""
+    _ingest(corpus_conn, sec, [A, C])
+    c_v1 = _version(corpus_conn, C)
+    a_doc_row = corpus_conn.execute(
+        "SELECT id FROM documents WHERE accession = %s", (A,)
+    ).fetchone()
+    assert a_doc_row is not None
+    a_doc_id = str(a_doc_row[0])
+    _pin(corpus_conn)
+    if superseded:
+        _pin(corpus_conn, version_ids=[])
+    before = _row_versions(corpus_conn)
+    with corpus_conn.transaction():
+        with pytest.raises(PublishedPinMutationError):
+            with corpus_conn.transaction():
+                corpus_conn.execute(
+                    "UPDATE financial_facts SET restates = NULL WHERE document_version_id = %s",
+                    (c_v1,),
+                )
+                reject_retained_pin_changes(corpus_conn, document_version_ids=(c_v1,))
+        assert _row_versions(corpus_conn) == before
+    with pytest.raises(PublishedPinMutationError):
+        reject_retained_pin_changes(corpus_conn, document_ids=(a_doc_id,))
+    assert _row_versions(corpus_conn) == before
+    assert _links(corpus_conn) == [(C, A, 2)]
 
 
 def test_reparse_uses_stored_publication_and_excludes_own_document(
@@ -1184,52 +1270,71 @@ def test_metadata_guard_includes_older_pinned_parse(
     assert _row_versions(corpus_conn) == before
 
 
-def test_direct_repair_rolls_back_pinned_and_unpinned_parse_changes_when_caught(
+def test_direct_repair_updates_unpinned_reparse_while_preserving_pinned_version(
     corpus_conn: psycopg.Connection, sec: FixtureSecClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _ingest(corpus_conn, sec, [A, C])
+    c_v1 = _version(corpus_conn, C)
     _pin(corpus_conn)
     monkeypatch.setattr(pipeline, "PARSER_VERSION", "unpinned-new-parse")
     _ingest(corpus_conn, sec, [C, B])
-    before = _row_versions(corpus_conn)
-    with corpus_conn.transaction():
-        with pytest.raises(PublishedPinMutationError):
-            repair_restatement_links(corpus_conn, entity_id=ENTITY)
-        assert _row_versions(corpus_conn) == before
-    assert _row_versions(corpus_conn) == before
-    assert _links(corpus_conn) == [(B, A, 2), (C, A, 4)]
+    c_v2_row = corpus_conn.execute(
+        "SELECT v.id FROM document_versions v JOIN documents d ON d.id = v.document_id"
+        " WHERE d.accession = %s AND v.parser_version = 'unpinned-new-parse'",
+        (C,),
+    ).fetchone()
+    assert c_v2_row is not None
+    c_v2 = str(c_v2_row[0])
+    assert c_v2 != c_v1
+    c_v1_facts_before = _fact_versions(corpus_conn, c_v1)
+    report = repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert report == RepairReport(
+        relinked=2,
+        document_version_ids=(c_v2,),
+        skipped_pinned_version_ids=(c_v1,),
+    )
+    assert _fact_versions(corpus_conn, c_v1) == c_v1_facts_before
+    assert _links(corpus_conn) == [(B, A, 2), (C, A, 2), (C, B, 2)]
 
 
-def test_backfill_rolls_back_unpinned_metadata_when_pinned_edges_would_change(
+def test_backfill_updates_unpinned_metadata_while_preserving_pinned_edges(
     corpus_conn: psycopg.Connection, sec: FixtureSecClient
 ) -> None:
     _ingest(corpus_conn, sec, [A, C])
+    c_v1 = _version(corpus_conn, C)
     _pin(corpus_conn)
     _ingest(corpus_conn, sec, [B], legacy=True)
-    before = _row_versions(corpus_conn)
-    with corpus_conn.transaction():
-        with pytest.raises(PublishedPinMutationError):
-            run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
-        assert _row_versions(corpus_conn) == before
-    assert _publication(corpus_conn)[B] == UNKNOWN
-    assert _links(corpus_conn) == [(C, A, 2)]
+    b_v1 = _version(corpus_conn, B)
+    c_v1_facts_before = _fact_versions(corpus_conn, c_v1)
+    report = run_publication_backfill_job(corpus_conn, sec, {"cik": CIK})
+    assert (report.updated, report.unresolved, report.conflicts) == (1, 0, ())
+    assert report.repair == RepairReport(
+        linked=2,
+        document_version_ids=(b_v1,),
+        skipped_pinned_version_ids=(c_v1,),
+    )
+    assert _publication(corpus_conn)[B] == KNOWN[B]
+    assert _fact_versions(corpus_conn, c_v1) == c_v1_facts_before
+    assert _links(corpus_conn) == [(B, A, 2), (C, A, 2)]
 
 
-def test_repair_cannot_clear_retained_legacy_unknown_edges(
+def test_repair_preserves_retained_legacy_unknown_edges_and_allows_future_publish(
     corpus_conn: psycopg.Connection, sec: FixtureSecClient
 ) -> None:
     _ingest(corpus_conn, sec, [A, C])
+    c_v1 = _version(corpus_conn, C)
     # Reproduce stored pre-publication-time edges from the legacy pipeline.
     corpus_conn.execute(
         "UPDATE documents SET accepted_at = NULL, public_at = NULL,"
         " public_at_basis = NULL, timestamp_precision = 'date'"
     )
     # Model a retained pin created by the old publisher, which did not repair.
-    # The supported publisher now clears this edge before activating a new pin.
+    # Repair skips retained pins so legacy pins stay immutable without bricking
+    # future publications for this issuer.
     legacy_pin = create_corpus_version(
         corpus_conn,
         label="legacy retained unknown edge",
-        document_version_ids=[_version(corpus_conn, A), _version(corpus_conn, C)],
+        document_version_ids=[_version(corpus_conn, A), c_v1],
     )
     corpus_conn.execute(
         "UPDATE corpus_versions SET status = 'active', is_active = true,"
@@ -1237,9 +1342,23 @@ def test_repair_cannot_clear_retained_legacy_unknown_edges(
         (legacy_pin,),
     )
     before = _row_versions(corpus_conn)
-    with pytest.raises(PublishedPinMutationError):
-        repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    report = repair_restatement_links(corpus_conn, entity_id=ENTITY)
+    assert report == RepairReport(skipped_pinned_version_ids=(c_v1,))
     assert _row_versions(corpus_conn) == before
+    assert _links(corpus_conn) == [(C, A, 2)]
+
+    # Publishing a new draft for this issuer still succeeds while preserving
+    # the legacy retained pin's edges untouched.
+    _ingest(corpus_conn, sec, [B])
+    c_v1_facts_before = _fact_versions(corpus_conn, c_v1)
+    draft = create_corpus_version(
+        corpus_conn,
+        label="publish after legacy pin",
+        document_version_ids=[_version(corpus_conn, B)],
+    )
+    publish_corpus_version(corpus_conn, draft)
+    assert pipeline.active_corpus_version(corpus_conn) == draft
+    assert _fact_versions(corpus_conn, c_v1) == c_v1_facts_before
     assert _links(corpus_conn) == [(C, A, 2)]
 
 

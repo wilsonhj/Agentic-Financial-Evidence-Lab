@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -64,6 +65,8 @@ from fel_workers.ingestion.xbrl import NORMALIZER_VERSION, PriorFact, normalize_
 # point-in-time API aggregates, never restatement targets for filing facts,
 # and companyfacts normalization symmetrically passes ``prior_facts=None`` —
 # isolation in both directions.
+
+_log = logging.getLogger(__name__)
 
 
 class PublishConflictError(Exception):
@@ -574,6 +577,11 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
     PublishConflictError. A lock wait past the bound raises
     ``pin_guard.CorpusLockTimeoutError``.
     """
+    linked = 0
+    relinked = 0
+    cleared = 0
+    repaired_version_ids: set[str] = set()
+    skipped_pinned_version_ids: set[str] = set()
     try:
         with conn.transaction():
             lock_corpus_mutations(conn)
@@ -592,7 +600,12 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
                 (corpus_version_id,),
             ).fetchall()
             for (entity_id,) in issuers:
-                repair_restatement_links(conn, entity_id=str(entity_id))
+                report = repair_restatement_links(conn, entity_id=str(entity_id))
+                linked += report.linked
+                relinked += report.relinked
+                cleared += report.cleared
+                repaired_version_ids.update(report.document_version_ids)
+                skipped_pinned_version_ids.update(report.skipped_pinned_version_ids)
             conn.execute(
                 "UPDATE corpus_versions SET is_active = false, status = 'superseded'"
                 " WHERE is_active"
@@ -612,6 +625,17 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
             " does not take the corpus lock activated another version; re-read"
             " the active pointer and retry if still applicable"
         ) from exc
+    if linked or relinked or cleared or skipped_pinned_version_ids:
+        _log.info(
+            "corpus publication %s repaired restates: %d linked, %d relinked, %d cleared"
+            " in versions %s; skipped_pinned=%s",
+            corpus_version_id,
+            linked,
+            relinked,
+            cleared,
+            sorted(repaired_version_ids),
+            sorted(skipped_pinned_version_ids),
+        )
 
 
 def active_corpus_version(conn: psycopg.Connection[Any]) -> str | None:
