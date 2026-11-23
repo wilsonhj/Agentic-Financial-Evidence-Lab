@@ -164,6 +164,16 @@ def test_text_after_a_quoted_authorization_value_is_kept() -> None:
     assert out.endswith("failed")
 
 
+@pytest.mark.parametrize("key_quote", ["'", '"'])
+def test_quoted_authorization_keeps_literal_boundaries(key_quote: str) -> None:
+    header = f"{key_quote}Authorization{key_quote}: {key_quote}Token FIXTURE-TOKEN{key_quote}"
+    document = f"{key_quote}FIXTURE-DOCUMENT-TEXT{key_quote}"
+    message = f"headers={{{header}}} raw_value {document}"
+
+    assert redact_error_text(message) == "headers={[redacted]} raw_value '[redacted]'"
+    assert redact_job_error_text(message) == f"headers={{[redacted]}} raw_value {document}"
+
+
 @pytest.mark.parametrize(
     "message",
     [
