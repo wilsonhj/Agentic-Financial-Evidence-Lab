@@ -1809,6 +1809,22 @@ packages:
       - workers/tests/test_queue.py
       - workers/tests/test_consumer.py
       - workers/tests/test_publication_ingest.py
+  - id: FIX-EVIDENCE-SPAN-SCOPE
+    issue: 451
+    tasks: [] # Finding C2: durable span binding ignores the run's cutoff, entity and corpus pin.
+    depends_on: []
+    team: extraction
+    branch: claude/busy-darwin-5e309i
+    status: review # Registered 2026-11-21 with its draft PR; owner-requested repair. Enforces migration 0012's public_at visibility instant, document_versions.status == 'parsed', input_manifest.source_span_ids when pinned, entity/corpus scope binding, and crash-resume checkpoint cutoff verification. The edits to the shared extraction seed fixture (_seed_parents) and to test_run_binding.py sit inside the merged M3-REVIEW-CONTRACT and EXTRACTION-STEPS-OUTPUT lanes. No allowed path is in #417's changed files.
+    allowed_paths:
+      - workers/src/fel_workers/extraction/handler.py
+      - workers/src/fel_workers/extraction/persist_reads.py
+      - workers/src/fel_workers/extraction/persist_types.py
+      - workers/src/fel_workers/extraction/workflow_codec.py
+      - workers/src/fel_workers/extraction/assemble.py # dead module, no importers: removed
+      - workers/tests/extraction/test_span_scope_binding.py
+      - workers/tests/extraction/test_run_binding.py
+      - workers/tests/extraction/test_postgres_crash_resume.py # _seed_parents + 0012 public_at probe: span in the pinned corpus, published before every seeded as_of
   # --- Documentation-only research packages ---
   # Research and specification only; neither dispatches implementation work.
   # Both list docs/research/README.md for one index entry each, so their merges

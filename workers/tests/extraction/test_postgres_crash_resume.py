@@ -83,6 +83,8 @@ _SECTION = "00000000-0000-0000-0000-00000000c801"
 # span chain must be seeded under them or the composite fk rejects the insert.
 _SPAN = FIXTURE_SPAN
 _DOC_VERSION = FIXTURE_DOC
+# Before every as_of a seeded run uses (the earliest is 2026-07-01).
+_DOCUMENT_PUBLISHED_AT = datetime(2026, 6, 30, tzinfo=UTC)
 
 
 def ensure_extraction_database(base_url: str) -> str:
@@ -181,6 +183,14 @@ _SCHEMA_PROBES: tuple[str, ...] = (
               = ARRAY['org_id', 'workspace_id', 'conflict_key', 'occurrence_run_id']
     )
     """,
+    # 0012: public_at visibility instant read by load_span_pins.
+    """
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'documents'
+           AND column_name = 'public_at'
+    )
+    """,
 )
 
 
@@ -231,11 +241,17 @@ def _seed_parents(conn: psycopg.Connection) -> None:
         # The span chain is required: extraction_proposal_evidence carries a
         # COMPOSITE fk (source_span_id, document_version_id) -> source_spans, so
         # persisting proposals fails without a real span row behind the pair.
+        # It must also be INSIDE every seeded run's scope, because durable span
+        # binding holds a cited span to the run's as_of, entity and corpus pin
+        # (#451): published at a fixed instant before every seeded as_of (not
+        # now(), which would move past those cutoffs as the calendar does), and
+        # a member of the seeded corpus version.
         (
             "INSERT INTO documents (id, entity_id, accession, source_url,"
             " content_hash, storage_key, published_at) VALUES"
-            " (%s, %s, 'cr-1', 'https://example.test/cr-1', %s, 'cr-1', now())",
-            (_DOCUMENT, _ENTITY, sha256_hex("crash-resume-doc")),
+            " (%s, %s, 'cr-1', 'https://example.test/cr-1', %s, 'cr-1', %s)"
+            " ON CONFLICT (id) DO UPDATE SET published_at = EXCLUDED.published_at",
+            (_DOCUMENT, _ENTITY, sha256_hex("crash-resume-doc"), _DOCUMENT_PUBLISHED_AT),
         ),
         (
             "INSERT INTO document_versions (id, document_id, parser_version,"
@@ -252,8 +268,16 @@ def _seed_parents(conn: psycopg.Connection) -> None:
             " start_char, end_char, text_hash) VALUES (%s, %s, %s, 0, %s, %s)",
             (_SPAN, _DOC_VERSION, _SECTION, len(LONG_SPAN_TEXT), sha256_hex(LONG_SPAN_TEXT)),
         ),
+        (
+            "INSERT INTO corpus_version_documents (corpus_version_id, document_version_id)"
+            " VALUES (%s, %s)",
+            (_CORPUS, _DOC_VERSION),
+        ),
     ):
-        conn.execute(f"{sql} ON CONFLICT DO NOTHING", args)
+        if "ON CONFLICT" in sql:
+            conn.execute(sql, args)
+        else:
+            conn.execute(f"{sql} ON CONFLICT DO NOTHING", args)
 
 
 def _request(run_id: str) -> ExtractionRunRequest:
