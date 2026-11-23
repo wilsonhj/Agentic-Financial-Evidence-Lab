@@ -66,8 +66,8 @@ def extraction_db_url() -> str:
     return ensure_extraction_database(TEST_DATABASE_URL)
 
 
-# The document `_seed_parents` creates is published at now(), so a run whose
-# as_of precedes it would fail the cutoff guard on canonical dates. Every run
+# The document `_seed_parents` creates is published at 2026-06-30, and span
+# binding refuses a span published after the run's as_of (#451). Every run
 # seeded here is pinned well after it so the assertions isolate their target.
 _AS_OF = datetime(2026, 12, 31, tzinfo=UTC)
 

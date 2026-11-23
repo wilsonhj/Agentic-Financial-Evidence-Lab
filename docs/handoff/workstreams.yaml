@@ -1695,7 +1695,7 @@ packages:
   - id: MCP-HOSTED-PILOT
     issue: 400
     tasks: [] # MCP-901..905
-    depends_on: [MCP-INGEST-ACCEPTED-AT, MCP-CUTOFF-PREDICATES, MCP-EVIDENCE-READ, MCP-EVIDENCE-READ-2, MCP-VERIFIER, MCP-SERVER, MCP-PLUGIN, MCP-EVALS, RELEASE-LIVE-CUTOVER] # MCP-EVIDENCE-READ-2 added by ADR-0034 Amendment 3 (2026-11-16).
+    depends_on: [MCP-INGEST-ACCEPTED-AT, MCP-CUTOFF-PREDICATES, MCP-EVIDENCE-READ, MCP-EVIDENCE-READ-2, MCP-VERIFIER, MCP-SERVER, MCP-PLUGIN, MCP-EVALS, RELEASE-LIVE-CUTOVER, MCP-ACCEPTANCE-HEADER] # MCP-EVIDENCE-READ-2 added by ADR-0034 Amendment 3 (2026-11-16). MCP-ACCEPTANCE-HEADER (#441) added 2026-11-20: Amendment 3, decision 1, makes the filing header the source and requires a verified sample before any hosted run.
     team: integration
     branch: agent/mcp-hosted-pilot
     status: blocked # Hosting, the operating budget and the live corpus are not provisioned (ADR-0034 owner inputs; #177; #108 shared storage).
@@ -1796,6 +1796,35 @@ packages:
       - workers/src/fel_workers/extraction/workflow.py
       - workers/tests/test_redact.py
       - workers/tests/extraction/test_run_error_redaction.py
+  - id: FIX-CORPUS-LOCK-REQUEUE
+    issue: 448
+    tasks: [] # Finding S4 of the 2026-11-15 Claude security review of #417: a corpus-lock timeout spends job attempts and parks fetch jobs for good.
+    depends_on: [MCP-INGEST-ACCEPTED-AT]
+    team: data
+    branch: agent/fix-corpus-lock-requeue
+    status: blocked # Registered 2026-11-20; not dispatched. Waits for #417, which owns consumer.py and workers/tests/** until it merges. Must not run concurrently with MCP-ACCEPTANCE-HEADER (#441, consumer.py, workers/tests/test_consumer.py and test_publication_ingest.py), READER-PROD-SMOKE (#108), M3-CONFIDENCE-GATE (#62), M5-FORECASTING (#66), M5-BACKTEST (#67) or RELEASE-LIVE-CUTOVER (#177), which claim workers/** or workers/tests/**.
+    allowed_paths:
+      - workers/src/fel_workers/queue.py
+      - workers/src/fel_workers/consumer.py
+      - workers/tests/test_queue.py
+      - workers/tests/test_consumer.py
+      - workers/tests/test_publication_ingest.py
+  - id: FIX-EVIDENCE-SPAN-SCOPE
+    issue: 451
+    tasks: [] # Finding C2: durable span binding ignores the run's cutoff, entity and corpus pin.
+    depends_on: []
+    team: extraction
+    branch: claude/busy-darwin-5e309i
+    status: review # Registered 2026-11-21 with its draft PR; owner-requested repair. Enforces migration 0012's public_at visibility instant, document_versions.status == 'parsed', input_manifest.source_span_ids when pinned, entity/corpus scope binding, and crash-resume checkpoint cutoff verification. The edits to the shared extraction seed fixture (_seed_parents) and to test_run_binding.py sit inside the merged M3-REVIEW-CONTRACT and EXTRACTION-STEPS-OUTPUT lanes. No allowed path is in #417's changed files.
+    allowed_paths:
+      - workers/src/fel_workers/extraction/handler.py
+      - workers/src/fel_workers/extraction/persist_reads.py
+      - workers/src/fel_workers/extraction/persist_types.py
+      - workers/src/fel_workers/extraction/workflow_codec.py
+      - workers/src/fel_workers/extraction/assemble.py # dead module, no importers: removed
+      - workers/tests/extraction/test_span_scope_binding.py
+      - workers/tests/extraction/test_run_binding.py
+      - workers/tests/extraction/test_postgres_crash_resume.py # _seed_parents + 0012 public_at probe: span in the pinned corpus, published before every seeded as_of
   # --- Documentation-only research packages ---
   # Research and specification only; neither dispatches implementation work.
   # Both list docs/research/README.md for one index entry each, so their merges
