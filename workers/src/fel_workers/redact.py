@@ -109,7 +109,8 @@ _AUTH_SCHEME = re.compile(r"\b(?:bearer|basic)\s+\S+", re.IGNORECASE)
 # of text), and a lone backslash before a newline is its own alternative.
 _AUTHORIZATION_HEADER = re.compile(
     r"""
-      \bauthorization\b['"]?\s*[:=]\s*
+      (?:(?P<authz_key_quote>['"])authorization(?P=authz_key_quote)|\bauthorization\b)
+      \s*[:=]\s*
       (?:
         (?P<authz_quote>['"])
         (?:(?!(?P=authz_quote))[^\\\n]|\\[^\n]|\\(?![^\n]))*
