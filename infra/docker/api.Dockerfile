@@ -35,8 +35,11 @@ WORKDIR /
 
 # A non-root process cannot bind port 80, the container runtime's default, so
 # the image listens on PORT. Set PORT=8080 in the Vercel project's environment
-# variables so the platform routes to the same port.
-ENV PORT=8080
+# variables so the platform routes to the same port. FORWARDED_ALLOW_IPS
+# defaults to '*' for Vercel's dynamic edge proxy; non-Vercel deployments
+# behind a fixed proxy should restrict it to their proxy IP/CIDR.
+ENV PORT=8080 \
+    FORWARDED_ALLOW_IPS="*"
 EXPOSE 8080
 
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port \"${PORT}\" --proxy-headers --forwarded-allow-ips='*' --no-server-header"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port \"${PORT}\" --proxy-headers --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS}\" --no-server-header"]
