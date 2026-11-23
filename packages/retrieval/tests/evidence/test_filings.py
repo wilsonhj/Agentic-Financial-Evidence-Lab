@@ -31,7 +31,7 @@ COHORT = {company.entity_id: company for company in (CRM, NOW, TWIN)}
 DOCS = [f"00000000-0000-4000-8000-00000000000{n}" for n in range(4)]
 
 
-def _ref(company: i.Company, serial: int, public_at: datetime, form: str = "10-K") -> Any:
+def _ref(company: i.Company, serial: int, public_at: datetime, form: str | None = "10-K") -> Any:
     accession = f"{company.cik}-24-{serial:06d}"
     return (
         company.entity_id,
@@ -44,9 +44,11 @@ def _ref(company: i.Company, serial: int, public_at: datetime, form: str = "10-K
     )
 
 
-def _page_row(serial: int, public_at: datetime, versions: int = 1) -> tuple[Any, ...]:
+def _page_row(
+    serial: int, public_at: datetime, versions: int = 1, form: str | None = "10-K"
+) -> tuple[Any, ...]:
     return (
-        *_ref(CRM, serial, public_at),
+        *_ref(CRM, serial, public_at, form=form),
         date(2024, 1, 31),
         DOCS[serial],
         f"11111111-0000-4000-8000-00000000000{serial}",
@@ -110,6 +112,14 @@ def world(fake_conn: Any, evidence_helpers: Any) -> Any:
 )
 def test_match_companies(text: str, partial: bool, expected: list[i.Company]) -> None:
     assert match_companies(COHORT, text, partial=partial) == expected
+
+
+def test_match_companies_breaks_same_name_and_cik_ties_by_entity_id() -> None:
+    first = i.Company("00000000-0000-4000-8000-000000000001", CRM.cik, None, CRM.name)
+    second = i.Company("00000000-0000-4000-8000-000000000002", CRM.cik, None, CRM.name)
+    cohort = {second.entity_id: second, first.entity_id: first}
+    assert match_companies(cohort, CRM.name, partial=False) == [first, second]
+    assert match_companies(cohort, "salesforce", partial=True) == [first, second]
 
 
 def test_resolve_company_reports_coverage_of_visible_filings_only(world: Any) -> None:
@@ -506,3 +516,41 @@ def test_signed_invalid_keyset_positions_fail_before_the_page_query(
     ):
         world.listing({"GROUP BY": _stats(CRM)}, cursor=token)
     assert not any("LIMIT" in sql for sql in world.conn.sql)
+
+
+def test_list_filings_output_validates_against_schema_and_omits_empty_forms(world: Any) -> None:
+    stats = [
+        (CRM.entity_id, None, 1, EARLY, EARLY),
+        (CRM.entity_id, "", 1, EARLY, EARLY),
+        (CRM.entity_id, "10-K", 2, EARLY, LATE),
+    ]
+    rows = [
+        _page_row(3, LATE, form="10-K"),
+        _page_row(2, LATE - timedelta(days=1), form=""),
+        _page_row(1, EARLY, form=None),
+    ]
+    paged = world.listing({"GROUP BY": stats, "LIMIT": rows})
+    assert paged.next_cursor is not None
+    assert paged.coverage_note.forms == ("10-K",)
+    _validate(paged, "mcp-list-filings-output")
+
+    final = world.listing({"GROUP BY": stats, "LIMIT": rows[2:]}, cursor=paged.next_cursor)
+    assert final.next_cursor is None
+    assert final.coverage_note.forms == ("10-K",)
+    _validate(final, "mcp-list-filings-output")
+
+    empty = world.listing({"GROUP BY": stats}, forms=("S-1",))
+    assert (empty.filings, empty.next_cursor) == ((), None)
+    _validate(empty, "mcp-list-filings-output")
+
+    resolved = world.resolve(
+        {
+            "GROUP BY": stats,
+            "d.public_at ASC": [_ref(CRM, 1, EARLY, form="")],
+            "d.public_at DESC": [_ref(CRM, 3, LATE, form="10-K")],
+        },
+        "CRM",
+    )
+    assert resolved.matches[0].coverage.visible_forms == ("10-K",)
+    assert resolved.coverage_note.forms == ("10-K",)
+    _validate(resolved, "mcp-resolve-company-output")

@@ -82,7 +82,9 @@ def match_companies(
     cik = needle.zfill(10) if needle.isascii() and needle.isdigit() else None
     exact: list[i.Company] = []
     fragments: list[i.Company] = []
-    for company in sorted(companies.values(), key=lambda c: (c.name.casefold(), c.cik)):
+    for company in sorted(
+        companies.values(), key=lambda c: (c.name.casefold(), c.cik, c.entity_id)
+    ):
         identifiers = {company.entity_id.casefold(), company.name.casefold()}
         if company.ticker is not None:
             identifiers.add(company.ticker.casefold())
@@ -192,7 +194,7 @@ def resolve_company(
         coverage = i.CompanyCoverage(
             first_visible_filing=first[company.entity_id],
             last_visible_filing=last[company.entity_id],
-            visible_forms=tuple(sorted(form for form in by_form if form is not None)),
+            visible_forms=tuple(sorted(form for form in by_form if form)),
             visible_filing_count=sum(count for count, _, _ in by_form.values()),
         )
         matches.append(i.CompanyMatch(company=company, coverage=coverage))
@@ -253,7 +255,7 @@ def list_filings(
         }
         rows = conn.execute(_PAGE, page).fetchall()
     by_form = stats[shown[0].entity_id]
-    searched = sorted(form for form in by_form if form is not None) if forms is None else forms
+    searched = sorted(form for form in by_form if form) if forms is None else forms
     ranges = [entry for form, entry in by_form.items() if forms is None or form in forms]
     filings = []
     for row in rows[: request.limit]:

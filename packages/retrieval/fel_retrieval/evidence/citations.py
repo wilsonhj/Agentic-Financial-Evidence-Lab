@@ -171,7 +171,7 @@ def _verified_text(
     start: int,
     end: int,
     text_hash: str,
-    span_id: str,
+    reference: str,
     *,
     timeout: float = READ_TIMEOUT_SECONDS,
     deadline: float | None = None,
@@ -182,7 +182,7 @@ def _verified_text(
             texts, key, MAX_CANONICAL_BYTES + 1, timeout=timeout, deadline=deadline
         )
     except LookupError:
-        raise _integrity_error("canonical text object is absent", span_id) from None
+        raise _integrity_error("canonical text object is absent", reference) from None
     except OSError as error:
         raise i.EvidenceReadError(
             "unavailable",
@@ -200,12 +200,12 @@ def _verified_text(
     try:
         canonical = raw.decode("utf-8")
     except UnicodeDecodeError:
-        raise _integrity_error("canonical text is not UTF-8", span_id) from None
+        raise _integrity_error("canonical text is not UTF-8", reference) from None
     if not 0 <= start <= end <= len(canonical):
-        raise _integrity_error("span offsets lie outside the canonical text", span_id)
+        raise _integrity_error("span offsets lie outside the canonical text", reference)
     text = canonical[start:end]
     if content_sha256(text) != text_hash:
-        raise _integrity_error("recomputed text hash differs from the stored hash", span_id)
+        raise _integrity_error("recomputed text hash differs from the stored hash", reference)
     return text
 
 
