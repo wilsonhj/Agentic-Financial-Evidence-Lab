@@ -14,6 +14,10 @@ into a quarantine entry for operator review. Superseding in place was
 rejected: the raw store is immutable evidence, and ``documents.content_hash``
 must always match the bytes the published version was parsed from. A
 re-fetch with identical bytes remains an idempotent no-op replay.
+
+Publication time (ADR-0034, #393): a new row also records when the filing
+became public, as derived by ``publication.derive_publication``. A replay
+never changes it, and a company-facts snapshot can never carry one.
 """
 
 from __future__ import annotations
@@ -30,6 +34,12 @@ from psycopg.rows import dict_row
 from fel_providers.interfaces import StorageProvider
 from fel_workers.ingestion.errors import DivergentAccessionError
 from fel_workers.ingestion.parser import ID_NAMESPACE
+from fel_workers.ingestion.publication import UNKNOWN_PUBLICATION, Publication
+
+# Form marker for SEC companyfacts snapshot documents (issue #83 ruling).
+# Their facts cite a fetch-dated snapshot, so they are never restatement
+# targets and never get a publication time (ADR-0034 decision 5).
+COMPANY_FACTS_FORM = "COMPANYFACTS"
 
 
 @dataclass(frozen=True)
@@ -75,6 +85,7 @@ def store_raw_document(
     mime_type: str = "text/html",
     content_hash: str | None = None,
     storage_key: str | None = None,
+    publication: Publication = UNKNOWN_PUBLICATION,
 ) -> StoredDocument:
     """Store raw bytes immutably and record the document metadata row.
 
@@ -84,9 +95,51 @@ def store_raw_document(
     Raises :class:`DivergentAccessionError` when the accession is already
     recorded with different bytes (see module docstring).
     """
+    if form == COMPANY_FACTS_FORM and publication != UNKNOWN_PUBLICATION:
+        raise ValueError("a COMPANYFACTS snapshot cannot carry a publication time")
     if content_hash is None or storage_key is None:
         content_hash, storage_key = content_address(raw)
     storage.put(storage_key, raw)
+    return _store_raw_document_metadata(
+        conn,
+        entity_id=entity_id,
+        accession=accession,
+        source_url=source_url,
+        content_hash=content_hash,
+        storage_key=storage_key,
+        published_at=published_at,
+        form=form,
+        filed_at=filed_at,
+        period_start=period_start,
+        period_end=period_end,
+        mime_type=mime_type,
+        publication=publication,
+    )
+
+
+def _store_raw_document_metadata(
+    conn: psycopg.Connection[Any],
+    *,
+    entity_id: str,
+    accession: str,
+    source_url: str,
+    content_hash: str,
+    storage_key: str,
+    published_at: datetime,
+    form: str | None = None,
+    filed_at: datetime | None = None,
+    period_start: date | None = None,
+    period_end: date | None = None,
+    mime_type: str = "text/html",
+    publication: Publication = UNKNOWN_PUBLICATION,
+) -> StoredDocument:
+    """Record metadata after the caller has stored the immutable source bytes.
+
+    Database work only: ingestion prepares provider writes before acquiring
+    the corpus lock, then records these rows under that lock.
+    """
+    if form == COMPANY_FACTS_FORM and publication != UNKNOWN_PUBLICATION:
+        raise ValueError("a COMPANYFACTS snapshot cannot carry a publication time")
     document_id = document_id_for_accession(accession)
     with conn.cursor(row_factory=dict_row) as cur:
         inserted = cur.execute(
@@ -94,8 +147,9 @@ def store_raw_document(
             INSERT INTO documents
                 (id, entity_id, accession, form, source_url, content_hash,
                  storage_key, mime_type, published_at, filed_at,
-                 period_start, period_end)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 period_start, period_end, accepted_at, public_at,
+                 public_at_basis, timestamp_precision)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (accession) DO NOTHING
             RETURNING id
             """,
@@ -112,6 +166,10 @@ def store_raw_document(
                 filed_at,
                 period_start,
                 period_end,
+                publication.accepted_at,
+                publication.public_at,
+                publication.public_at_basis,
+                publication.timestamp_precision,
             ),
         ).fetchone()
         if inserted is None:

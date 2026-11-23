@@ -20,16 +20,19 @@ different bytes fails closed into quarantine with reason code
 ``documents.content_hash`` always matches the bytes the published versions
 were parsed from.
 
-Corpus versions are published atomically — a single transaction flips the
-active pointer, and a partial unique index guarantees at most one active
-version even under races; a losing racer gets :class:`PublishConflictError`
-instead of a raw database error.
+Corpus versions are published atomically under the same transaction lock as
+filing ingestion, publication backfill and restatement repair, preserving
+retained pins. Two publishers therefore serialize and the later one wins: it supersedes the
+earlier version. A partial unique index additionally prevents multiple active
+versions when a writer that does not take the lock activates one; that
+conflict becomes PublishConflictError.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -41,30 +44,40 @@ from psycopg.rows import dict_row
 
 from fel_providers.interfaces import StorageProvider
 from fel_workers.ingestion.errors import DivergentAccessionError, IngestError
-from fel_workers.ingestion.parser import PARSER_VERSION, parse_filing
+from fel_workers.ingestion.parser import PARSER_VERSION, ParsedDocument, parse_filing
+from fel_workers.ingestion.pin_guard import lock_corpus_mutations
+from fel_workers.ingestion.publication import UNKNOWN_PUBLICATION, Publication
+from fel_workers.ingestion.raw_store import (
+    COMPANY_FACTS_FORM as COMPANY_FACTS_FORM,
+)
 from fel_workers.ingestion.raw_store import (
     StoredDocument,
+    _store_raw_document_metadata,
     content_address,
     document_id_for_accession,
-    store_raw_document,
 )
+from fel_workers.ingestion.restatement import repair_restatement_links
 from fel_workers.ingestion.xbrl import NORMALIZER_VERSION, PriorFact, normalize_facts
 
-# Form marker for SEC companyfacts snapshot documents (issue #83 ruling).
-# Defined here (not in company_facts.py, which imports this module) because
-# the restatement-target query below must exclude that channel: companyfacts
-# snapshots are point-in-time API aggregates, never restatement targets for
-# filing facts, and companyfacts normalization symmetrically passes
-# ``prior_facts=None`` — isolation in both directions.
-COMPANY_FACTS_FORM = "COMPANYFACTS"
+# COMPANY_FACTS_FORM is defined in raw_store (not in company_facts.py, which
+# imports this module) and re-exported above because the restatement-target
+# query below must exclude that channel: companyfacts snapshots are
+# point-in-time API aggregates, never restatement targets for filing facts,
+# and companyfacts normalization symmetrically passes ``prior_facts=None`` —
+# isolation in both directions.
+
+_log = logging.getLogger(__name__)
 
 
 class PublishConflictError(Exception):
-    """A concurrent publisher activated another corpus version first.
+    """A writer that skips the corpus lock activated another corpus version.
 
-    The demote-promote transaction lost the race on the single-active
-    partial unique index; the caller may re-read the active pointer and
-    retry against the new state.
+    Two publishers using ``publish_corpus_version`` serialize on the corpus
+    lock, so they cannot conflict with each other: the later supersedes the
+    earlier. Only a writer that bypasses the lock can activate a version
+    while this transaction runs; the demote-promote then fails on the
+    single-active partial unique index and rolls back. The caller may
+    re-read the active pointer and retry against the new state.
     """
 
 
@@ -111,14 +124,23 @@ class IngestionOutcome:
 
 
 def _prior_canonical_facts(
-    conn: psycopg.Connection[Any], *, entity_id: str, published_before: datetime
+    conn: psycopg.Connection[Any],
+    *,
+    entity_id: str,
+    public_before: datetime | None,
+    document_id: str,
+    accepted_before: datetime | None = None,
 ) -> dict[str, PriorFact]:
-    """Latest canonical fact per key from earlier published filings.
+    """Latest canonical fact per key from filings published before another.
 
-    Deterministic restatement targets: only the LATEST successfully parsed
-    version of each prior document is consulted, and candidates are totally
-    ordered (published_at DESC, version created_at DESC, fact id) so reruns
-    always link ``restates`` to the same fact row.
+    A known earlier public_at establishes a predecessor; equal public_at
+    requires both known accepted_at instants to be strictly ordered.
+    Filing dates may be adjusted by the SEC, and unknown timestamps establish
+    no ordering, even across dates. Tied or unknown acceptance adds no ordering.
+    The latest successfully parsed version supplies canonical facts, ordered
+    by public_at DESC, accepted_at DESC, accession DESC and fact id for ties.
+    Excluding this document also prevents linking to an older parse of itself.
+    ``backfill.repair_restatement_links`` applies the same relation.
 
     Companyfacts snapshot documents (``form = 'COMPANYFACTS'``) are excluded
     (issue #83 ruling — cross-channel restatement isolation): filing
@@ -126,6 +148,8 @@ def _prior_canonical_facts(
     restatement target; cross-channel value reconciliation is a QA-report
     concern, not a restatement edge.
     """
+    if public_before is None:
+        return {}
     with conn.cursor(row_factory=dict_row) as cur:
         rows = cur.execute(
             """
@@ -133,20 +157,30 @@ def _prior_canonical_facts(
             FROM financial_facts ff
             JOIN document_versions dv ON dv.id = ff.document_version_id
             JOIN documents d ON d.id = dv.document_id
-            WHERE ff.entity_id = %s
+            WHERE ff.entity_id = %(entity_id)s
               AND ff.duplicate_of IS NULL
               AND dv.status = 'parsed'
-              AND d.published_at < %s
-              AND d.form IS DISTINCT FROM %s
+              AND d.id <> %(document_id)s
+              AND (d.public_at < %(public_at)s::timestamptz
+                   OR (d.public_at = %(public_at)s::timestamptz
+                       AND d.accepted_at < %(accepted_at)s::timestamptz))
+              AND d.form IS DISTINCT FROM %(company_facts)s
               AND dv.id = (
                   SELECT dv2.id FROM document_versions dv2
                   WHERE dv2.document_id = d.id AND dv2.status = 'parsed'
                   ORDER BY dv2.created_at DESC, dv2.id DESC
                   LIMIT 1
               )
-            ORDER BY ff.fact_key, d.published_at DESC, dv.created_at DESC, ff.id
+            ORDER BY ff.fact_key, d.public_at DESC, d.accepted_at DESC NULLS LAST,
+                     d.accession DESC, ff.id
             """,
-            (entity_id, published_before, COMPANY_FACTS_FORM),
+            {
+                "entity_id": entity_id,
+                "document_id": document_id,
+                "public_at": public_before,
+                "accepted_at": accepted_before,
+                "company_facts": COMPANY_FACTS_FORM,
+            },
         ).fetchall()
     return {
         str(row["fact_key"]): PriorFact(fact_id=str(row["id"]), value=str(row["value"]))
@@ -191,8 +225,14 @@ def ingest_filing(
     period_start: date | None = None,
     period_end: date | None = None,
     mime_type: str = "text/html",
+    publication: Publication = UNKNOWN_PUBLICATION,
 ) -> IngestionOutcome:
     """Run the full store -> parse -> normalize -> persist pipeline once.
+
+    ``publication`` is when the filing became public (``derive_publication``);
+    it is stored on a new document row and orders restatement targets.
+    Provider writes and parsing finish before acquiring the corpus lock;
+    metadata, prior lookup and fact persistence then serialize with repairs.
 
     Idempotent: an identical (entity, accession, source, parser,
     normalizer) job is a no-op returning the recorded result — enforced by
@@ -216,7 +256,47 @@ def ingest_filing(
             f"|{PARSER_VERSION}|{NORMALIZER_VERSION}",
         )
     )
+    # Terminal results are immutable. Preserve replays without provider or
+    # parser work; concurrent misses still arbitrate on the locked claim below.
+    with conn.transaction(), conn.cursor(row_factory=dict_row) as replay_cur:
+        replay = replay_cur.execute(
+            "SELECT job_key, document_id, document_version_id, status, result"
+            " FROM ingestion_runs WHERE job_key = %s AND status IN ('succeeded', 'quarantined')",
+            (key,),
+        ).fetchone()
+        if replay is not None:
+            return _noop_outcome(key, dict(replay))
+
+    # No provider I/O or parsing follows acquisition of the corpus lock.
+    # Defer preparation errors until after the claim: a concurrent terminal
+    # winner must still replay, and metadata divergence precedes parse errors.
+    raw_failure: Exception | None = None
+    parse_failure: Exception | None = None
+    canonical_failure: Exception | None = None
+    parsed: ParsedDocument | None = None
+    text_key: str | None = None
+    try:
+        if form == COMPANY_FACTS_FORM and publication != UNKNOWN_PUBLICATION:
+            raise ValueError("a COMPANYFACTS snapshot cannot carry a publication time")
+        storage.put(storage_key, raw)
+    except Exception as exc:  # noqa: BLE001 — re-raised after the locked claim
+        raw_failure = exc
+    if raw_failure is None:
+        try:
+            parsed = parse_filing(raw, id_seed=version_id, content_hash=content_hash)
+        except Exception as exc:  # noqa: BLE001 — preserve metadata-error precedence
+            parse_failure = exc
+    if parsed is not None:
+        text_key = canonical_text_address(parsed.text)
+        try:
+            storage.put(text_key, parsed.text.encode())
+        except Exception as exc:  # noqa: BLE001 — normalization errors take precedence
+            canonical_failure = exc
+
     with conn.transaction():
+        # Take the advisory lock before ANY database write, including the
+        # ingestion claim and document insert, to avoid row/advisory inversions.
+        lock_corpus_mutations(conn)
         with conn.cursor(row_factory=dict_row) as run_cur:
             claimed = run_cur.execute(
                 "INSERT INTO ingestion_runs (job_key, source_hash, parser_version,"
@@ -239,13 +319,13 @@ def ingest_filing(
 
         stored: StoredDocument | None = None
         try:
-            stored = store_raw_document(
+            if raw_failure is not None:
+                raise raw_failure
+            stored = _store_raw_document_metadata(
                 conn,
-                storage,
                 entity_id=entity_id,
                 accession=accession,
                 source_url=source_url,
-                raw=raw,
                 published_at=published_at,
                 form=form,
                 filed_at=filed_at,
@@ -254,9 +334,27 @@ def ingest_filing(
                 mime_type=mime_type,
                 content_hash=content_hash,
                 storage_key=storage_key,
+                publication=publication,
             )
-            parsed = parse_filing(raw, id_seed=version_id, content_hash=content_hash)
-            prior = _prior_canonical_facts(conn, entity_id=entity_id, published_before=published_at)
+            if parse_failure is not None:
+                raise parse_failure
+            if parsed is None:
+                raise RuntimeError("filing preparation produced no parsed document")
+            # Same-content replays preserve the existing document metadata.
+            # Use that persisted publication time even when an old queued job
+            # lacks acceptance data or carries a stale filing date.
+            held = conn.execute(
+                "SELECT public_at, accepted_at FROM documents WHERE id = %s", (stored.document_id,)
+            ).fetchone()
+            if held is None:  # pragma: no cover — raw store just established it
+                raise RuntimeError("stored document is missing")
+            prior = _prior_canonical_facts(
+                conn,
+                entity_id=entity_id,
+                public_before=held[0],
+                accepted_before=held[1],
+                document_id=stored.document_id,
+            )
             facts = normalize_facts(
                 parsed,
                 entity_id=entity_id,
@@ -289,10 +387,10 @@ def ingest_filing(
                 diagnostic=exc.diagnostic,
             )
 
-        # Persist the canonical text immutably so span offsets/text hashes
-        # stay verifiable against exactly the bytes they were computed from.
-        text_key = canonical_text_address(parsed.text)
-        storage.put(text_key, parsed.text.encode())
+        if canonical_failure is not None:
+            raise canonical_failure
+        if text_key is None:
+            raise RuntimeError("filing preparation produced no canonical storage key")
 
         conn.execute(
             "INSERT INTO document_versions"
@@ -470,14 +568,44 @@ def create_corpus_version(
 def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str) -> None:
     """Atomically make a draft corpus version the single active one.
 
-    Both updates happen in one transaction; readers see either the old or
-    the new active pointer, never zero or two. The partial unique index
-    ``corpus_versions_single_active`` fails any racing second publisher —
-    that race surfaces as :class:`PublishConflictError`, never a raw
-    database error.
+    Restatement repair and both updates happen in one transaction; readers see either the old or
+    the new active pointer, never zero or two. The shared transaction lock
+    serializes publishers with each other and with publication/edge repairs
+    until outer commit, so of two publishers the later one wins and the
+    earlier version ends superseded. The partial unique index also defends
+    against writers that skip the lock; such a conflict surfaces as
+    PublishConflictError. A lock wait past the bound raises
+    ``pin_guard.CorpusLockTimeoutError``.
     """
+    linked = 0
+    relinked = 0
+    cleared = 0
+    repaired_version_ids: set[str] = set()
+    skipped_pinned_version_ids: set[str] = set()
     try:
         with conn.transaction():
+            lock_corpus_mutations(conn)
+            draft = conn.execute(
+                "SELECT status FROM corpus_versions WHERE id = %s", (corpus_version_id,)
+            ).fetchone()
+            if draft is None or draft[0] != "draft":
+                raise ValueError(
+                    f"corpus version {corpus_version_id} does not exist or is not a draft"
+                )
+            issuers = conn.execute(
+                "SELECT DISTINCT d.entity_id FROM corpus_version_documents c"
+                " JOIN document_versions v ON v.id = c.document_version_id"
+                " JOIN documents d ON d.id = v.document_id"
+                " WHERE c.corpus_version_id = %s ORDER BY d.entity_id",
+                (corpus_version_id,),
+            ).fetchall()
+            for (entity_id,) in issuers:
+                report = repair_restatement_links(conn, entity_id=str(entity_id))
+                linked += report.linked
+                relinked += report.relinked
+                cleared += report.cleared
+                repaired_version_ids.update(report.document_version_ids)
+                skipped_pinned_version_ids.update(report.skipped_pinned_version_ids)
             conn.execute(
                 "UPDATE corpus_versions SET is_active = false, status = 'superseded'"
                 " WHERE is_active"
@@ -493,10 +621,21 @@ def publish_corpus_version(conn: psycopg.Connection[Any], corpus_version_id: str
                 )
     except psycopg.errors.UniqueViolation as exc:
         raise PublishConflictError(
-            f"corpus version {corpus_version_id} lost the publish race: "
-            "another version was activated concurrently; re-read the active "
-            "pointer and retry if still applicable"
+            f"corpus version {corpus_version_id} was not published: a writer that"
+            " does not take the corpus lock activated another version; re-read"
+            " the active pointer and retry if still applicable"
         ) from exc
+    if linked or relinked or cleared or skipped_pinned_version_ids:
+        _log.info(
+            "corpus publication %s repaired restates: %d linked, %d relinked, %d cleared"
+            " in versions %s; skipped_pinned=%s",
+            corpus_version_id,
+            linked,
+            relinked,
+            cleared,
+            sorted(repaired_version_ids),
+            sorted(skipped_pinned_version_ids),
+        )
 
 
 def active_corpus_version(conn: psycopg.Connection[Any]) -> str | None:

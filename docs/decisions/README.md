@@ -41,3 +41,4 @@ The Status column below is abbreviated. Many ADRs qualify their status with a lo
 | [ADR-0033](ADR-0033-retrieval-gate-quickstart-note.md) | Note the failing retrieval gate in the spec 002 quickstart | Accepted | 2026-11-01 | — |
 | [ADR-0034](ADR-0034-public-read-only-evidence-surface.md) | Public read-only evidence surface over MCP | Accepted (qualified) | 2026-11-10 | Amends in part [ADR-0004](ADR-0004-public-corpus-tenancy.md) and [ADR-0027](ADR-0027-deployment-modes.md) |
 | [ADR-0035](ADR-0035-vercel-hosting.md) | Host the web app and API on Vercel, with Neon Postgres 18 | Accepted | 2026-11-15 | Supersedes in part [ADR-0002](ADR-0002-mvp-stack.md) (hosting line) |
+| [ADR-0036](ADR-0036-api-process-model.md) | Run the API with one worker process per vCPU | Proposed | 2026-11-20 | — |
