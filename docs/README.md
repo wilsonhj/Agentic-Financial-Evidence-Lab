@@ -53,6 +53,7 @@ GitHub. Terms are defined in the [glossary](glossary.md).
 | [Extraction worker](runbooks/extraction-worker.md) | Operating `extraction_run` jobs on the extraction queue | **core** |
 | [Unit policy migration](runbooks/unit-policy-migration.md) | Deploying the ADR-0019 unit comparison policy | supporting |
 | [Guidance range policy migration](runbooks/guidance-range-policy-migration.md) | Deploying the ADR-0022 signed guidance range policy | supporting |
+| [Hosted database migrations](runbooks/hosted-database-migrations.md) | Applying `db/migrations` to the hosted Neon database (ADR-0035) | **core** |
 | [Extraction operator notes](../workers/src/fel_workers/extraction/OPERATOR.md) | Operator notes kept beside the extraction worker code | supporting |
 | [Isotonic calibrator notes](../workers/src/fel_workers/extraction/ISOTONIC.md) | ADR-0028 `isotonic-v1` calibrator notes kept beside the code | reference |
 
