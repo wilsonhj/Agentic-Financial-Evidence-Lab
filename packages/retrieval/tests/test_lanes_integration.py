@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+import pytest
 
 from fel_providers import MockEmbeddingProvider
 from fel_retrieval import (
@@ -177,3 +179,46 @@ def test_entity_filter_pushed_down(pg_conn: Any, seed_document: Any) -> None:
     assert hits
     for cand in hits:
         assert cand.document_version_id == fx.early.document_version_id
+
+
+@pytest.mark.parametrize("lane", [dense_lane, lexical_lane, facts_lane, tables_lane])
+def test_lane_cutoff_matches_candidate_guard_publication_bound(
+    pg_conn: Any, seed_document: Any, lane: Any
+) -> None:
+    """Known instants and legacy dates use exactly migration 0012's bound."""
+    fx = _fixture(pg_conn, seed_document)
+    # Include a known public_at earlier than the stored filing date as well:
+    # GREATEST must retain the old date bound even for inconsistent metadata.
+    for public_at in (
+        None,
+        EARLY_PUBLISHED - timedelta(hours=1),
+        EARLY_PUBLISHED + timedelta(hours=16),
+    ):
+        pg_conn.execute(
+            "UPDATE documents SET accepted_at=%s, public_at=%s, public_at_basis=%s, "
+            "timestamp_precision=%s WHERE id=%s",
+            (
+                public_at,
+                public_at,
+                None if public_at is None else "acceptance",
+                "date" if public_at is None else "second",
+                fx.early.document_id,
+            ),
+        )
+        bound = max(public_at or EARLY_PUBLISHED, EARLY_PUBLISHED)
+        for offset in (-1, 0, 1):
+            cutoff = bound + timedelta(microseconds=offset)
+            candidates = lane(
+                pg_conn,
+                _query(fx, as_of=cutoff, document_ids=(fx.early.document_id,)),
+            )
+            assert bool(candidates) is (offset >= 0), (lane.__name__, public_at, cutoff)
+            for candidate in candidates:
+                # Re-evaluate the guard's expression on every returned item.
+                visible = pg_conn.execute(
+                    "SELECT GREATEST(COALESCE(d.public_at,d.published_at),d.published_at) <= %s "
+                    "FROM retrieval_items ri JOIN documents d ON d.id=ri.document_id "
+                    "WHERE ri.id=%s",
+                    (cutoff, candidate.item_id),
+                ).fetchone()
+                assert visible == (True,)

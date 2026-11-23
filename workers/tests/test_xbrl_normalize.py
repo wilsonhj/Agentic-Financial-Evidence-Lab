@@ -470,6 +470,14 @@ def test_divide_does_not_leak_into_next_unit() -> None:
         "</xbrli:unitNumerator><xbrli:unitNumerator><xbrli:measure>iso4217:EUR</xbrli:measure>"
         "</xbrli:unitNumerator><xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure>"
         "</xbrli:unitDenominator></xbrli:divide>",
+        # Repeated sides must be rejected even when the first one is empty.
+        "<xbrli:divide><xbrli:unitNumerator/><xbrli:unitNumerator>"
+        "<xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unitNumerator>"
+        "<xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure>"
+        "</xbrli:unitDenominator></xbrli:divide>",
+        "<xbrli:divide><xbrli:unitNumerator><xbrli:measure>iso4217:USD</xbrli:measure>"
+        "</xbrli:unitNumerator><xbrli:unitDenominator/><xbrli:unitDenominator>"
+        "<xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unitDenominator></xbrli:divide>",
     ],
 )
 def test_malformed_divide_is_rejected_not_collapsed(body: str) -> None:
