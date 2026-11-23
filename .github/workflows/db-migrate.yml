@@ -1,0 +1,72 @@
+name: DB — migrate the hosted database
+
+# Applies db/migrations to the hosted Neon database (ADR-0035) with the same
+# ledger applier CI uses (scripts/db/migrate.py, ADR-0014). Run it by hand from
+# the Actions tab; see docs/runbooks/hosted-database-migrations.md.
+#
+# The connection string lives only in the `hosted-database` GitHub environment
+# as the secret NEON_DATABASE_URL: the owner role's direct (unpooled) URL. Give
+# that environment required reviewers so every run waits for approval.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check: report pending migrations. dry-run: print the plan. apply: apply pending migrations, then check."
+        type: choice
+        options: [check, dry-run, apply]
+        default: check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-database-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Migrate the hosted database (${{ inputs.mode }})
+    environment: hosted-database
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # migrate.py and check_server.py read FEL_DATABASE_URL, so the URL never
+      # appears on a command line or in the process list.
+      FEL_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      MODE: ${{ inputs.mode }}
+    steps:
+      - name: Apply only the migrations on main
+        if: inputs.mode == 'apply'
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::apply runs only from main; this run is on $GITHUB_REF"
+            exit 1
+          fi
+      - name: Require the database secret
+        run: |
+          if [ -z "$FEL_DATABASE_URL" ]; then
+            echo "::error::NEON_DATABASE_URL is not set in the hosted-database environment"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: requirements.lock
+      # The hash-locked runtime closure carries the same psycopg the API uses.
+      - run: pip install --require-hashes -r requirements.lock
+      - name: Check the server version and pgvector
+        run: python scripts/db/check_server.py
+      - name: Run the migration applier
+        run: |
+          case "$MODE" in
+            check)   python scripts/db/migrate.py --check ;;
+            dry-run) python scripts/db/migrate.py --dry-run ;;
+            apply)
+              python scripts/db/migrate.py
+              python scripts/db/migrate.py --check
+              ;;
+            *) echo "::error::unknown mode $MODE"; exit 1 ;;
+          esac
