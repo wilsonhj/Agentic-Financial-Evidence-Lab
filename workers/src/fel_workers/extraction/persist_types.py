@@ -64,11 +64,26 @@ class SpanPin:
     whether supplied evidence text really is what the span addresses; a hash
     computed from that same text answers a different question (is this text
     self-consistent) and always says yes.
+
+    ``entity_id``, ``published_at``, ``corpus_version_ids`` and
+    ``document_version_status`` place the span in its filing, version and
+    corpus, so binding can hold it to the citing run's ``entity_id``,
+    ``as_of``, ``corpus_version_id`` and ``parsed`` status (#451). They come
+    from ``documents``, ``document_versions`` and ``corpus_version_documents``,
+    never from the payload. ``published_at`` is migration 0012's effective
+    visibility instant
+    ``GREATEST(COALESCE(d.public_at, d.published_at), d.published_at)`` that
+    binding compares with ``as_of``; see
+    :func:`~fel_workers.extraction.persist_reads.load_span_pins`.
     """
 
     source_span_id: str
     document_version_id: str
     text_hash: str
+    entity_id: str
+    published_at: datetime
+    corpus_version_ids: frozenset[str]
+    document_version_status: str
 
 
 def _ensure_needs_review(draft: ProposalDraft) -> None:

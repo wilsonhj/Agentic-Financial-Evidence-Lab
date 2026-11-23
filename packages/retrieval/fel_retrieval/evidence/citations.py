@@ -73,8 +73,8 @@ _COVERAGE: Final = " ".join(
 )
 
 
-def _integrity_error(reason: str, span_id: str) -> i.EvidenceReadError:
-    _LOG.error("evidence integrity failure: %s (span %s)", reason, span_id)
+def _integrity_error(reason: str, reference: str) -> i.EvidenceReadError:
+    _LOG.error("evidence integrity failure: %s (%s)", reason, reference)
     return i.EvidenceReadError(
         "integrity_error",
         "Stored evidence failed integrity verification and was not returned.",
@@ -171,7 +171,7 @@ def _verified_text(
     start: int,
     end: int,
     text_hash: str,
-    span_id: str,
+    reference: str,
     *,
     timeout: float = READ_TIMEOUT_SECONDS,
     deadline: float | None = None,
@@ -182,7 +182,7 @@ def _verified_text(
             texts, key, MAX_CANONICAL_BYTES + 1, timeout=timeout, deadline=deadline
         )
     except LookupError:
-        raise _integrity_error("canonical text object is absent", span_id) from None
+        raise _integrity_error("canonical text object is absent", reference) from None
     except OSError as error:
         raise i.EvidenceReadError(
             "unavailable",
@@ -200,12 +200,12 @@ def _verified_text(
     try:
         canonical = raw.decode("utf-8")
     except UnicodeDecodeError:
-        raise _integrity_error("canonical text is not UTF-8", span_id) from None
+        raise _integrity_error("canonical text is not UTF-8", reference) from None
     if not 0 <= start <= end <= len(canonical):
-        raise _integrity_error("span offsets lie outside the canonical text", span_id)
+        raise _integrity_error("span offsets lie outside the canonical text", reference)
     text = canonical[start:end]
     if content_sha256(text) != text_hash:
-        raise _integrity_error("recomputed text hash differs from the stored hash", span_id)
+        raise _integrity_error("recomputed text hash differs from the stored hash", reference)
     return text
 
 
@@ -252,18 +252,19 @@ def get_citation(
     # must not start another backend operation, even if the store is fast.
     _remaining(deadline)
     span_id, start, end = str(row[0]), int(row[1]), int(row[2])
+    reference = f"span {span_id}"
     if len(rows) > 1:
-        raise _integrity_error("more than one stored span answers the reference", span_id)
+        raise _integrity_error("more than one stored span answers the reference", reference)
     # Reject before Citation or CoverageNote. The value stays out of the log and the message.
     if not isinstance(company.cik, str) or _CIK.fullmatch(company.cik) is None:
-        raise _integrity_error("served cohort issuer is not a 10-digit CIK", span_id)
+        raise _integrity_error("served cohort issuer is not a 10-digit CIK", reference)
     text = _verified_text(
         texts,
         str(row[7]),
         start,
         end,
         str(row[3]),
-        span_id,
+        reference,
         timeout=_remaining(deadline),
         deadline=deadline,
     )
