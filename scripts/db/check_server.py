@@ -9,7 +9,8 @@ hosted migration workflow runs this check first and stops before
 ``migrate.py`` touches anything.
 
 The check only reads catalog views. It prints the server version, the
-pgvector version the server offers, and the connected role, never the URL.
+pgvector version (installed, or else the one the server would install) and the
+connected role, never the URL.
 
 Exit codes
 ----------
@@ -44,6 +45,7 @@ SERVER_QUERY = """
 SELECT current_setting('server_version_num')::int,
        current_setting('server_version'),
        current_user,
+       (SELECT extversion FROM pg_extension WHERE extname = 'vector'),
        (SELECT default_version FROM pg_available_extensions WHERE name = 'vector')
 """
 
@@ -53,7 +55,12 @@ class ServerFacts:
     version_num: int
     version: str
     role: str
+    #: The installed pgvector if the database already has the extension, else
+    #: the version ``CREATE EXTENSION`` would install. ``0003`` runs
+    #: ``CREATE EXTENSION IF NOT EXISTS`` and then checks the installed
+    #: version, so an old installed copy is what matters, not the default.
     vector_version: str | None
+    vector_installed: bool = False
 
 
 def parse_version(text: str) -> tuple[int, ...]:
@@ -85,9 +92,8 @@ def problems(
     if facts.vector_version is None:
         found.append(f"the server does not offer the pgvector extension (need {wanted} or later)")
     elif parse_version(facts.vector_version) < min_vector:
-        found.append(
-            f"pgvector {wanted} or later is required; the server offers {facts.vector_version}"
-        )
+        where = "the database has" if facts.vector_installed else "the server offers"
+        found.append(f"pgvector {wanted} or later is required; {where} {facts.vector_version}")
     return found
 
 
@@ -95,12 +101,14 @@ def read_facts(conn: psycopg.Connection[tuple[object, ...]]) -> ServerFacts:
     row = conn.execute(SERVER_QUERY).fetchone()
     if row is None:  # pragma: no cover - a SELECT without FROM always returns a row
         raise RuntimeError("the server returned no row for the version query")
-    version_num, version, role, vector_version = row
+    version_num, version, role, installed, offered = row
+    vector_version = installed if installed is not None else offered
     return ServerFacts(
         version_num=int(str(version_num)),
         version=str(version),
         role=str(role),
         vector_version=None if vector_version is None else str(vector_version),
+        vector_installed=installed is not None,
     )
 
 
@@ -137,7 +145,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         facts = read_facts(conn)
 
     print(f"server: PostgreSQL {facts.version}")
-    print(f"pgvector offered: {facts.vector_version or 'none'}")
+    label = "pgvector installed" if facts.vector_installed else "pgvector offered"
+    print(f"{label}: {facts.vector_version or 'none'}")
     print(f"connected role: {facts.role}")
 
     found = problems(facts)

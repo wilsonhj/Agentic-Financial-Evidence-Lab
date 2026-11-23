@@ -18,8 +18,10 @@ pooled URL goes through PgBouncer in transaction mode, which drops the session
 advisory lock `migrate.py` holds while it applies.
 
 `check_server.py` refuses the database unless it is PostgreSQL 18 or later and
-offers pgvector 0.8.2 or later. On an older server, `0001` and `0002` would
-apply before `0003` failed, leaving a half-migrated database.
+has pgvector 0.8.2 or later: the installed version if the extension already
+exists, otherwise the version the server would install. On an older server,
+`0001` and `0002` would apply before `0003` failed, leaving a half-migrated
+database.
 
 ## GitHub Actions (the normal path)
 
@@ -63,8 +65,8 @@ python scripts/db/migrate.py --check
 unset FEL_DATABASE_URL
 ```
 
-`check_server.py` prints the server version, the pgvector version on offer and
-the connected role. Stop if it exits 6.
+`check_server.py` prints the server version, the pgvector version (installed
+or offered) and the connected role. Stop if it exits 6.
 
 ## Exit codes
 
