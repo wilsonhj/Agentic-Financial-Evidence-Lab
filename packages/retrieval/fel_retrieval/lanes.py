@@ -8,17 +8,17 @@ mapped to ``financial_fact`` provenance) and ``tables`` (FTS restricted to
 
 Every lane enforces the same fail-closed guards, so no lane can surface
 evidence a downstream candidate insert would reject
-(``fel_guard_candidate`` in ``0003_retrieval_core.sql``):
+(``fel_guard_candidate``, updated in ``0012_acceptance_time_and_public_read.sql``):
 
 * **Index pin.** Every row is filtered by the pinned ``index_version_id`` and
   all item joins stay composite-FK-consistent with that pin — the dense lane
   joins ``retrieval_embeddings`` to ``retrieval_items`` on
   ``(id, index_version_id, content_sha256)``, the exact tuple the schema's
   foreign key uses, so cross-index rows can never join through.
-* **Cutoff.** Candidates are restricted to ``documents.published_at <= as_of``
-  (the same column ``fel_guard_candidate`` checks). Anything published after
-  the cutoff is dropped; omitting the predicate would let cross-cutoff
-  evidence leak, so it is always present.
+* **Cutoff.** Candidates use the same publication bound as the candidate
+  guard: ``GREATEST(COALESCE(public_at, published_at), published_at) <= as_of``.
+  Known publication instants tighten the filing-date bound; legacy rows with
+  no instant retain the filing-date fallback. The predicate is unconditional.
 * **Corpus pin.** When a ``corpus_version_id`` is supplied, rows are further
   restricted to document versions listed in that corpus version.
 * **Filters.** Entity, document, form and period filters are pushed into SQL
@@ -122,7 +122,7 @@ def _filter_clauses(query: LaneQuery, *, kind: str | None) -> tuple[list[str], l
     """
     clauses: list[str] = [
         "ri.index_version_id = %s",
-        "d.published_at <= %s",
+        "GREATEST(COALESCE(d.public_at, d.published_at), d.published_at) <= %s",
     ]
     params: list[Any] = [query.index_version_id, query.as_of]
 
