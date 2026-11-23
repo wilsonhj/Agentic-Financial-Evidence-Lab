@@ -35,6 +35,9 @@ class FilingRef:
     form: str
     filed_on: date
     primary_document_url: str | None
+    acceptance_datetime: str | None = None
+    """The SEC ``acceptanceDateTime`` string exactly as listed, or None. Only
+    ``publication.derive_publication`` interprets it."""
 
 
 def _recent_lists(payload: dict[str, object]) -> dict[str, list[object]]:
@@ -45,9 +48,25 @@ def _recent_lists(payload: dict[str, object]) -> dict[str, list[object]]:
     if not isinstance(recent, dict):
         raise DiscoveryError("submissions payload is missing 'filings.recent'")
     out: dict[str, list[object]] = {}
-    for field in ("accessionNumber", "form", "filingDate", "primaryDocument"):
+    for field in (
+        "accessionNumber",
+        "form",
+        "filingDate",
+        "primaryDocument",
+        "acceptanceDateTime",
+    ):
         value = recent.get(field, [])
         out[field] = list(value) if isinstance(value, list) else []
+    # Missing acceptance metadata is supported by legacy fixtures. A present
+    # array must align exactly: dropping one entry can shift every later time
+    # onto a different accession, so partial arrays cannot be used safely.
+    if "acceptanceDateTime" in recent:
+        if not isinstance(recent["acceptanceDateTime"], list):
+            raise DiscoveryError("submissions acceptanceDateTime must be a list")
+        if len(out["acceptanceDateTime"]) != len(out["accessionNumber"]):
+            raise DiscoveryError(
+                "submissions acceptanceDateTime and accessionNumber lengths differ"
+            )
     return out
 
 
@@ -64,6 +83,7 @@ def discover_filings(
     form_list = recent["form"]
     dates = recent["filingDate"]
     documents = recent["primaryDocument"]
+    acceptances = recent["acceptanceDateTime"]
     refs: list[FilingRef] = []
     for index, accession in enumerate(accessions):
         form = str(form_list[index]) if index < len(form_list) else ""
@@ -72,11 +92,12 @@ def discover_filings(
         filed_text = str(dates[index]) if index < len(dates) else ""
         try:
             filed_on = date.fromisoformat(filed_text)
-        except ValueError as exc:
-            raise DiscoveryError(
-                f"filing {accession!r} has unparseable filingDate {filed_text!r}"
-            ) from exc
+        except ValueError:
+            raise DiscoveryError("submissions entry has an unparseable filingDate") from None
         primary = str(documents[index]) if index < len(documents) and documents[index] else None
+        accepted = acceptances[index] if index < len(acceptances) else None
+        if accepted is not None and not isinstance(accepted, str):
+            raise DiscoveryError("submissions entry has a non-string acceptanceDateTime") from None
         url = None
         if primary:
             accession_nodash = str(accession).replace("-", "")
@@ -91,9 +112,31 @@ def discover_filings(
                 form=form,
                 filed_on=filed_on,
                 primary_document_url=url,
+                acceptance_datetime=accepted or None,
             )
         )
     return refs
+
+
+def fetch_job_payload(ref: FilingRef) -> dict[str, object]:
+    """The ``sec_filing_fetch`` payload for one discovered filing."""
+    return {
+        "cik": ref.cik,
+        "accession": ref.accession,
+        "form": ref.form,
+        "filed_on": ref.filed_on.isoformat(),
+        "url": ref.primary_document_url,
+        "acceptance_datetime": ref.acceptance_datetime,
+    }
+
+
+def _enqueue_order(ref: FilingRef) -> tuple[date, bool, str, str]:
+    return (
+        ref.filed_on,
+        ref.acceptance_datetime is None,
+        ref.acceptance_datetime or "",
+        ref.accession,
+    )
 
 
 def run_discovery_job(
@@ -106,23 +149,23 @@ def run_discovery_job(
     """Handle a ``sec_discovery`` job: list filings, enqueue idempotent fetches.
 
     Fetch jobs are deduplicated per accession via the queue's idempotency
-    key, so re-running discovery never duplicates work.
+    key, so re-running discovery never duplicates work. Jobs are enqueued
+    in (filing date, acceptance time, accession) order, whatever order the
+    index lists them in, so that on one worker an original is ingested before
+    its amendment. Acceptance times are compared as the SEC strings, without
+    interpreting them, and a filing without one comes last on its date. That
+    is best effort only: ``backfill.repair_restatement_links`` is what makes
+    links independent of ingestion order.
     """
     cik = str(payload.get("cik", ""))
     forms_value = payload.get("forms")
     forms = frozenset(str(f) for f in forms_value) if isinstance(forms_value, list) else None
     refs = discover_filings(client, cik, forms=forms)
-    for ref in refs:
+    for ref in sorted(refs, key=_enqueue_order):
         queue.enqueue(
             conn,
             kind=JOB_KIND_SEC_FILING_FETCH,
-            payload={
-                "cik": ref.cik,
-                "accession": ref.accession,
-                "form": ref.form,
-                "filed_on": ref.filed_on.isoformat(),
-                "url": ref.primary_document_url,
-            },
+            payload=fetch_job_payload(ref),
             queue=job_queue,
             idempotency_key=f"sec-fetch|{ref.accession}",
         )

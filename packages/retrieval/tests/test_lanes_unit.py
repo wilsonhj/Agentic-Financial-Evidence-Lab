@@ -77,7 +77,7 @@ def test_dense_lane_pins_index_and_cutoff() -> None:
     sql, params = conn.select_call()
     # Pin + cutoff predicates present and parameterized.
     assert "ri.index_version_id = %s" in sql
-    assert "d.published_at <= %s" in sql
+    assert "GREATEST(COALESCE(d.public_at, d.published_at), d.published_at) <= %s" in sql
     # Composite-FK-consistent join keeps rows inside the pinned index.
     assert "ri.index_version_id = re.index_version_id" in sql
     assert "ri.content_sha256 = re.content_sha256" in sql
@@ -110,7 +110,7 @@ def test_fts_lane_pins_cutoff_and_kind(lane_fn: Any, expected_kind: str | None) 
     lane_fn(conn, _base_query())
     sql, params = conn.select_call()
     assert "ri.index_version_id = %s" in sql
-    assert "d.published_at <= %s" in sql
+    assert "GREATEST(COALESCE(d.public_at, d.published_at), d.published_at) <= %s" in sql
     assert "ri.search_vector @@ q.query" in sql
     assert "ORDER BY score DESC, ri.id ASC" in sql
     assert INDEX_ID in params

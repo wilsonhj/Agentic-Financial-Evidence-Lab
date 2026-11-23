@@ -1,0 +1,403 @@
+"""The one publication-time rule (ADR-0034 decision 4, Amendment 1; #393).
+
+Pure tests, no database. Expected instants are written as literal UTC so a
+wrong Eastern offset cannot cancel out against the implementation's own
+timezone arithmetic.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from fel_workers.ingestion import pipeline, restatement
+from fel_workers.ingestion.backfill import _backfill_publication
+from fel_workers.ingestion.discovery import FilingRef
+from fel_workers.ingestion.publication import (
+    UNKNOWN_PUBLICATION,
+    Publication,
+    derive_publication,
+)
+from fel_workers.ingestion.restatement import RepairReport, repair_restatement_links
+
+# case | acceptanceDateTime | filing date | expected. ``acceptance`` means public
+# at accepted_at; an instant means basis next_session_open at that UTC instant.
+# 2024: EST until 10 March 07:00Z, EDT until 3 November 06:00Z.
+CASES = """
+same day, 16:14 ET                 | 2024-03-06T21:14:09.000Z  | 2024-03-06 | acceptance
+17:29:59 ET keeps its date         | 2024-03-06T22:29:59Z      | 2024-03-06 | acceptance
+17:30:01 ET, next-day date         | 2024-03-06T22:30:01Z      | 2024-03-07 | 2024-03-07T11:00Z
+20:00 ET is the next UTC day       | 2024-03-07T01:00:00Z      | 2024-03-07 | 2024-03-07T11:00Z
+after-hours Form 4 keeps its date  | 2024-03-07T02:45:00Z      | 2024-03-06 | acceptance
+time of day alone decides nothing  | 2024-03-06T22:45:00Z      | 2024-03-06 | acceptance
+Friday evening to Monday           | 2024-03-01T23:05:00Z      | 2024-03-04 | 2024-03-04T11:00Z
+Friday to Tuesday over a holiday   | 2024-05-24T22:05:00Z      | 2024-05-28 | 2024-05-28T10:00Z
+weekend date is not rolled         | 2024-03-09T15:00:00Z      | 2024-03-09 | acceptance
+filing date before acceptance      | 2024-03-06T15:00:00Z      | 2024-03-04 | acceptance
+explicit offset is honoured        | 2024-03-06T16:14:09-05:00 | 2024-03-06 | acceptance
+EST day before spring forward      | 2024-03-08T23:00:00Z      | 2024-03-09 | 2024-03-09T11:00Z
+06:00 on spring-forward day is EDT | 2024-03-09T23:00:00Z      | 2024-03-10 | 2024-03-10T10:00Z
+Friday EST to Monday EDT           | 2024-03-08T23:00:00Z      | 2024-03-11 | 2024-03-11T10:00Z
+23:59:59 EST before spring forward | 2024-03-10T04:59:59Z      | 2024-03-10 | 2024-03-10T10:00Z
+00:00 EST on spring-forward day    | 2024-03-10T05:00:00Z      | 2024-03-10 | acceptance
+23:59:59 EDT after spring forward  | 2024-03-11T03:59:59Z      | 2024-03-11 | 2024-03-11T10:00Z
+00:00 EDT after spring forward     | 2024-03-11T04:00:00Z      | 2024-03-11 | acceptance
+EDT day before fall back           | 2024-11-01T22:00:00Z      | 2024-11-02 | 2024-11-02T10:00Z
+06:00 on fall-back day is EST      | 2024-11-02T22:00:00Z      | 2024-11-03 | 2024-11-03T11:00Z
+Friday EDT to Monday EST           | 2024-11-01T22:00:00Z      | 2024-11-04 | 2024-11-04T11:00Z
+23:59:59 EDT before fall back      | 2024-11-03T03:59:59Z      | 2024-11-03 | 2024-11-03T11:00Z
+00:00 EDT on fall-back day         | 2024-11-03T04:00:00Z      | 2024-11-03 | acceptance
+23:59:59 EST after fall back       | 2024-11-04T04:59:59Z      | 2024-11-04 | 2024-11-04T11:00Z
+00:00 EST after fall back          | 2024-11-04T05:00:00Z      | 2024-11-04 | acceptance
+23:59:59 EDT in July               | 2024-07-02T03:59:59Z      | 2024-07-02 | 2024-07-02T10:00Z
+00:00 EDT in July                  | 2024-07-02T04:00:00Z      | 2024-07-02 | acceptance
+23:59:59 EST in January            | 2024-01-10T04:59:59Z      | 2024-01-10 | 2024-01-10T11:00Z
+00:00 EST in January               | 2024-01-10T05:00:00Z      | 2024-01-10 | acceptance
+"""
+_ROWS = [[cell.strip() for cell in line.split("|")] for line in CASES.strip().splitlines()]
+
+
+@pytest.mark.parametrize(
+    ("accepted", "filed", "expected"), [r[1:] for r in _ROWS], ids=[r[0] for r in _ROWS]
+)
+def test_publication_rule(accepted: str, filed: str, expected: str) -> None:
+    result = derive_publication(accepted, date.fromisoformat(filed))
+    accepted_at = datetime.fromisoformat(accepted)
+    if expected == "acceptance":
+        assert result == Publication(accepted_at, accepted_at, "acceptance", "second")
+    else:
+        public_at = datetime.fromisoformat(expected)
+        assert result == Publication(accepted_at, public_at, "next_session_open", "second")
+    assert result.accepted_at is not None and result.public_at is not None
+    assert result.accepted_at.utcoffset() == result.public_at.utcoffset() == timedelta(0)
+
+
+def test_missing_acceptance_time_is_date_precision_with_no_instants() -> None:
+    assert derive_publication(None, date(2024, 3, 6)) is UNKNOWN_PUBLICATION
+    assert UNKNOWN_PUBLICATION == Publication(None, None, None, "date")
+
+
+@pytest.mark.parametrize(
+    "accepted",
+    ["2024-03-06T16:14:09", "2024-03-06 16:14:09", "2024-03-06", "20240306161409", "", "soon"],
+)
+def test_timestamps_without_an_offset_are_rejected_not_assumed(accepted: str) -> None:
+    with pytest.raises(ValueError, match="acceptanceDateTime") as excinfo:
+        derive_publication(accepted, date(2024, 3, 6))
+    assert not accepted or accepted not in str(excinfo.value), "untrusted input was echoed"
+
+
+def test_wrong_argument_types_are_rejected() -> None:
+    aware = datetime(2024, 3, 6, 21, 14, 9, tzinfo=UTC)
+    with pytest.raises(TypeError, match="filing_date"):
+        derive_publication("2024-03-06T21:14:09Z", aware)
+    with pytest.raises(TypeError, match="acceptanceDateTime"):
+        derive_publication(aware, date(2024, 3, 6))  # type: ignore[arg-type]
+
+
+def test_rule_invariants_hold_for_every_hour_of_a_year() -> None:
+    """Never public before acceptance, never before the filing date began in
+    New York, and the basis says exactly which branch produced the instant."""
+    eastern = ZoneInfo("America/New_York")
+    instant = datetime(2024, 1, 1, 0, 30, tzinfo=UTC)
+    while instant.year == 2024:
+        local_date = instant.astimezone(eastern).date()
+        for offset in range(-3, 5):
+            filed = local_date + timedelta(days=offset)
+            result = derive_publication(instant.isoformat(), filed)
+            assert result.accepted_at == instant and result.public_at is not None
+            assert result.public_at >= instant
+            public_local = result.public_at.astimezone(eastern)
+            assert public_local.date() >= filed
+            if offset > 0:
+                assert result.public_at_basis == "next_session_open"
+                assert (public_local.date(), public_local.hour, public_local.minute) == (
+                    filed,
+                    6,
+                    0,
+                )
+                assert public_local.second == 0 and result.public_at > instant
+            else:
+                assert (result.public_at_basis, result.public_at) == ("acceptance", instant)
+        instant += timedelta(hours=1)
+
+
+class _Read:
+    """Rows already stored. The SELECT cursor does not count as a write."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def execute(self, sql: str, params: object = None) -> _Read:
+        return self
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self._rows
+
+    def __enter__(self) -> _Read:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+
+class _StoredRows:
+    """The documents read ``_backfill_publication`` takes; no database."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+        self.statements: list[str] = []
+
+    def cursor(self, *, row_factory: object = None) -> _Read:
+        return _Read(self._rows)
+
+    def execute(self, sql: str, params: object = None) -> _Read:
+        self.statements.append(sql)
+        return _Read([])
+
+
+def test_backfill_records_unparseable_acceptance_and_not_a_missing_one() -> None:
+    """An acceptance time that cannot be parsed is a conflict. A missing one is not.
+
+    The raw ``acceptanceDateTime`` stays out of the report. Neither row is written.
+    """
+    filed = date(2026, 5, 12)
+    filed_at = datetime.combine(filed, time(0), tzinfo=UTC)
+    stored = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)
+    bad_offset = "0009999997-26-000010"
+    garbage = "0009999997-26-000020"
+    missing = "0009999997-26-000030"
+    rows = [
+        {
+            "id": "bad-offset",
+            "accession": bad_offset,
+            "filed_at": filed_at,
+            "accepted_at": None,
+            "public_at": None,
+            "public_at_basis": None,
+            "timestamp_precision": "date",
+        },
+        {
+            "id": "garbage",
+            "accession": garbage,
+            "filed_at": filed_at,
+            "accepted_at": stored,
+            "public_at": stored,
+            "public_at_basis": "acceptance",
+            "timestamp_precision": "second",
+        },
+        {
+            "id": "missing",
+            "accession": missing,
+            "filed_at": filed_at,
+            "accepted_at": None,
+            "public_at": None,
+            "public_at_basis": None,
+            "timestamp_precision": "date",
+        },
+    ]
+    before = [dict(row) for row in rows]
+    refs = {
+        bad_offset: FilingRef(
+            "0009999997", bad_offset, "8-K", filed, None, "2026-05-12T09:00:00+25:00"
+        ),
+        garbage: FilingRef("0009999997", garbage, "8-K", filed, None, "not-a-timestamp"),
+        missing: FilingRef("0009999997", missing, "8-K", filed, None, None),
+    }
+    conn = _StoredRows(rows)
+    updated, conflicts = _backfill_publication(conn, refs, "entity-1")
+    assert updated == 0
+    assert conflicts == (bad_offset, garbage)
+    assert missing not in conflicts
+    assert rows == before
+    assert conn.statements == []
+    for raw in ("2026-05-12T09:00:00+25:00", "not-a-timestamp"):
+        assert raw not in conflicts
+
+
+@pytest.mark.parametrize(
+    "accepted",
+    [
+        "0001-01-01T00:00:00+05:00",  # UTC conversion underflows.
+        "9999-12-31T23:59:59-05:00",  # UTC conversion overflows.
+        "0001-01-01T00:00:00Z",  # UTC fits, but the Eastern date underflows.
+    ],
+)
+def test_boundary_acceptance_is_a_static_value_error_and_backfill_conflict(accepted: str) -> None:
+    filed = date(2026, 5, 12)
+    with pytest.raises(ValueError, match="acceptanceDateTime") as excinfo:
+        derive_publication(accepted, filed)
+    assert accepted not in str(excinfo.value)
+    accession = "0009999997-26-000040"
+    row = {
+        "id": "boundary",
+        "accession": accession,
+        "filed_at": datetime.combine(filed, time(0), tzinfo=UTC),
+        "accepted_at": None,
+        "public_at": None,
+        "public_at_basis": None,
+        "timestamp_precision": "date",
+    }
+    conn = _StoredRows([row])
+    before = dict(row)
+    refs = {accession: FilingRef("0009999997", accession, "8-K", filed, None, accepted)}
+    assert _backfill_publication(conn, refs, "entity-1") == (0, (accession,))
+    assert row == before and conn.statements == []
+
+
+@pytest.mark.parametrize("accepted", ["0001-01-01T12:00:00Z", "9999-12-31T12:00:00Z"])
+def test_representable_boundary_years_remain_valid(accepted: str) -> None:
+    instant = datetime.fromisoformat(accepted)
+    assert derive_publication(accepted, instant.date()) == Publication(
+        instant, instant, "acceptance", "second"
+    )
+
+
+class _NoopTxn:
+    def __enter__(self) -> _NoopTxn:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+
+class _Result:
+    def __init__(self, rows: list[tuple[Any, ...]], *, rowcount: int = 1) -> None:
+        self._rows = rows
+        self.rowcount = rowcount
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return self._rows
+
+    def fetchone(self) -> tuple[Any, ...] | None:
+        return self._rows[0] if self._rows else None
+
+
+class _FakeRepairConn:
+    def __init__(self, rows: list[tuple[Any, ...]]) -> None:
+        self._rows = rows
+        self.executed: list[tuple[str, object]] = []
+
+    def transaction(self) -> _NoopTxn:
+        return _NoopTxn()
+
+    def execute(self, sql: str, params: object = None) -> _Result:
+        self.executed.append((sql, params))
+        return _Result(self._rows)
+
+
+def test_repair_restatement_links_skips_retained_pins_and_keeps_pin_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pure-Python check of RepairReport accounting, SQL pin exclusion, and defense-in-depth."""
+    assert "corpus_version_documents" in restatement._REPAIR_SQL
+    assert "cv.status IN ('active', 'superseded')" in restatement._REPAIR_SQL
+    assert "AND NOT d.is_pinned" in restatement._REPAIR_SQL
+
+    locked: list[bool] = []
+    guarded_versions: list[tuple[str, ...]] = []
+    monkeypatch.setattr(restatement, "lock_corpus_mutations", lambda _conn: locked.append(True))
+    monkeypatch.setattr(
+        restatement,
+        "reject_retained_pin_changes",
+        lambda _conn, *, document_version_ids=(): guarded_versions.append(
+            tuple(document_version_ids)
+        ),
+    )
+    conn = _FakeRepairConn(
+        [
+            ("ver-b", True, False, False),
+            ("ver-c2", False, False, False),
+            ("ver-d", False, True, False),
+            ("ver-c1-pinned", None, None, True),
+        ]
+    )
+
+    report = repair_restatement_links(conn, entity_id="entity-1")  # type: ignore[arg-type]
+
+    assert locked == [True]
+    assert guarded_versions == [("ver-b", "ver-c2", "ver-d")]
+    assert report == RepairReport(
+        linked=1,
+        relinked=1,
+        cleared=1,
+        document_version_ids=("ver-b", "ver-c2", "ver-d"),
+        skipped_pinned_version_ids=("ver-c1-pinned",),
+    )
+    assert RepairReport().skipped_pinned_version_ids == ()
+
+
+class _FakePublishConn:
+    def __init__(self, issuers: list[tuple[str]], *, fail_activate: bool = False) -> None:
+        self._issuers = issuers
+        self._fail_activate = fail_activate
+
+    def transaction(self) -> _NoopTxn:
+        return _NoopTxn()
+
+    def execute(self, sql: str, params: object = None) -> _Result:
+        if "SELECT status FROM corpus_versions" in sql:
+            return _Result([("draft",)])
+        if "SELECT DISTINCT d.entity_id" in sql:
+            return _Result(self._issuers)
+        if "SET is_active = true" in sql and self._fail_activate:
+            return _Result([], rowcount=0)
+        return _Result([], rowcount=1)
+
+
+def test_publish_corpus_version_aggregates_and_logs_repairs(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(pipeline, "lock_corpus_mutations", lambda _conn: None)
+    reports = {
+        "ent-1": RepairReport(
+            linked=2,
+            relinked=0,
+            cleared=1,
+            document_version_ids=("v-2",),
+            skipped_pinned_version_ids=("v-pin-1",),
+        ),
+        "ent-2": RepairReport(
+            linked=0,
+            relinked=3,
+            cleared=0,
+            document_version_ids=("v-1",),
+        ),
+    }
+    monkeypatch.setattr(
+        pipeline, "repair_restatement_links", lambda _conn, *, entity_id: reports[entity_id]
+    )
+    conn = _FakePublishConn([("ent-1",), ("ent-2",)])
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        pipeline.publish_corpus_version(conn, "corpus-1")  # type: ignore[arg-type]
+
+    assert (
+        "corpus publication corpus-1 repaired restates: 2 linked, 3 relinked, 1 cleared"
+        " in versions ['v-1', 'v-2']; skipped_pinned=['v-pin-1']"
+    ) in caplog.text
+
+    # No-op repair produces no log entry.
+    monkeypatch.setattr(
+        pipeline, "repair_restatement_links", lambda _conn, *, entity_id: RepairReport()
+    )
+    caplog.clear()
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        pipeline.publish_corpus_version(conn, "corpus-2")  # type: ignore[arg-type]
+    assert caplog.text == ""
+
+    # Failed transaction never logs a committed repair.
+    monkeypatch.setattr(
+        pipeline,
+        "repair_restatement_links",
+        lambda _conn, *, entity_id: RepairReport(linked=1, document_version_ids=("v-x",)),
+    )
+    failing_conn = _FakePublishConn([("ent-1",)], fail_activate=True)
+    caplog.clear()
+    with caplog.at_level("INFO", logger="fel_workers.ingestion.pipeline"):
+        with pytest.raises(ValueError, match="does not exist or is not a draft"):
+            pipeline.publish_corpus_version(failing_conn, "corpus-3")  # type: ignore[arg-type]
+    assert caplog.text == ""

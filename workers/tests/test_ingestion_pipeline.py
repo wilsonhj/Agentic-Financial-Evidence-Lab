@@ -16,7 +16,8 @@ import psycopg
 import pytest
 
 from fel_providers.mocks import MockStorageProvider
-from fel_workers.ingestion.errors import DivergentAccessionError
+from fel_workers.ingestion import pipeline
+from fel_workers.ingestion.errors import DivergentAccessionError, NormalizationError
 from fel_workers.ingestion.parser import parse_filing
 from fel_workers.ingestion.pipeline import (
     PublishConflictError,
@@ -27,6 +28,7 @@ from fel_workers.ingestion.pipeline import (
     job_key,
     publish_corpus_version,
 )
+from fel_workers.ingestion.publication import Publication
 from fel_workers.ingestion.raw_store import content_address, store_raw_document
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -44,6 +46,11 @@ pytestmark = requires_db
 
 ENTITY = str(uuid.uuid4())
 PUBLISHED = datetime(2026, 5, 5, 16, 30, tzinfo=UTC)
+
+
+def _public(at: datetime) -> Publication:
+    """A known publication instant: restatement order needs one on both sides (#393)."""
+    return Publication(at, at, "acceptance", "second")
 
 
 def _counts(conn: psycopg.Connection) -> dict[str, int]:
@@ -179,9 +186,132 @@ def test_identical_job_rerun_is_a_noop(corpus_conn: psycopg.Connection) -> None:
     assert _counts(corpus_conn) == before, "a rerun must write nothing"
 
 
+def test_terminal_replay_needs_neither_storage_nor_parser(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage = MockStorageProvider()
+    first = _ingest(corpus_conn, storage)
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("provider/parser unavailable during replay")
+
+    monkeypatch.setattr(storage, "put", unavailable)
+    monkeypatch.setattr(pipeline, "parse_filing", unavailable)
+    replay = _ingest(corpus_conn, storage)
+    assert replay.status == "noop" and replay.document_version_id == first.document_version_id
+
+
+def test_preparation_precedes_the_corpus_lock_and_database_writes(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage = MockStorageProvider()
+    put = storage.put
+    parse = pipeline.parse_filing
+    calls: list[str] = []
+
+    def assert_unlocked() -> None:
+        assert corpus_conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+        with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as observer:
+            assert observer.execute(
+                "SELECT count(*) FROM pg_locks WHERE pid = %s"
+                " AND (locktype = 'advisory' OR mode = 'RowExclusiveLock')",
+                (corpus_conn.info.backend_pid,),
+            ).fetchone() == (0,)
+
+    def checked_put(key: str, data: bytes) -> str:
+        assert_unlocked()
+        calls.append(key)
+        return put(key, data)
+
+    def checked_parse(*args, **kwargs):
+        assert_unlocked()
+        calls.append("parse")
+        return parse(*args, **kwargs)
+
+    monkeypatch.setattr(storage, "put", checked_put)
+    monkeypatch.setattr(pipeline, "parse_filing", checked_parse)
+    assert _ingest(corpus_conn, storage).status == "succeeded"
+    assert len(calls) == 3 and calls[0].startswith("raw/")
+    assert calls[1] == "parse" and calls[2].startswith("text/")
+
+
+@pytest.mark.parametrize("failed_prefix", ["raw/", "text/"])
+def test_storage_failure_leaves_no_ingestion_rows(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch, failed_prefix: str
+) -> None:
+    storage = MockStorageProvider()
+    put = storage.put
+
+    def fail_storage(key: str, data: bytes) -> str:
+        if key.startswith(failed_prefix):
+            raise RuntimeError("synthetic storage failure")
+        return put(key, data)
+
+    monkeypatch.setattr(storage, "put", fail_storage)
+    with pytest.raises(RuntimeError, match="synthetic storage failure"):
+        _ingest(corpus_conn, storage)
+    assert set(_counts(corpus_conn).values()) == {0}
+
+
+def test_divergent_accession_takes_precedence_over_prepared_parse_failure(
+    corpus_conn: psycopg.Connection,
+) -> None:
+    storage = MockStorageProvider()
+    first = _ingest(corpus_conn, storage)
+    malformed = _ingest(corpus_conn, storage, raw=b"")
+    assert malformed.status == "quarantined"
+    assert malformed.reason_code == "DIVERGENT_ACCESSION_CONTENT"
+    assert malformed.document_id == first.document_id
+    assert _counts(corpus_conn)["document_versions"] == 1
+
+
+@pytest.mark.parametrize("failed_prefix", ["raw/", "text/"])
+def test_concurrent_terminal_winner_supersedes_preparation_storage_failure(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch, failed_prefix: str
+) -> None:
+    storage = MockStorageProvider()
+    put = storage.put
+    winner = []
+
+    def fail_after_winner(key: str, data: bytes) -> str:
+        if key.startswith(failed_prefix):
+            with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as other:
+                other.execute("SET ROLE fel_worker")
+                winner.append(_ingest(other, MockStorageProvider()))
+            raise RuntimeError("losing worker's storage is unavailable")
+        return put(key, data)
+
+    monkeypatch.setattr(storage, "put", fail_after_winner)
+    replay = _ingest(corpus_conn, storage)
+    assert len(winner) == 1 and winner[0].status == "succeeded"
+    assert replay.status == "noop" and replay.document_version_id == winner[0].document_version_id
+    assert _counts(corpus_conn)["ingestion_runs"] == 1
+
+
+def test_normalization_quarantine_precedes_prepared_canonical_storage_failure(
+    corpus_conn: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    storage = MockStorageProvider()
+    put = storage.put
+
+    def fail_canonical(key: str, data: bytes) -> str:
+        if key.startswith("text/"):
+            raise RuntimeError("canonical storage unavailable")
+        return put(key, data)
+
+    def bad_numeric(*args, **kwargs):
+        raise NormalizationError("EMPTY_FACT_VALUE", "synthetic invalid numeric source")
+
+    monkeypatch.setattr(storage, "put", fail_canonical)
+    monkeypatch.setattr(pipeline, "normalize_facts", bad_numeric)
+    outcome = _ingest(corpus_conn, storage)
+    assert outcome.status == "quarantined" and outcome.reason_code == "EMPTY_FACT_VALUE"
+    assert _counts(corpus_conn)["document_versions"] == 0
+
+
 def test_restatement_links_across_document_versions(corpus_conn: psycopg.Connection) -> None:
     storage = MockStorageProvider()
-    _ingest(corpus_conn, storage)
+    _ingest(corpus_conn, storage, publication=_public(PUBLISHED))
     # A later synthetic filing restates consolidated revenue (1,250 -> 1,300).
     amended = (
         fixture_bytes("synthetic_10q.html")
@@ -202,6 +332,7 @@ def test_restatement_links_across_document_versions(corpus_conn: psycopg.Connect
         raw=amended,
         accession="0009999999-26-000011",
         published_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
+        publication=_public(datetime(2026, 6, 1, 9, 0, tzinfo=UTC)),
     )
     assert outcome.status == "succeeded"
     rows = corpus_conn.execute(
@@ -403,10 +534,13 @@ def test_concurrent_identical_jobs_converge_without_unique_violation(
     assert run_status is not None and run_status[0] == "succeeded"
 
 
-def test_publish_race_surfaces_domain_error_not_db_error(
+def test_publish_race_with_lockless_writer_surfaces_domain_error_not_db_error(
     corpus_conn: psycopg.Connection,
 ) -> None:
-    """Finding 11: a publisher that loses the single-active race gets
+    """Finding 11, as narrowed by #393: real publishers serialize on the
+    corpus lock (see the next test), so the single-active race can only be
+    lost to a writer that skips that lock. The competitor here is such a
+    writer: a raw INSERT of an active version. The publisher gets
     PublishConflictError (documented domain error), and its transaction
     rolls back cleanly — the competing version stays active."""
     outcome = _ingest(corpus_conn, MockStorageProvider())
@@ -459,7 +593,7 @@ def test_publish_race_surfaces_domain_error_not_db_error(
         thread.join(timeout=30)
     assert not failures, f"raw database errors escaped the publish path: {failures!r}"
     assert len(conflicts) == 1, "the losing publisher must see PublishConflictError"
-    assert "publish race" in str(conflicts[0])
+    assert "does not take the corpus lock" in str(conflicts[0])
     assert active_corpus_version(corpus_conn) == competitor
     draft_status = corpus_conn.execute(
         "SELECT status FROM corpus_versions WHERE id = %s", (draft,)
@@ -469,6 +603,55 @@ def test_publish_race_surfaces_domain_error_not_db_error(
     ), "the losing publish must roll back completely"
 
 
+def test_two_publishers_serialize_on_the_corpus_lock_and_the_later_wins(
+    corpus_conn: psycopg.Connection,
+) -> None:
+    """Two real publish_corpus_version callers on separate connections: the
+    second waits on the corpus lock while the first is uncommitted, neither
+    raises, and the later publish leaves its version as the only active one
+    with the earlier version superseded."""
+    outcome = _ingest(corpus_conn, MockStorageProvider())
+    assert outcome.document_version_id is not None
+    first = create_corpus_version(
+        corpus_conn, label="first", document_version_ids=[outcome.document_version_id]
+    )
+    second = create_corpus_version(
+        corpus_conn, label="second", document_version_ids=[outcome.document_version_id]
+    )
+    url = os.environ["TEST_DATABASE_URL"]
+    failures: list[BaseException] = []
+
+    def publish_second() -> None:
+        try:
+            with psycopg.connect(url, autocommit=True) as conn:
+                publish_corpus_version(conn, second)
+        except BaseException as exc:  # noqa: BLE001 — recorded for assertion
+            failures.append(exc)
+
+    thread = threading.Thread(target=publish_second)
+    with psycopg.connect(url, autocommit=True) as holder:
+        # The first publisher holds the corpus lock until the outer block commits.
+        with holder.transaction():
+            publish_corpus_version(holder, first)
+            thread.start()
+            blocked = _wait_for_publish_lock(corpus_conn, thread)
+            still_waiting = thread.is_alive()
+        thread.join(timeout=30)
+    assert not thread.is_alive()
+    assert not failures, f"serialized publishers must not fail: {failures!r}"
+    assert blocked and still_waiting, "the second publisher did not wait for the first"
+    assert active_corpus_version(corpus_conn) == second
+    statuses = dict(
+        corpus_conn.execute(
+            "SELECT id::text, status FROM corpus_versions WHERE id = ANY(%s::uuid[])",
+            ([first, second],),
+        ).fetchall()
+    )
+    assert statuses == {first: "superseded", second: "active"}
+    active = corpus_conn.execute("SELECT count(*) FROM corpus_versions WHERE is_active").fetchone()
+    assert active == (1,)
+
+
 def test_restatement_targets_latest_parsed_version_total_order(
     corpus_conn: psycopg.Connection,
 ) -> None:
@@ -476,7 +659,7 @@ def test_restatement_targets_latest_parsed_version_total_order(
     facts come from the LATEST parsed version only, with a total-order
     tiebreaker (created_at DESC, id DESC) when created_at ties."""
     storage = MockStorageProvider()
-    first = _ingest(corpus_conn, storage)
+    first = _ingest(corpus_conn, storage, publication=_public(PUBLISHED))
     assert first.status == "succeeded"
     fact_row = corpus_conn.execute(
         "SELECT fact_key, value FROM financial_facts"
@@ -531,13 +714,17 @@ def test_restatement_targets_latest_parsed_version_total_order(
     prior = _prior_canonical_facts(
         corpus_conn,
         entity_id=ENTITY,
-        published_before=datetime(2026, 6, 1, tzinfo=UTC),
+        public_before=datetime(2026, 6, 1, tzinfo=UTC),
+        document_id=str(uuid.uuid4()),
     )
     assert prior[revenue_key].fact_id == winning_fact
     assert prior[revenue_key].value == "1260000000"
     # Reruns are stable (same total order, same target).
     again = _prior_canonical_facts(
-        corpus_conn, entity_id=ENTITY, published_before=datetime(2026, 6, 1, tzinfo=UTC)
+        corpus_conn,
+        entity_id=ENTITY,
+        public_before=datetime(2026, 6, 1, tzinfo=UTC),
+        document_id=str(uuid.uuid4()),
     )
     assert again[revenue_key].fact_id == winning_fact
 
@@ -549,6 +736,7 @@ def test_restatement_targets_latest_parsed_version_total_order(
         raw=amended,
         accession="0009999999-26-000012",
         published_at=datetime(2026, 7, 1, 9, 0, tzinfo=UTC),
+        publication=_public(datetime(2026, 7, 1, 9, 0, tzinfo=UTC)),
     )
     assert outcome.status == "succeeded"
     restates = corpus_conn.execute(
@@ -628,3 +816,55 @@ def test_corpus_publication_is_atomic_single_active(corpus_conn: psycopg.Connect
             " VALUES (%s, 'race', 'active', true)",
             (str(uuid.uuid4()),),
         )
+
+
+def test_two_real_publishers_serialize_until_outer_commit(
+    corpus_conn: psycopg.Connection,
+) -> None:
+    outcome = _ingest(corpus_conn, MockStorageProvider())
+    assert outcome.document_version_id is not None
+    first, second = (
+        create_corpus_version(
+            corpus_conn, label=label, document_version_ids=[outcome.document_version_id]
+        )
+        for label in ("first-publisher", "second-publisher")
+    )
+    errors: list[BaseException] = []
+    completed = threading.Event()
+    second_pid: list[int] = []
+
+    def publish_second() -> None:
+        try:
+            with psycopg.connect(os.environ["TEST_DATABASE_URL"], autocommit=True) as conn:
+                second_pid.append(conn.info.backend_pid)
+                publish_corpus_version(conn, second)
+                completed.set()
+        except BaseException as exc:  # noqa: BLE001 — surfaced below
+            errors.append(exc)
+
+    thread = threading.Thread(target=publish_second)
+    with corpus_conn.transaction():
+        publish_corpus_version(corpus_conn, first)
+        thread.start()
+        deadline = time.monotonic() + 10
+        blocked = False
+        while time.monotonic() < deadline and thread.is_alive():
+            blocked = corpus_conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory'"
+                " AND NOT granted AND pid = ANY(%s))",
+                (second_pid,),
+            ).fetchone() == (True,)
+            if blocked:
+                break
+            thread.join(timeout=0.02)
+        first_active = active_corpus_version(corpus_conn)
+        waiting = not completed.is_set()
+    thread.join(timeout=30)
+    assert blocked and waiting, "the second real publisher must wait on the first's corpus lock"
+    assert first_active == first
+    assert not thread.is_alive() and not errors, errors
+    assert completed.is_set()
+    assert active_corpus_version(corpus_conn) == second
+    assert corpus_conn.execute(
+        "SELECT id::text, status, is_active FROM corpus_versions ORDER BY label"
+    ).fetchall() == [(first, "superseded", False), (second, "active", True)]

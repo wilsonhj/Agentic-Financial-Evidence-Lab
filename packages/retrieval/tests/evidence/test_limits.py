@@ -87,6 +87,26 @@ def test_one_past_the_limit_is_invalid_input_naming_the_field(request_: Any, fie
     )
 
 
+@pytest.mark.parametrize(
+    ("request_", "field"),
+    [
+        (i.ListFilingsRequest(company="CRM", limit=10, forms="10K"), "forms"),
+        (i.ListFilingsRequest(company="CRM", limit=10, forms=b"10K"), "forms"),
+        (i.ListFilingsRequest(company="CRM", limit=10, forms=123), "forms"),
+        (i.SearchRequest(query="revenue", top_k=5, companies="CRM"), "companies"),
+        (i.SearchRequest(query="revenue", top_k=5, periods="FY24"), "periods"),
+    ],
+)
+def test_bare_string_and_non_sequence_filters_are_rejected(request_: Any, field: str) -> None:
+    with pytest.raises(i.EvidenceReadError) as raised:
+        limits.check_request(request_)
+    assert (raised.value.code, raised.value.field, raised.value.retryable) == (
+        "invalid_input",
+        field,
+        False,
+    )
+
+
 def test_an_unknown_request_type_fails_closed() -> None:
     with pytest.raises(TypeError):
         limits.check_request(object())

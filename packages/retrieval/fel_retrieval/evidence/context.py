@@ -61,16 +61,29 @@ def effective_as_of(as_of: datetime | date | None, request_time: datetime) -> da
     that day are excluded. None means the request time. The result must lie
     between 1994-01-01T00:00:00Z and the request time.
     """
+    if request_time.utcoffset() is None:
+        raise invalid_input("request_time", "must be timezone-aware")
+    try:
+        request_utc = request_time.astimezone(UTC)
+    except OverflowError:
+        raise invalid_input("request_time", "must be representable in UTC") from None
     if as_of is None:
-        instant = request_time
+        instant = request_utc
     elif isinstance(as_of, datetime):
+        if as_of.utcoffset() is None:
+            raise invalid_input("as_of", "must be timezone-aware")
         instant = as_of
     else:
         instant = datetime.combine(as_of, time(0), tzinfo=_NEW_YORK)
     # Same-zone datetime comparisons ignore fold during a repeated DST hour.
     # Compare UTC instants so a later second-fold cutoff cannot appear earlier.
-    instant = instant.astimezone(UTC)
-    if not EARLIEST_AS_OF <= instant <= request_time.astimezone(UTC):
+    try:
+        instant = instant.astimezone(UTC)
+    except OverflowError:
+        raise invalid_input(
+            "as_of", "must be between 1994-01-01T00:00:00Z and the request time"
+        ) from None
+    if not EARLIEST_AS_OF <= instant <= request_utc:
         raise invalid_input("as_of", "must be between 1994-01-01T00:00:00Z and the request time")
     return instant
 

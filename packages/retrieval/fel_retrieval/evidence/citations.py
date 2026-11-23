@@ -84,7 +84,7 @@ def _integrity_error(reason: str, reference: str) -> i.EvidenceReadError:
 
 
 def _instant(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _deadline_exceeded() -> i.EvidenceReadError:
@@ -306,7 +306,7 @@ def get_citation(
     note = i.CoverageNote(
         text=text,
         issuers=(company.cik,),
-        forms=() if form is None else (form,),
+        forms=(form,) if form else (),
         date_range=i.DateRange(from_=first, to=last),
     )
     result = i.CitationResult(evidence_context=context, coverage_note=note, citation=citation)
