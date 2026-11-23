@@ -103,7 +103,7 @@ from fel_retrieval.verification import CitationIntegrityError
 from fel_retrieval.verification import MockCitationVerifier as MockCitationVerifier
 from fel_retrieval.verification import should_abstain as should_abstain
 from fel_retrieval.verification import verify_claims as verify_claims
-from fel_workers.redact import redact_error_text, redact_job_error_text
+from fel_workers.redact import redact_job_error_text
 
 router = APIRouter(prefix="/v1", tags=["retrieval"])
 
@@ -250,7 +250,7 @@ def _corpus_read_connection() -> psycopg.Connection[Any]:
 # Messages stored for failures that wrap arbitrary exceptions. A lane or the
 # pipeline can raise driver, provider or filesystem errors whose text carries
 # connection strings, SQL, paths or provider payloads, so these codes never
-# store ``str(exc)``; the detail goes to the server log only.
+# store ``str(exc)``.
 _LANE_FAILED_MESSAGE = "A retrieval lane failed; the run was stopped."
 _PIPELINE_FAILED_MESSAGE = "The retrieval run failed."
 
@@ -271,14 +271,10 @@ def _failure_envelope(exc: Exception) -> dict[str, str]:
     return {"code": "PIPELINE_FAILED", "message": _PIPELINE_FAILED_MESSAGE}
 
 
-def _exc_text(exc: Exception) -> str:
+def _safe_text(exc: Exception) -> str:
     # Not cut here: a raw cut can split a credential so the redactor no longer
     # recognises it. The redactor bounds its own input and drops the cut tail.
-    return str(exc)
-
-
-def _safe_text(exc: Exception) -> str:
-    return redact_job_error_text(_exc_text(exc))
+    return redact_job_error_text(str(exc))
 
 
 def _run_pipeline_or_fail(
@@ -341,15 +337,13 @@ def _record_run_failure(
 ) -> None:
     """Append ``run_failed`` and move the run to ``failed`` in a fresh transaction."""
     error = _failure_envelope(exc)
-    # Never pass exc_info: the root logger is wired to Sentry's logging
-    # integration, which would ship the raw exception and its chained causes.
-    # Log the type name and the strictly redacted message instead.
+    # Error reporting receives this log record. Keep exception messages and
+    # causes out of it because opaque secrets may have no recognizable pattern.
     _log.error(
-        "retrieval run %s failed (%s): %s: %s",
+        "retrieval run %s failed (%s): %s",
         run_id,
         error["code"],
         type(exc).__name__,
-        redact_error_text(_exc_text(exc)),
     )
     with tenant_connection(ctx) as conn:
         conn.execute("SELECT set_config('statement_timeout', %s, true)", (_STATEMENT_TIMEOUT,))
