@@ -101,9 +101,24 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     return _envelope(request, 500, "INTERNAL", "Unexpected server error.", None)
 
 
+def _sanitize_validation_errors(errors: Any) -> list[dict[str, Any]]:
+    """Strip echoed raw input values from Pydantic validation error details."""
+    sanitized: list[dict[str, Any]] = []
+    for err in errors:
+        if isinstance(err, Mapping):
+            sanitized.append({str(k): v for k, v in err.items() if k != "input"})
+    return sanitized
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    return _envelope(request, 422, "VALIDATION_ERROR", "Request failed validation.", exc.errors())
+    return _envelope(
+        request,
+        422,
+        "VALIDATION_ERROR",
+        "Request failed validation.",
+        _sanitize_validation_errors(exc.errors()),
+    )
 
 
 @app.get("/health", response_model=HealthResponse)

@@ -44,7 +44,9 @@ export function writeStoredTheme(
 
 export function persistTheme(theme: Theme): void {
   document.documentElement.setAttribute(THEME_ATTRIBUTE, theme);
-  document.cookie = `${THEME_COOKIE}=${theme}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  const secure =
+    typeof window !== "undefined" && window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${THEME_COOKIE}=${theme}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
   writeStoredTheme(theme);
 }
 

@@ -36,7 +36,7 @@ jobs:
       READER_SMOKE_MANIFEST: ${{ github.workspace }}/.reader-smoke/manifest.json
       READER_SMOKE_REMOTE_EXEC: ${{ github.workspace }}/evals/harness/reader_prod_smoke_remote.py
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Require protected environment and the approved deployed revision
         env:
           GH_TOKEN: ${{ secrets.READER_SMOKE_ENVIRONMENT_READ_TOKEN }}
@@ -58,11 +58,11 @@ jobs:
           if not protected:
               raise SystemExit('reader-smoke must have reviewers or a nonzero wait timer')
           PY
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version-file: .python-version
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -110,7 +110,7 @@ jobs:
           entries = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for root in roots for p in sorted(root.rglob('*')) if p.is_file()}
           Path('.reader-smoke/digests.json').write_text(json.dumps(entries, indent=2) + '\n')
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always() && steps.sanitized.outcome == 'success'
         with:
           name: hosted-reader-smoke-${{ github.sha }}
