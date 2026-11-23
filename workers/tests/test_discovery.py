@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import pathlib
 from datetime import date, datetime
+from typing import Any
 
 import psycopg
 import pytest
@@ -14,6 +16,7 @@ from fel_workers.ingestion.discovery import (
     JOB_KIND_SEC_FILING_FETCH,
     DiscoveryError,
     discover_filings,
+    fetch_job_payload,
     run_discovery_job,
 )
 
@@ -32,8 +35,10 @@ requires_db = pytest.mark.skipif(
 class FixtureSecClient:
     """SecClient over the committed synthetic submissions fixture."""
 
+    fixture = "sec_submissions_synthetic.json"
+
     def submissions(self, cik: str) -> dict[str, object]:
-        payload = json.loads(fixture_bytes("sec_submissions_synthetic.json"))
+        payload = json.loads(fixture_bytes(self.fixture))
         assert isinstance(payload, dict)
         return payload
 
@@ -72,6 +77,156 @@ def test_discover_filings_rejects_malformed_payload() -> None:
 
     with pytest.raises(DiscoveryError, match="filings"):
         discover_filings(BrokenClient(), "9999999")
+
+
+class AcceptanceSecClient(FixtureSecClient):
+    fixture = "sec_submissions_acceptance.json"
+
+
+def test_discovery_carries_the_raw_acceptance_time_uninterpreted() -> None:
+    """Discovery reads acceptanceDateTime (#393) but leaves its timezone to
+    the one publication function: the payload holds the SEC string as-is."""
+    refs = discover_filings(AcceptanceSecClient(), "9999997")
+    assert [ref.acceptance_datetime for ref in refs] == [
+        None,
+        "2026-05-08T22:10:45.000Z",
+        "2026-05-06T13:00:00.000Z",
+        "2026-05-05T19:40:02.000Z",
+        "2026-05-05T12:05:11.000Z",
+    ]
+    payload = fetch_job_payload(refs[1])
+    assert payload["acceptance_datetime"] == "2026-05-08T22:10:45.000Z"
+    assert payload["filed_on"] == "2026-05-11"
+    assert fetch_job_payload(refs[0])["acceptance_datetime"] is None
+    # A payload without the list (older fixtures, the mock client) is unknown.
+    assert {ref.acceptance_datetime for ref in discover_filings(FixtureSecClient(), "1")} == {None}
+
+
+def test_discovery_rejects_a_non_string_acceptance_time() -> None:
+    class NumericClient(AcceptanceSecClient):
+        def submissions(self, cik: str) -> dict[str, object]:
+            payload = super().submissions(cik)
+            payload["filings"]["recent"]["acceptanceDateTime"][1] = 20260508221045  # type: ignore[index]
+            return payload
+
+    with pytest.raises(DiscoveryError, match="acceptanceDateTime"):
+        discover_filings(NumericClient(), "9999997")
+
+
+@pytest.mark.parametrize("shape", ["short", "long", "empty", "non-list"])
+def test_misaligned_acceptance_list_fails_before_enqueue(
+    shape: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fel_workers.ingestion import discovery
+
+    class MisalignedClient(AcceptanceSecClient):
+        def submissions(self, cik: str) -> dict[str, object]:
+            payload = super().submissions(cik)
+            recent: Any = payload["filings"]["recent"]  # type: ignore[index]
+            times = recent["acceptanceDateTime"]
+            recent["acceptanceDateTime"] = {
+                "short": times[1:],
+                "long": [*times, "2026-05-01T12:00:00Z"],
+                "empty": [],
+                "non-list": "untrusted-array-sentinel",
+            }[shape]
+            return payload
+
+    def no_enqueue(*args: object, **kwargs: object) -> None:
+        pytest.fail("misaligned acceptance metadata must not enqueue any filing")
+
+    monkeypatch.setattr(discovery.queue, "enqueue", no_enqueue)
+    with pytest.raises(DiscoveryError, match="acceptanceDateTime") as excinfo:
+        run_discovery_job(None, MisalignedClient(), {"cik": "9999997"})  # type: ignore[arg-type]
+    assert "untrusted-array-sentinel" not in str(excinfo.value)
+
+
+@pytest.mark.parametrize("invalid_field", ["filingDate", "acceptanceDateTime"])
+def test_discovery_errors_do_not_echo_untrusted_filing_values(invalid_field: str) -> None:
+    class UntrustedClient(AcceptanceSecClient):
+        def submissions(self, cik: str) -> dict[str, object]:
+            payload = super().submissions(cik)
+            recent: Any = payload["filings"]["recent"]  # type: ignore[index]
+            recent["accessionNumber"][0] = "untrusted-accession-sentinel"
+            recent[invalid_field][0] = (
+                "untrusted-date-sentinel" if invalid_field == "filingDate" else 1234
+            )
+            return payload
+
+    with pytest.raises(DiscoveryError, match=invalid_field) as excinfo:
+        discover_filings(UntrustedClient(), "9999997")
+    assert "untrusted-accession-sentinel" not in str(excinfo.value)
+    assert "untrusted-date-sentinel" not in str(excinfo.value)
+    assert (
+        excinfo.value.__suppress_context__
+    ), "untrusted parse errors must not reach traceback logs"
+
+
+class OldestFirstSecClient(AcceptanceSecClient):
+    """The same index listed oldest first, as the corpus-QA harness lists it."""
+
+    def submissions(self, cik: str) -> dict[str, object]:
+        payload = super().submissions(cik)
+        for rows in payload["filings"]["recent"].values():  # type: ignore[index]
+            rows.reverse()
+        return payload
+
+
+class PermutedSecClient(AcceptanceSecClient):
+    """The same index with its entries listed in a given order."""
+
+    def __init__(self, order: tuple[int, ...]) -> None:
+        self.order = order
+
+    def submissions(self, cik: str) -> dict[str, object]:
+        payload = super().submissions(cik)
+        recent: Any = payload["filings"]
+        recent["recent"] = {
+            name: [rows[i] for i in self.order] for name, rows in recent["recent"].items()
+        }
+        return payload
+
+
+def test_enqueue_order_does_not_depend_on_the_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Database-free: every listing order of the five filings enqueues them in
+    (filing date, acceptance time, accession) order. 1 and 2 share a date and
+    are ordered by acceptance; 4 has no acceptance time and is alone on its date."""
+    from fel_workers.ingestion import discovery
+
+    enqueued: list[str] = []
+
+    def record(conn: object, **job: Any) -> str:
+        enqueued.append(job["payload"]["accession"][-1])
+        return "job"
+
+    monkeypatch.setattr(discovery.queue, "enqueue", record)
+    for order in itertools.permutations(range(5)):
+        enqueued.clear()
+        run_discovery_job(None, PermutedSecClient(order), {"cik": "9999997"})  # type: ignore[arg-type]
+        assert "".join(enqueued) == "12534", order
+
+
+@requires_db
+@pytest.mark.parametrize(
+    "client",
+    [AcceptanceSecClient(), OldestFirstSecClient()],
+    ids=["newest-first index", "oldest-first index"],
+)
+def test_discovery_enqueues_in_filing_date_order(
+    corpus_conn: psycopg.Connection, client: FixtureSecClient
+) -> None:
+    """EDGAR lists newest first. Claiming in that order ingests an amendment
+    before its original, which then has no restatement target (#393). The
+    claim order is the same whatever order the index lists them in."""
+    run_discovery_job(corpus_conn, client, {"cik": "9999997"})
+    rows = corpus_conn.execute(
+        "SELECT payload FROM jobs WHERE kind = %s ORDER BY priority, created_at",
+        (JOB_KIND_SEC_FILING_FETCH,),
+    ).fetchall()
+    assert "".join(row[0]["accession"][-1] for row in rows) == "12534"
+    dates = [row[0]["filed_on"] for row in rows]
+    assert dates == sorted(dates)
+    assert {row[0]["acceptance_datetime"] for row in rows} >= {None, "2026-05-05T12:05:11.000Z"}
 
 
 @requires_db

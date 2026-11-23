@@ -14,9 +14,11 @@ This directory is the restart point for all implementation agents. Fable must be
 Resolve the live queue from GitHub, then read [`STATUS.md`](STATUS.md) and
 [`workstreams.yaml`](workstreams.yaml). Those files include dated evidence;
 do not infer current dispatchability from a historical commit or issue list.
-The newest section of `STATUS.md` is dated November 16, 2026. It records the
-owner decisions of that date. The November 15 section records the
-verified-finding repair and review wave; the October snapshot retains the
+Read the [November 19 merge record](STATUS.md#november-19-merges-410-411-and-412)
+for the three merged fixes and their follow-ups. The
+[November 16 owner decisions](STATUS.md#november-16-owner-decisions) record the
+remaining merge order and dispatch rules. The November 15 section records the
+verified-finding repair and review wave. The October snapshot retains the
 earlier dependency order and hosted blockers. Earlier sections are in the
 [archived status history](../archive/handoff/STATUS-history-2026-09.md).
 

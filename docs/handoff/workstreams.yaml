@@ -1615,7 +1615,7 @@ packages:
     depends_on: [MCP-CONTRACT, MCP-REPLAY-CONTRACT, MCP-INGEST-ACCEPTED-AT] # MCP-INGEST-ACCEPTED-AT (#417) added 2026-11-16 under ADR-0034 Amendment 3, decision 7.
     team: api
     branch: agent/mcp-cutoff-predicates
-    status: blocked # #392 and #404 merged in 517553e, and #396 (#414) in 2319c35; next in Lane B. The owner ruled on 2026-11-15 that this package merges before MCP-INGEST-ACCEPTED-AT (#417), and withdrew that order on 2026-11-16 (ADR-0034 Amendment 3), because #417 carries the lane predicate fix. This package now follows #417 and must start from a base that contains it; it keeps the reader and corpus cutoff work. Dispatch decision recorded 2026-11-16: dispatch with #397 and #399 after #417 merges. Must not run concurrently with FIX-REVIEW-CITATION-BLOCKERS (#409) or FIX-RUN-ERROR-REDACTION (#412), which also edit apps/api/tests/**.
+    status: blocked # #392 and #404 merged in 517553e, and #396 (#414) in 2319c35; next in Lane B. The owner ruled on 2026-11-15 that this package merges before MCP-INGEST-ACCEPTED-AT (#417), and withdrew that order on 2026-11-16 (ADR-0034 Amendment 3), because #417 carries the lane predicate fix. This package now follows #417 and must start from a base that contains it; it keeps the reader and corpus cutoff work. Dispatch decision recorded 2026-11-16: dispatch with #397 and #399 after #417 merges. Must not run concurrently with FIX-REVIEW-CITATION-BLOCKERS (#409), which also edits apps/api/tests/**. FIX-RUN-ERROR-REDACTION (#412) merged in #445 on 2026-11-19, so its overlap is gone.
     allowed_paths:
       - apps/api/app/corpus.py
       - apps/api/app/reader.py
@@ -1724,7 +1724,7 @@ packages:
       - workers/tests/test_sec_client.py
       - workers/tests/test_fixture_sec_client.py
       - workers/tests/test_consumer.py
-      - workers/tests/sec_headers/** # Outside workers/tests/fixtures/**, which #411 claims.
+      - workers/tests/sec_headers/** # Outside workers/tests/fixtures/**, which #411 claimed until #444 merged.
       - evals/harness/synthetic_sec.py
       - evals/harness/reader_prod_smoke.py
       - evals/tests/test_reader_prod_smoke.py
@@ -1761,7 +1761,7 @@ packages:
     depends_on: []
     team: extraction
     branch: agent/fix-numeric-sign-parsing
-    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393 to release workers/tests/**.
+    status: merged # PR #443 @ 7902a5e (2026-11-19). Merged on the owner's instruction ahead of #393/#417, with no path conflict against #416-#418. Independent review fixed a silent sign flip (a dash after a label) and errors on labels such as pre-tax (7131a40, 399b1e0). Currency-code labels such as USD-denominated and EUR-denominated still raise during raw-value parsing (unresolved review finding on #443). Exact-head required CI passed. #410 released its own claim. #417 retains workers/tests/**.
     allowed_paths:
       - workers/src/fel_workers/extraction/normalize/**
       - workers/tests/extraction/test_normalize.py
@@ -1773,7 +1773,7 @@ packages:
     depends_on: []
     team: data
     branch: agent/fix-xbrl-divide-units
-    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393, which owns workers/src/fel_workers/ingestion/** and workers/tests/**.
+    status: merged # PR #444 @ 51e6e29 (2026-11-19). Merged on the owner's instruction ahead of #393/#417, with no path conflict against #416-#418. Independent review moved the unit tests into test_xbrl_normalize.py (inside this lane) and turned a bare KeyError on stray divide markup into ParseError(UNKNOWN_UNIT); re-reviewed. Exact-head required CI passed. PARSER_VERSION and NORMALIZER_VERSION were not bumped, so stored filings keep collapsed per-share units until #446. #411 released its own claim. #417 retains workers/src/fel_workers/ingestion/** and workers/tests/**, including workers/tests/fixtures/**.
     allowed_paths:
       - workers/src/fel_workers/ingestion/parser.py
       - workers/src/fel_workers/ingestion/xbrl.py
@@ -1787,7 +1787,7 @@ packages:
     depends_on: []
     team: trust
     branch: agent/fix-run-error-redaction
-    status: blocked # Registered 2026-11-14; not dispatched. Waits for #393 (workers/tests/**) and must not overlap #394 (apps/api/tests/**).
+    status: merged # PR #445 @ 6b61ed3 (2026-11-19). Merged on the owner's instruction ahead of #393/#417 and #394, with no path conflict against #416-#418. Six independent review rounds, each fixed test-first: raw exception chain sent to Sentry through exc_info, an Authorization masking regression, exponential and quadratic patterns on the API failure path, and three ways a secret cut by the input bound left a fragment. Final sweep: 0 cut-induced leaks, 0 inputs main masks that head leaks. Exact-head required CI, including the DB-backed API test, passed. Redaction gaps that predate the PR are tracked in #447. #412 released its own claim. #417 retains workers/tests/**.
     allowed_paths:
       - apps/api/app/retrieval.py
       - apps/api/app/retrieval_run_store.py
