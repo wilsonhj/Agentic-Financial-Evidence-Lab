@@ -50,7 +50,7 @@ The authoritative product requirements live in
 
 ## Try the UI in five minutes
 
-You need Node 24.20.0 (see `.node-version`) and Corepack. The fixture mode does
+You need Node 24.22.3 (see `.node-version`) and Corepack. The fixture mode does
 not require Python, PostgreSQL, or API keys.
 
 ```sh
@@ -142,7 +142,7 @@ docs/runbooks/               Operator runbooks for deployed services
 
 Supported toolchain:
 
-- Node.js 24.20.0 (`.node-version` for CI, `.nvmrc` for nvm)
+- Node.js 24.22.3 (`.node-version` for CI, `.nvmrc` for nvm)
 - pnpm 10.33 through Corepack (`packageManager` in `package.json`)
 - Python 3.11 (`.python-version`)
 - PostgreSQL with pgvector for database-backed tests and services

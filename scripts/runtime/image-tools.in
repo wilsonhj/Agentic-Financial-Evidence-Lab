@@ -1,0 +1,6 @@
+# Replace the python:3.11-slim base image's packaging tools. setuptools 79
+# vendors jaraco.context 5.3.0 and wheel 0.45.1; pip there is 24.0.
+# These floors are the scanned fixes. --no-deps keeps the install inside
+# the two wheels, which already carry the fixed vendored copies.
+pip==26.2.1
+setuptools==84.1.0
