@@ -25,7 +25,7 @@ describe("browser hardening headers", () => {
     expect(headers["Strict-Transport-Security"]).toBe("max-age=31536000; includeSubDomains");
     const policy = headers["Content-Security-Policy"] ?? "";
     expect(directive(policy, "default-src")).toBe("default-src 'self'");
-    expect(directive(policy, "script-src")).toBe("script-src 'self' 'unsafe-inline'");
+    expect(directive(policy, "script-src")).toBe("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
     expect(directive(policy, "style-src")).toBe("style-src 'self' 'unsafe-inline'");
     expect(policy).toContain("img-src 'self' data: blob:");
     expect(policy).toContain("font-src 'self'");
@@ -36,7 +36,7 @@ describe("browser hardening headers", () => {
     expect(directive(policy, "frame-ancestors")).toBe("frame-ancestors 'none'");
   });
 
-  it("allows eval only while the Next.js development server is running", async () => {
+  it("keeps eval available in development, where React and Ajv both need it", async () => {
     const previous = process.env.NODE_ENV;
     process.env.NODE_ENV = "development";
     try {
@@ -47,6 +47,7 @@ describe("browser hardening headers", () => {
       expect(directive(policy ?? "", "script-src")).toBe(
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       );
+      expect(policy ?? "").not.toContain("https:");
     } finally {
       process.env.NODE_ENV = previous;
     }
