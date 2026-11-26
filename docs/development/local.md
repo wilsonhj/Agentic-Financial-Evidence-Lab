@@ -46,7 +46,7 @@ behavior.
 
 | Tool       | Version                   | Used for                                |
 | ---------- | ------------------------- | --------------------------------------- |
-| Node.js    | 24.20.0 (`.node-version`)  | Next.js, contracts, and JS/TS tests       |
+| Node.js    | 24.22.3 (`.node-version`)  | Next.js, contracts, and JS/TS tests       |
 | pnpm       | 10.33 via Corepack        | Monorepo package management              |
 | Python     | 3.11 (`.python-version`)  | API, workers, retrieval, and evals        |
 | PostgreSQL | 16+ with pgvector >= 0.8.2 | Persistent API/worker flows and DB tests  |

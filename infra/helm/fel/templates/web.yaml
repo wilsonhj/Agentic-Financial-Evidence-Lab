@@ -42,8 +42,14 @@ spec:
               containerPort: 3000
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /workspace/apps/web/.next/cache
           startupProbe:
             httpGet:
               path: /api/health
@@ -62,6 +68,11 @@ spec:
             periodSeconds: 15
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

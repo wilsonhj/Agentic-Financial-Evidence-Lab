@@ -1,6 +1,6 @@
 # Build from the repository root. No architecture-specific browser image is used:
 # the repository's Playwright CLI installs its matching native Chromium binary.
-FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e
+FROM node:24.22.3-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530
 ENV DEBIAN_FRONTEND=noninteractive \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_OPTIONS=--max-old-space-size=3072 \
@@ -41,7 +41,8 @@ COPY --chown=node:node infra/kubernetes/run-acceptance.sh ./infra/kubernetes/run
 # Next creates .next and may update its generated next-env.d.ts during the test.
 RUN mkdir -p /work \
     && chown -R node:node /workspace/apps/web /work \
-    && chmod -R a+rX /opt/playwright
+    && chmod -R a+rX /opt/playwright \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 USER node
 COPY LICENSE NOTICE /workspace/
 ARG SOURCE_SHA=unknown
