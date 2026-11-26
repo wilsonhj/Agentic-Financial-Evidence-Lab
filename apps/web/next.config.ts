@@ -4,19 +4,26 @@ import type { NextConfig } from "next";
 
 // The theme boot script and Next's runtime both inject inline scripts, so a
 // hash-only script policy would not load the app. Framing, plugins, and
-// unexpected origins stay blocked.
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join("; ");
+// unexpected origins stay blocked. React uses eval in development to rebuild
+// server error stacks; production does not.
+function contentSecurityPolicy(nodeEnv: string | undefined): string {
+  const scriptSrc =
+    nodeEnv === "development"
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+      : "script-src 'self' 'unsafe-inline'";
+  return [
+    "default-src 'self'",
+    scriptSrc,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
 
 const nextConfig: NextConfig = {
   // @fel/contracts ships TypeScript source (main: src/index.ts); transpile it
@@ -31,7 +38,7 @@ const nextConfig: NextConfig = {
       {
         source: "/:path*",
         headers: [
-          { key: "Content-Security-Policy", value: contentSecurityPolicy },
+          { key: "Content-Security-Policy", value: contentSecurityPolicy(process.env.NODE_ENV) },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
